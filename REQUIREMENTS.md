@@ -365,6 +365,10 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 22. **Grouped view**: section **bubbles** within each status column + a loose area; **click-to-link** (highlight a card's section across columns, dim the rest).
 23. **Drag auto-regroups**: in the grouped view, dropping a card in another column keeps its section and lands in that section's bubble (created if needed) — never the empty workspace. A status-drag never changes section.
 24. **Section reassignment** via the chip bar (select card → click chip); the viewed stage is remembered across reloads/toggles.
+25. **Compact cards + sliding reorder**: the per-card status label and footer row are gone (the column states the status); the ‹ › steppers fold into the card's control row; statutory shows as a red type label. Drag reorder now uses a **FLIP** animation — sibling cards slide aside live instead of snapping into place on release (honours `prefers-reduced-motion`).
+26. **Right-click a card → section menu**: assign it to any section in the stage, or break it out to General. Works in both layouts (`api_update_task {section_id}`).
+27. **Urgent no longer masks the type band**: the type colour band is thicker and keeps its own colour; the red urgent ring sits *outside* it (was: urgent recoloured the whole border).
+28. **Drag a whole section across statuses** (grouped view): drag a section by its bubble header into another status column to move *all* its tasks at once; arrivals **glue** onto the section's existing tasks in the destination (`POST /api/sections/<id>/move`).
 
 ---
 

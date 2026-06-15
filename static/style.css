@@ -325,8 +325,8 @@ a { color: var(--blue); text-decoration: none; }
 /* ---- Card: floating glass tile ---------------------------------------- */
 .card {
   background: var(--glass-raised); border: 1px solid var(--glass-border);
-  border-left: 3px solid var(--ink-soft); border-radius: var(--radius-sm);
-  padding: var(--u); position: relative; box-shadow: 0 6px 18px rgba(0,0,0,0.30);
+  border-left: 4px solid var(--ink-soft); border-radius: var(--radius-sm);
+  padding: 7px 8px; position: relative; box-shadow: 0 6px 18px rgba(0,0,0,0.30);
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
 }
 .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
@@ -334,19 +334,20 @@ a { color: var(--blue); text-decoration: none; }
 .card.type-statutory { border-left-color: var(--redline); }
 .card.type-admin { border-left-color: var(--ink-dim); }
 
-.card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.card-top { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
 .card-top-spacer { flex: 1; }
 .type-select { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 2px; cursor: pointer; }
 .type-select:hover { border-color: var(--glass-border); }
 .type-select option { background: var(--bg-2); color: var(--ink); }
-.statutory-tag { font-family: var(--font-mono); font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--redline); border: 1px solid var(--redline); border-radius: 4px; padding: 0 4px; }
+.card.type-statutory .type-select { color: var(--redline); font-weight: 700; }
 
 .flag { width: 22px; height: 22px; border-radius: 5px; cursor: pointer; line-height: 1; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-soft); font-weight: 800; }
 .flag[aria-pressed="true"] { color: #fff; background: var(--redline); border-color: var(--redline); box-shadow: 0 0 14px var(--redline-tint); }
 .card-del { width: 22px; height: 22px; border: 1px solid transparent; background: transparent; color: var(--ink-soft); cursor: pointer; border-radius: 5px; font-size: 1.1rem; line-height: 1; }
 .card-del:hover { color: var(--redline); border-color: var(--redline); background: var(--redline-tint); }
 
-.card.is-urgent { border-color: var(--redline); box-shadow: 0 0 0 1px var(--redline), 0 6px 22px var(--redline-tint); }
+/* Urgent: keep the type band its own colour; thicken it and put the red ring OUTSIDE. */
+.card.is-urgent { border-left-width: 6px; box-shadow: 0 0 0 2px var(--redline), 0 6px 22px var(--redline-tint); }
 .card.is-urgent::before { content: ""; position: absolute; top: 0; right: 0; border-width: 0 16px 16px 0; border-style: solid; border-color: transparent var(--redline) transparent transparent; border-top-right-radius: var(--radius-sm); }
 
 .task-title { font-size: 0.92rem; line-height: 1.35; cursor: text; border-radius: 5px; color: var(--ink); }
@@ -357,11 +358,9 @@ a { color: var(--blue); text-decoration: none; }
 .card.status-awaiting .awaiting-on { display: flex; }
 .awaiting-text.is-empty { color: color-mix(in srgb, var(--ochre) 60%, transparent); font-style: italic; }
 
-.card-foot { display: flex; align-items: center; justify-content: space-between; margin-top: var(--u); gap: 6px; }
-.step { width: 26px; height: 22px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
+.step { width: 22px; height: 20px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
 .step:disabled { opacity: 0.3; cursor: default; }
 .step:not(:disabled):hover { border-color: var(--blue); color: var(--blue); }
-.status-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
 .card.status-done .task-title { color: var(--ink-soft); }
 
 /* ---- Add-task --------------------------------------------------------- */
@@ -439,6 +438,21 @@ body.hide-done .columns { grid-template-columns: repeat(3, 1fr); }
 .gcolumns .add-task { flex-wrap: wrap; gap: 6px; }
 .gcolumns .add-task input { flex: 1 1 100%; }
 .gcolumns .add-task select { flex: 1 1 auto; min-width: 0; }
+
+/* drag a whole section (bubble) by its header */
+.bubble-head { cursor: grab; user-select: none; }
+.bubble-head:active { cursor: grabbing; }
+.bubble.dragging-bubble { opacity: 0.5; box-shadow: var(--shadow-lift); }
+
+/* right-click section menu (both layouts) */
+.ctx-menu { position: fixed; z-index: 100; min-width: 190px; padding: 5px;
+  background: var(--glass-deep); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-bright); border-radius: var(--radius-sm); box-shadow: var(--shadow-lift); }
+.ctx-head { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); padding: 4px 10px 6px; }
+.ctx-item { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; color: var(--ink); }
+.ctx-item:hover { background: var(--blue-tint); }
+.ctx-item.is-current { color: var(--ink-soft); cursor: default; }
+.ctx-item.is-current::after { content: "✓"; color: var(--blue); }
 
 /* ====================================================================== */
 /*  RESPONSIVE                                                             */
