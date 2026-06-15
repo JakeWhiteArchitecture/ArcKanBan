@@ -5,9 +5,7 @@
 {% block content %}
 <header class="titleblock" id="titleblock">
   <button type="button" class="tb-collapse" data-action="toggle-titleblock"
-          aria-label="Collapse titleblock" title="Collapse">
-    <span class="chevron">▾</span>
-  </button>
+          aria-label="Collapse titleblock" title="Collapse"><span class="chevron">▾</span></button>
 
   <div class="tb-id">
     <a class="tb-home" href="{{ url_for('index') }}" title="Register" aria-label="Back to register">⌂</a>
@@ -20,8 +18,8 @@
   <ol class="spine" aria-label="RIBA Plan of Work — click a stage to view it">
     {% for i in range(8) %}
       {% set state = 'current' if i == project.current_stage else ('past' if i < project.current_stage else 'future') %}
-      <li class="spine-cell is-{{ state }}" data-action="goto-stage" data-stage="{{ i }}"
-          role="button" tabindex="0" title="Stage {{ i }}">
+      <li class="spine-cell is-{{ state }}" style="--c: var(--riba-{{ i }})"
+          data-action="goto-stage" data-stage="{{ i }}" role="button" tabindex="0" title="Stage {{ i }}">
         <span class="spine-num">{{ i }}</span>
       </li>
     {% endfor %}
@@ -34,6 +32,11 @@
   </div>
 
   <span class="tb-urgent" id="tb-urgent" hidden></span>
+
+  <form class="tb-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
+        onsubmit="return confirm('Delete this project and all its tasks?');">
+    <button type="submit" class="btn-quiet btn-danger btn-sm">Delete</button>
+  </form>
 
   <div class="tb-compact" aria-hidden="true">
     <span class="tb-compact-no">{{ project.number or '—' }}</span>
@@ -50,28 +53,25 @@
 </div>
 
 <main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}">
-  {% for s in stages %}
-    <details class="stage" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}"
-             {% if s.idx == project.current_stage %}open{% endif %}>
-      <summary class="stage-summary">
-        <span class="stage-num">{{ s.idx }}</span>
-        <span class="stage-name">{{ s.name }}</span>
-        {% if s.idx == project.current_stage %}<span class="here-tag">you are here</span>{% endif %}
-        <span class="stage-counts" aria-hidden="true">
-          {% for st in statuses %}
-            {% if s.counts[st] %}<span class="pip pip-{{ st }}">{{ s.counts[st] }} {{ status_labels[st]|lower }}</span>{% endif %}
-          {% endfor %}
-          {% if s.counts.urgent %}<span class="pip pip-urgent">{{ s.counts.urgent }} urgent</span>{% endif %}
-        </span>
-      </summary>
+  <button type="button" class="nav-arrow prev" data-action="nav-prev" aria-label="Previous stage">‹</button>
+  <button type="button" class="nav-arrow next" data-action="nav-next" aria-label="Next stage">›</button>
 
-      <div class="stage-body">
-        <div class="stage-toolbar">
-          <button type="button" class="btn-quiet set-current" data-action="set-current"
-                  data-stage="{{ s.idx }}" {% if s.idx == project.current_stage %}hidden{% endif %}>
-            Set as current stage
-          </button>
+  <div class="stage-track" id="stage-track">
+    {% for s in stages %}
+      <section class="stage-slide stage" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">
+        <div class="slide-head">
+          <span class="stage-num" style="--c: var(--riba-{{ s.idx }})">{{ s.idx }}</span>
+          <h2 class="stage-name">{{ s.name }}</h2>
+          {% if s.idx == project.current_stage %}<span class="here-tag">you are here</span>{% endif %}
+          <button type="button" class="btn-quiet btn-sm set-current" data-action="set-current"
+                  data-stage="{{ s.idx }}" {% if s.idx == project.current_stage %}hidden{% endif %}>Set as current stage</button>
           <span class="current-badge" {% if s.idx != project.current_stage %}hidden{% endif %}>Current stage</span>
+          <span class="stage-counts slide-counts" aria-hidden="true">
+            {% for st in statuses %}
+              {% if s.counts[st] %}<span class="pip pip-{{ st }}">{{ s.counts[st] }} {{ status_labels[st]|lower }}</span>{% endif %}
+            {% endfor %}
+            {% if s.counts.urgent %}<span class="pip pip-urgent">{{ s.counts.urgent }} urgent</span>{% endif %}
+          </span>
         </div>
 
         <div class="columns">
@@ -79,9 +79,7 @@
             <section class="column col-{{ st }}" data-status="{{ st }}">
               <h3 class="col-head">{{ status_labels[st] }} <span class="col-count">{{ s.counts[st] }}</span></h3>
               <div class="col-cards" data-stage="{{ s.idx }}" data-status="{{ st }}">
-                {% for t in s.columns[st] %}
-                  {% include "_card.html" %}
-                {% endfor %}
+                {% for t in s.columns[st] %}{% include "_card.html" %}{% endfor %}
               </div>
             </section>
           {% endfor %}
@@ -96,16 +94,9 @@
           </select>
           <button type="submit" class="btn-quiet">Add</button>
         </form>
-      </div>
-    </details>
-  {% endfor %}
-
-  <footer class="board-foot">
-    <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
-          onsubmit="return confirm('Delete this project and all its tasks?');">
-      <button type="submit" class="btn-quiet btn-danger">Delete project</button>
-    </form>
-  </footer>
+      </section>
+    {% endfor %}
+  </div>
 </main>
 {% endblock %}
 

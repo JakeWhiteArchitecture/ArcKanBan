@@ -1,6 +1,7 @@
-/* ArcKanban — board interactions (Increment 1: no drag yet).
-   Status moves use the ‹ › steppers; everything persists via small JSON
-   endpoints with no page reload. Drag + nesting arrive next. */
+/* ArcKanban — board interactions.
+   Horizontal stage paging (arrows / spine / keyboard / swipe); status moves
+   via the ‹ › steppers. Everything persists via small JSON endpoints with no
+   page reload. Drag + nesting arrive next. */
 (function () {
   "use strict";
 
@@ -14,13 +15,12 @@
 
   var board = document.querySelector(".board");
   if (!board) return;
+  var track = document.getElementById("stage-track");
   var projectId = Number(board.dataset.projectId);
   var currentStage = Number(board.dataset.currentStage);
-
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // Nudge state — distinct tasks touched per future stage, and dismissals.
-  var activity = {};   // stage -> Set of task ids
+  var activity = {};   // stage -> Set of task ids touched (for the nudge)
   var dismissed = {};  // stage -> true
 
   // ---- fetch helper ------------------------------------------------------
@@ -32,31 +32,53 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data || {}),
       });
-    } catch (e) {
-      alert("Could not reach the app. Is it still running?");
-      return null;
-    }
+    } catch (e) { alert("Could not reach the app. Is it still running?"); return null; }
     var json = {};
     try { json = await res.json(); } catch (e) { /* ignore */ }
-    if (!res.ok || !json.ok) {
-      alert((json && json.error) || "Something went wrong.");
-      return null;
-    }
+    if (!res.ok || !json.ok) { alert((json && json.error) || "Something went wrong."); return null; }
     return json;
   }
 
-  // ---- small DOM utilities ----------------------------------------------
   function cardOf(el) { return el.closest(".card"); }
   function stageElOf(el) { return el.closest(".stage"); }
 
+  // ---- horizontal navigation --------------------------------------------
+  function activeStage() {
+    if (!track.clientWidth) return currentStage;
+    return Math.max(0, Math.min(7, Math.round(track.scrollLeft / track.clientWidth)));
+  }
+  function updateNav(n) {
+    if (n == null) n = activeStage();
+    document.querySelectorAll(".titleblock .spine-cell").forEach(function (c, i) {
+      c.classList.toggle("is-active", i === n);
+    });
+    var prev = document.querySelector(".nav-arrow.prev");
+    var next = document.querySelector(".nav-arrow.next");
+    if (prev) prev.disabled = n <= 0;
+    if (next) next.disabled = n >= 7;
+  }
+  function gotoStage(n, instant) {
+    n = Math.max(0, Math.min(7, Number(n)));
+    track.scrollTo({ left: n * track.clientWidth, behavior: (instant || reduceMotion) ? "auto" : "smooth" });
+    updateNav(n);
+  }
+
+  var ticking = false;
+  track.addEventListener("scroll", function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(function () { updateNav(); ticking = false; }); }
+  });
+  var lastActive = currentStage;
+  window.addEventListener("resize", function () { gotoStage(lastActive, true); });
+
+  // ---- counts & tally ----------------------------------------------------
   function recountStage(stageEl) {
     if (!stageEl) return;
     var counts = {};
     STATUSES.forEach(function (st) {
-      var cards = stageEl.querySelectorAll('.col-cards[data-status="' + st + '"] > .card').length;
-      counts[st] = cards;
-      var cc = stageEl.querySelector('.col-' + st + ' .col-count');
-      if (cc) cc.textContent = cards;
+      var n = stageEl.querySelectorAll('.col-cards[data-status="' + st + '"] > .card').length;
+      counts[st] = n;
+      var cc = stageEl.querySelector(".col-" + st + " .col-count");
+      if (cc) cc.textContent = n;
     });
     var urgent = stageEl.querySelectorAll(".card.is-urgent").length;
     var html = "";
@@ -67,7 +89,6 @@
     var box = stageEl.querySelector(".stage-counts");
     if (box) box.innerHTML = html;
   }
-
   function updateUrgentTally() {
     var n = board.querySelectorAll(".card.is-urgent").length;
     var el = document.getElementById("tb-urgent");
@@ -84,22 +105,19 @@
       evaluateNudge();
     }
   }
-
   function currentStageCompletion() {
     var st = document.getElementById("stage-" + currentStage);
     if (!st) return 0;
     var total = st.querySelectorAll(".col-cards > .card").length;
     if (!total) return 0;
-    var done = st.querySelectorAll('.col-cards[data-status="done"] > .card').length;
-    return done / total;
+    return st.querySelectorAll('.col-cards[data-status="done"] > .card').length / total;
   }
-
   function evaluateNudge() {
     var target = null, s;
-    for (s = 7; s > currentStage; s--) {                       // activity signal
+    for (s = 7; s > currentStage; s--) {
       if (activity[s] && activity[s].size >= 3 && !dismissed[s]) { target = s; break; }
     }
-    if (target === null && currentStageCompletion() >= 0.8) {  // completion signal
+    if (target === null && currentStageCompletion() >= 0.8) {
       for (s = 7; s > currentStage; s--) {
         if (activity[s] && activity[s].size >= 1 && !dismissed[s]) { target = s; break; }
       }
@@ -110,9 +128,7 @@
         "Working in Stage " + target + " (" + RIBA[target] + ") — set as current?";
       nudge.dataset.stage = target;
       nudge.hidden = false;
-    } else {
-      nudge.hidden = true;
-    }
+    } else { nudge.hidden = true; }
   }
 
   // ---- current stage -----------------------------------------------------
@@ -131,14 +147,13 @@
     if (csn) csn.textContent = n;
 
     document.querySelectorAll(".here-tag").forEach(function (t) { t.remove(); });
-    var sum = document.querySelector("#stage-" + n + " .stage-summary .stage-name");
-    if (sum) {
+    var nameEl = document.querySelector("#stage-" + n + " .slide-head .stage-name");
+    if (nameEl) {
       var tag = document.createElement("span");
-      tag.className = "here-tag";
-      tag.textContent = "you are here";
-      sum.insertAdjacentElement("afterend", tag);
+      tag.className = "here-tag"; tag.textContent = "you are here";
+      nameEl.insertAdjacentElement("afterend", tag);
     }
-    document.querySelectorAll(".stage").forEach(function (st) {
+    document.querySelectorAll(".stage-slide").forEach(function (st) {
       var idx = Number(st.dataset.stage);
       var btn = st.querySelector(".set-current");
       var badge = st.querySelector(".current-badge");
@@ -146,9 +161,8 @@
       if (badge) badge.hidden = idx !== n;
     });
 
-    var det = document.getElementById("stage-" + n);
-    if (det && !det.open) det.open = true;
     document.getElementById("nudge").hidden = true;
+    gotoStage(n);
     evaluateNudge();
   }
 
@@ -157,18 +171,13 @@
     if (displayEl.dataset.editing) return;
     displayEl.dataset.editing = "1";
     var input = document.createElement("input");
-    input.type = "text";
-    input.className = "title-input";
-    input.value = currentText;
-    displayEl.replaceChildren(input);
-    input.focus();
-    input.select();
+    input.type = "text"; input.className = "title-input"; input.value = currentText;
+    displayEl.replaceChildren(input); input.focus(); input.select();
     var done = false;
     function finish(commit) {
       if (done) return; done = true;
       delete displayEl.dataset.editing;
-      var val = input.value.trim();
-      onSave(commit ? val : null, val !== currentText);
+      onSave(commit ? input.value.trim() : null, input.value.trim() !== currentText);
     }
     input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); finish(true); }
@@ -176,10 +185,8 @@
     });
     input.addEventListener("blur", function () { finish(true); });
   }
-
   function editTitle(titleEl) {
-    var card = cardOf(titleEl);
-    var id = card.dataset.taskId;
+    var id = cardOf(titleEl).dataset.taskId;
     var text = titleEl.textContent.trim();
     editInline(titleEl, text, async function (val, changed) {
       if (val === null || !changed || !val) { titleEl.textContent = text; return; }
@@ -187,10 +194,8 @@
       titleEl.textContent = (r && val) || text;
     });
   }
-
   function editAwaiting(box) {
-    var card = cardOf(box);
-    var id = card.dataset.taskId;
+    var id = cardOf(box).dataset.taskId;
     var textEl = box.querySelector(".awaiting-text");
     var current = textEl.classList.contains("is-empty") ? "" : textEl.textContent.trim();
     editInline(textEl, current, async function (val, changed) {
@@ -203,7 +208,6 @@
     if (val) { textEl.textContent = val; textEl.classList.remove("is-empty"); }
     else { textEl.textContent = "who / what?"; textEl.classList.add("is-empty"); }
   }
-
   function editProjectField(cell, field) {
     var raw = cell.textContent.trim();
     var current = raw === "—" ? "" : raw;
@@ -211,8 +215,7 @@
       if (val === null || !changed) { cell.textContent = raw; return; }
       var payload = {}; payload[field] = val;
       var r = await api("/api/projects/" + projectId, payload);
-      if (!r) { cell.textContent = raw; return; }
-      cell.textContent = val || (field === "number" ? "—" : raw);
+      cell.textContent = r ? (val || (field === "number" ? "—" : raw)) : raw;
     });
   }
 
@@ -226,22 +229,16 @@
     var stageEl = stageElOf(card);
     var r = await api("/api/tasks/" + id, { status: newStatus });
     if (!r) return;
-
     card.dataset.status = newStatus;
     card.classList.remove("status-upcoming", "status-todo", "status-awaiting", "status-done");
     card.classList.add("status-" + newStatus);
     card.querySelector(".status-label").textContent = STATUS_LABELS[newStatus];
     card.querySelector(".step-prev").disabled = ni === 0;
     card.querySelector(".step-next").disabled = ni === STATUSES.length - 1;
-
     var dest = stageEl.querySelector('.col-cards[data-status="' + newStatus + '"]');
     if (dest) dest.appendChild(card);
-
-    recountStage(stageEl);
-    updateUrgentTally();
-    registerActivity(stageEl.dataset.stage, id);
+    recountStage(stageEl); updateUrgentTally(); registerActivity(stageEl.dataset.stage, id);
   }
-
   async function toggleUrgent(btn) {
     var card = cardOf(btn);
     var id = card.dataset.taskId;
@@ -251,21 +248,16 @@
     card.dataset.urgent = next ? "1" : "0";
     card.classList.toggle("is-urgent", next);
     btn.setAttribute("aria-pressed", next ? "true" : "false");
-    recountStage(stageElOf(card));
-    updateUrgentTally();
-    registerActivity(card.dataset.stage, id);
+    recountStage(stageElOf(card)); updateUrgentTally(); registerActivity(card.dataset.stage, id);
   }
-
   async function changeType(select) {
     var card = cardOf(select);
     var id = card.dataset.taskId;
-    var oldType = card.dataset.type;
-    var newType = select.value;
+    var oldType = card.dataset.type, newType = select.value;
     if (newType === oldType) return;
     if (oldType === "statutory" && newType !== "statutory") {
       if (!confirm("Remove the statutory marker from this task? Statutory tasks carry legal duties.")) {
-        select.value = oldType;
-        return;
+        select.value = oldType; return;
       }
     }
     var r = await api("/api/tasks/" + id, { type: newType });
@@ -275,28 +267,19 @@
     card.classList.add("type-" + newType);
     var tag = card.querySelector(".statutory-tag");
     if (newType === "statutory" && !tag) {
-      tag = document.createElement("span");
-      tag.className = "statutory-tag";
-      tag.textContent = "Statutory";
+      tag = document.createElement("span"); tag.className = "statutory-tag"; tag.textContent = "Statutory";
       select.insertAdjacentElement("afterend", tag);
-    } else if (newType !== "statutory" && tag) {
-      tag.remove();
-    }
+    } else if (newType !== "statutory" && tag) { tag.remove(); }
     registerActivity(card.dataset.stage, id);
   }
-
   async function deleteTask(btn) {
     var card = cardOf(btn);
     if (!confirm("Delete this task?")) return;
-    var id = card.dataset.taskId;
     var stageEl = stageElOf(card);
-    var r = await api("/api/tasks/" + id + "/delete", {});
+    var r = await api("/api/tasks/" + card.dataset.taskId + "/delete", {});
     if (!r) return;
-    card.remove();
-    recountStage(stageEl);
-    updateUrgentTally();
+    card.remove(); recountStage(stageEl); updateUrgentTally();
   }
-
   async function addTask(form) {
     var stage = Number(form.dataset.stage);
     var titleInput = form.querySelector('input[name="title"]');
@@ -306,18 +289,13 @@
     var r = await api("/api/projects/" + projectId + "/tasks", { stage: stage, title: title, type: type });
     if (!r) return;
     var stageEl = document.getElementById("stage-" + stage);
-    var todo = stageEl.querySelector('.col-cards[data-status="todo"]');
-    todo.insertAdjacentHTML("beforeend", r.html);
-    titleInput.value = "";
-    titleInput.focus();
-    recountStage(stageEl);
-    registerActivity(stage, r.task.id);
+    stageEl.querySelector('.col-cards[data-status="todo"]').insertAdjacentHTML("beforeend", r.html);
+    titleInput.value = ""; titleInput.focus();
+    recountStage(stageEl); registerActivity(stage, r.task.id);
   }
 
-  // ---- filters & titleblock collapse (persisted, client-side) -----------
-  var LS_FILTERS = "arckanban-filters";
-  var LS_COLLAPSE = "arckanban-tb-collapsed";
-
+  // ---- filters & collapse (persisted) ------------------------------------
+  var LS_FILTERS = "arckanban-filters", LS_COLLAPSE = "arckanban-tb-collapsed";
   function applyFilters(state) {
     document.body.classList.toggle("filter-urgent", !!state.urgent);
     document.body.classList.toggle("filter-statutory", !!state.statutory);
@@ -326,27 +304,19 @@
       b.setAttribute("aria-pressed", state[b.dataset.filter] ? "true" : "false");
     });
   }
-  function loadFilters() {
-    try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; }
-  }
+  function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) {
-    var state = loadFilters();
-    state[name] = !state[name];
-    localStorage.setItem(LS_FILTERS, JSON.stringify(state));
-    applyFilters(state);
+    var state = loadFilters(); state[name] = !state[name];
+    localStorage.setItem(LS_FILTERS, JSON.stringify(state)); applyFilters(state);
   }
-
-  function applyCollapse(on) {
-    document.getElementById("titleblock").classList.toggle("is-collapsed", on);
-  }
+  function applyCollapse(on) { document.getElementById("titleblock").classList.toggle("is-collapsed", on); }
 
   // ---- event wiring ------------------------------------------------------
   document.addEventListener("click", function (e) {
     var el = e.target.closest("[data-action], [data-filter]");
     if (!el) return;
     if (el.dataset.filter) { toggleFilter(el.dataset.filter); return; }
-    var action = el.dataset.action;
-    switch (action) {
+    switch (el.dataset.action) {
       case "status-prev": stepStatus(cardOf(el), -1); break;
       case "status-next": stepStatus(cardOf(el), +1); break;
       case "toggle-urgent": toggleUrgent(el); break;
@@ -355,25 +325,18 @@
       case "edit-awaiting": editAwaiting(el); break;
       case "edit-project-number": editProjectField(el, "number"); break;
       case "edit-project-name": editProjectField(el, "name"); break;
-      case "change-type": break; // handled on 'change'
       case "set-current": setCurrentStage(el.dataset.stage); break;
-      case "goto-stage": {
-        var det = document.getElementById("stage-" + el.dataset.stage);
-        if (det) { det.open = true; det.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" }); }
-        break;
-      }
+      case "goto-stage": lastActive = Number(el.dataset.stage); gotoStage(el.dataset.stage); break;
+      case "nav-prev": lastActive = activeStage() - 1; gotoStage(lastActive); break;
+      case "nav-next": lastActive = activeStage() + 1; gotoStage(lastActive); break;
       case "toggle-titleblock": {
         var on = !document.getElementById("titleblock").classList.contains("is-collapsed");
-        applyCollapse(on);
-        localStorage.setItem(LS_COLLAPSE, on ? "1" : "0");
-        break;
+        applyCollapse(on); localStorage.setItem(LS_COLLAPSE, on ? "1" : "0"); break;
       }
       case "nudge-set": setCurrentStage(document.getElementById("nudge").dataset.stage); break;
       case "nudge-dismiss": {
         var s = Number(document.getElementById("nudge").dataset.stage);
-        dismissed[s] = true;
-        document.getElementById("nudge").hidden = true;
-        break;
+        dismissed[s] = true; document.getElementById("nudge").hidden = true; break;
       }
     }
   });
@@ -381,19 +344,22 @@
   document.addEventListener("change", function (e) {
     if (e.target.matches(".type-select")) changeType(e.target);
   });
-
   document.addEventListener("submit", function (e) {
     var form = e.target.closest('[data-action="add-task"]');
     if (form) { e.preventDefault(); addTask(form); }
   });
 
-  // Keyboard activation for role=button display elements.
   document.addEventListener("keydown", function (e) {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    var el = e.target;
-    if (el.matches('.spine-cell, .task-title, .tb-cell, .awaiting-on')) {
-      e.preventDefault();
-      el.click();
+    var t = e.target;
+    if (e.key === "Enter" || e.key === " ") {
+      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on")) { e.preventDefault(); t.click(); }
+      return;
+    }
+    // Left / right flip stages, unless typing in a field.
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      if (t.matches("input, select, textarea, [contenteditable]")) return;
+      lastActive = activeStage() + (e.key === "ArrowRight" ? 1 : -1);
+      gotoStage(lastActive);
     }
   });
 
@@ -401,4 +367,5 @@
   applyFilters(loadFilters());
   applyCollapse(localStorage.getItem(LS_COLLAPSE) === "1");
   updateUrgentTally();
+  gotoStage(currentStage, true);
 })();

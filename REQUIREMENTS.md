@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.2 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.3 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.3):** the board is now a **dark, glassy, floating-frame** UI on deep navy — the drawing-office instrument identity (titleblock, spine, mono register, redline/ochre/sage semantics) rendered in glass. Stages are **paged horizontally** (one stage's four-column Kanban fills the screen; flip with arrows / the spine / a swipe / the ←→ keys) rather than stacked in a vertical accordion. The top **spine carries the RIBA Plan of Work stage colours** (0→7). This reverses the earlier light "paper" palette. Full deltas in §11.
 
 > **Revision note (v0.2 → from v0.1):** un-nesting now returns a child to the **parent's column** (not always To Do); deleting a parent **prompts** (delete children vs explode out); the **Urgent column is removed** and urgency becomes an independent **flag**, leaving four status columns; type is **editable** with a statutory-downgrade warning; the stage spine **no longer sets the current stage on click** (navigation only) — a new **stage-advancement nudge** offers it instead; `position` scope and the migration set are pinned down; the design language (§5) is expanded. Full deltas in §11.
 
@@ -26,7 +28,7 @@ Guiding constraints:
 
 ## 2. Core concept (and one thing it deliberately is *not*)
 
-The board is an **accordion of the eight RIBA stages**. Each stage collapses to a one-line summary with counts, and expands to a **four-column Kanban** (see §3.4) for the tasks in that stage. A horizontal **stage spine** across the top marks where the job currently sits and doubles as navigation.
+The board **pages horizontally through the eight RIBA stages** — one stage's **four-column Kanban** (see §3.4) fills the screen, and you flip between stages with floating arrows, the spine, a swipe, or the ←/→ keys. A horizontal **stage spine** across the top, coloured by the RIBA Plan of Work, marks where the job currently sits and doubles as navigation.
 
 It is **not** a single board where cards are dragged *between* RIBA stages. A Stage 3 task does not become a Stage 4 task — tasks don't migrate across the Plan of Work, so that interaction was rejected as the wrong metaphor. Movement happens *within* a stage, along the status columns. This decision is recorded here so it isn't relitigated.
 
@@ -88,7 +90,7 @@ The eight stages of the RIBA Plan of Work 2020, fixed:
 ### 3.5 Per-stage Kanban
 - Each expanded stage shows the four columns: **Upcoming · To Do · Awaiting · Done**.
 - The collapsed summary shows live counts per status (e.g. *2 upcoming · 3 to do · 2 awaiting · 4 done*) plus a separate **redline urgent tally** (e.g. *· 1 urgent*) when any top-level card is flagged — urgency is orthogonal, so it is counted separately, not inside a status. All counts are **top-level cards only** (children excluded). Zero-count pips may be hidden to keep the summary clean.
-- Stages are **independently collapsible** (not a strict one-open accordion); the **current stage auto-expands** on load.
+- The board **pages horizontally** — one stage at a time fills the screen; on load it opens on the **current stage**. Navigate by the floating ‹ › arrows, the spine, swipe, or ←/→ keys.
 
 ### 3.6 Drag — reorder and re-status
 - **Reorder within a column** by dragging a card up/down; the new order persists (via `position`).
@@ -133,39 +135,38 @@ Quiet toggles in the titleblock that narrow what the whole board shows, for fast
 
 **Home / Register.** New-project form (job no., name, template) above a grid of project cards. Each card: job no. (mono), name, mini spine (progress arc), current-stage label. Inline edit of job no./name.
 
-**Board.** Slim sticky titleblock strip — identity + horizontal stage spine in one collapsible row (§5), the **triage filter toggles** (§3.10), and the stage-advancement nudge surfacing here when triggered → eight stage accordions. Expanded stage: four-column Kanban with draggable cards, the urgent flag, the awaiting-on note on Awaiting cards, nested children, an add-task row, and a "Set as current stage" control. Footer: delete-project (guarded).
+**Board.** Slim sticky **glass** titleblock strip — identity + the RIBA-coloured stage spine in one collapsible row (§5), the **triage filter toggles** (§3.10), the urgent tally, and a guarded delete-project. The stage-advancement nudge floats below it when triggered. Below: a **horizontally-paged** track — one stage's four-column Kanban per screen (floating ‹ › arrows to flip), each with draggable cards, the urgent flag, the awaiting-on note on Awaiting cards, nested children, an add-task row, and a "Set as current stage" control.
 
 ---
 
 ## 5. Design language *(first-class requirement — no compromise)*
 
-The instrument should feel like it belongs on a drawing board, drawn from the practice's own world — the Plan of Work graphic, the drawing titleblock, redline markup, the drafting register. Deliberately **avoid** the current AI-design defaults: no cream-and-serif-with-terracotta, no near-black-with-acid-green, no broadsheet-hairline pastiche.
+The board is a **dark, glassy, floating-frame instrument** — deep navy under an ambient glow, frosted-glass panels and cards, soft floating shadows — fused with the practice's own world (the Plan of Work graphic, the drawing titleblock, redline markup, the drafting register). The instrument identity carries through the dark skin: the titleblock, the RIBA-coloured spine, mono register figures, and the redline / ochre / sage semantics. Refined, not decorative — an instrument, not a toy. *(v0.3 reverses the earlier light "paper" aesthetic.)*
 
-### Palette (named roles, fixed hex)
+### Palette (named tokens)
 
-| Role | Hex | Use |
-|------|-----|-----|
-| Paper | `#F6F5F1` | App canvas — warm drafting off-white |
-| Panel | `#FFFFFF` | Cards, surfaces |
-| Ink | `#16181D` | Primary text — warm graphite |
-| Ink-soft | `#5B5F6B` | Secondary text, captions |
-| Hairline | `#D8D6CD` | Rules, borders (titleblock lines) |
-| Drafting blue | `#2C4A7C` | Accent, current stage, primary actions |
-| Blue tint | `#EAEFF6` | Current-stage backing, nest-zone backing |
-| Redline | `#B23A2E` | **Statutory** type, **Urgent** flag, destructive actions |
-| Redline tint | `#F7E9E6` | Faint urgent/destructive backing |
-| Ochre | `#B8842B` | "Awaiting" column accent |
-| Sage | `#4A7355` | "Done" column accent, roll-up progress |
+| Role | Token | Value | Use |
+|------|-------|-------|-----|
+| Background | `--bg` | `#070A14` | App canvas — deep navy, under an ambient blue/violet glow |
+| Glass | `--glass` | `rgba(255,255,255,.045)` | Frosted panels and cards (with `backdrop-filter` blur) |
+| Glass border | `--glass-border` | `rgba(255,255,255,.10)` | Hairline edges on glass |
+| Ink | `--ink` | `#E9EDF8` | Primary text |
+| Ink-soft | `--ink-soft` | `#98A2BC` | Secondary text, captions |
+| Blue | `--blue` | `#5B8DEF` | Accent, primary actions, focus, active-stage ring |
+| Redline | `--redline` | `#FF6B5C` | **Statutory** type, **Urgent** flag, destructive actions |
+| Ochre | `--ochre` | `#E6AE4D` | "Awaiting" accent |
+| Sage | `--sage` | `#5FB87E` | "Done" accent |
+| RIBA 0–7 | `--riba-0…7` | spectrum | **Stage spine colours** — approximate the RIBA Plan of Work progression; swap for official brand hexes |
 
-Spend boldness in one place (the spine/titleblock); keep everything else quiet. **Contrast:** ochre and sage are *accent/rule* colours, not body-text colours — keep text in Ink / Ink-soft, and verify all text meets WCAG AA against its backing (especially dimmed "Done" titles and any tinted backings).
+Boldness lives in the spine (RIBA colour + glow) and the ambient background; every glass surface stays quiet. **Contrast:** keep text in Ink / Ink-soft; the accent colours are for borders, glows, and small marks, not body text — verify WCAG AA on dark.
 
 ### Column treatment
-Four columns, restrained accents so the board reads calmly and the eye still lands where it should:
+Four floating glass columns; restrained tint so the board reads calmly and the eye still lands where it should:
 
-- **Upcoming** — recessed: faint backing, ink-soft heading; reads as "not yet."
-- **To Do** — neutral panel; the default working column.
-- **Awaiting** — ochre/amber backing; warm "on hold / pending" tone.
-- **Done** — sage backing; settled, titles dimmed, a thin sage check in the card margin.
+- **Upcoming** — recessed: the faintest glass, dimmed heading; reads as "not yet."
+- **To Do** — neutral glass; the default working column.
+- **Awaiting** — an inner ochre glow + ochre heading; warm "on hold / pending" tone.
+- **Done** — an inner sage glow + sage heading; settled, titles dimmed.
 
 (There is no Urgent column — urgency is a flag carried *on* the card, so it shows up wherever the work actually is.)
 
@@ -183,30 +184,29 @@ Two self-hostable, open-source faces (sovereignty — no Google Fonts CDN; ship 
 - **Display / UI / body:** a precise neo-grotesque with a little warmth — **Hanken Grotesk** (or Inter as a safe fallback). Clear scale (e.g. 12 / 14 / 16 / 20 / 28); headings carry weight, body stays calm.
 - **Data / register:** a monospace — **IBM Plex Mono** — for job numbers, stage numbers, counts, and dates. Use **tabular figures** so columns of numbers align like a drafting register. The mono is what gives the drawing-register feel; use it wherever a number is an identifier, not prose.
 
-### Signature — the titleblock strip
-A single slim, **sticky** strip across the top — the titleblock and the stage spine merged into one row, not stacked. **Left:** job number and project name in ruled cells, like the corner block of a drawing sheet. **Right (filling the row):** the eight-cell **stage spine**, mono numerals, the horizontal Plan-of-Work timeline that answers "where am I" at a glance.
+### Signature — the titleblock strip & the RIBA spine
+A single slim, **sticky**, **glass** strip across the top. **Left:** job number and project name in ruled glass cells, like the corner block of a drawing sheet. **Right (filling the row):** the eight-cell **stage spine**, mono numerals, each cell tinted with its **RIBA Plan of Work stage colour** (`--riba-0…7`).
 
-**Spine as ink-over-pencil** — lean into the product name (*the arc of a job traced across the Plan of Work*):
+The spine reads as both progression and navigation:
 
-- **Future** stages: faint "pencil" grey.
-- **Current** stage: filled solid drafting blue.
-- **Past** stages: inked but muted blue, with a thin blue baseline traced beneath — the arc drawn in so far.
+- **Future** stages: dim, a faint RIBA colour-bar beneath the numeral.
+- **Current** stage (the project's "you are here"): the cell **filled in its RIBA colour** with a matching glow.
+- **Active** stage (the one currently on screen): a blue focus ring — deliberately distinct from "current," since you can browse a stage without advancing the job.
 
-When the current stage advances (§3.9), the new cell **inks in** with a short draw-in animation (~250ms, reduced-motion honoured). Each cell may carry a hairline-thin done/total fill so the spine doubles as a progress sparkline; the home-register mini-spine uses the same treatment as a compact "arc."
+Clicking a cell **pages** to that stage (§3.8); it does not set the current stage. The strip is **collapsible**: a chevron drops it to a hairline showing job no. + current stage number **+ the redline urgent tally** (so "what's on fire" survives the collapse). The **triage filter toggles** (§3.10) sit in the strip as quiet controls; an active filter shows a small redline dot, so a filtered board is never mistaken for an empty one.
 
-The strip is **collapsible**: a chevron drops it to a hairline showing only job no. + current stage number **+ the redline urgent tally** (so "what's on fire" survives the collapse), reclaiming nearly all the vertical space; sticky positioning keeps it in view as cards scroll. The **triage filter toggles** (§3.10) live in the strip as quiet mono controls; when a filter is active it shows a small redline dot, so a filtered board is never mistaken for an empty one.
-
-The spine stays **horizontal by design** — 0→7 reads left-to-right as progression, mirroring how the Plan of Work is drawn. *Optional, wide-screen only:* the strip may flip to a vertical left rail (recorded as an alternative, not the default — it competes with the columns for width and forces rotated type).
+### Layout — horizontal stage paging
+One RIBA stage's four-column Kanban **fills the screen**; stages are laid out left→right and **paged** between (0→7 mirrors how the Plan of Work is drawn). Flip with the floating **‹ ›** glass arrows, the spine, a touch **swipe** (CSS scroll-snap), or the **←/→** keys. The board opens on the current stage; columns scroll internally when a stage holds many cards.
 
 ### Nest-here zone
 While a card is dragged over a valid parent, reveal a clearly-bounded **dashed rectangle on blue tint** labelled *"nest here"* — dashed like a drawing's area-of-work hatch, obviously a drop target and obviously distinct from the between-card insertion line. The zone fades in only during an over-card drag.
 
 ### Spatial & motion
-- 8px baseline grid; generous, disciplined whitespace; hairline rules echoing titleblock divisions; max content width ~1100px.
-- Motion is restrained and purposeful: accordion expand ~180ms ease; card lift on drag; the "nest here" zone and the spine ink-in fade/draw only when relevant. **Respect `prefers-reduced-motion`** (no draw-in, instant state).
+- 8px baseline grid; generous, disciplined whitespace; the board runs **full-bleed** (the home register stays ~1100px). Frosted-glass panels (`backdrop-filter` blur) over the ambient glow give the floating depth.
+- Motion is restrained and purposeful: smooth **stage paging** (scroll-snap); card lift on drag; cards / columns / nudge ease in; the "nest here" zone fades only during an over-card drag. **Respect `prefers-reduced-motion`** (instant paging, no transitions).
 
 ### Quality floor (non-negotiable)
-Responsive to mobile (the four columns stack to one column; ‹ › steppers and the promote control become the primary movement path on touch); visible **drafting-blue keyboard focus** on every control; every movement reachable without drag (status via ‹ ›, nesting/promote via controls); empty states that direct rather than decorate — per column (*"nothing here"*, faint dashed), per empty stage (*"No tasks in this stage — add one below"*), and the home register (*"No projects yet — create one to lay out its RIBA stages"*).
+Responsive to mobile (within a stage the four columns stack to one and scroll vertically; stages flip by **swipe**; ‹ › steppers and the promote control are the primary movement path on touch); visible **drafting-blue keyboard focus** on every control; every movement reachable without drag (status via ‹ ›, nesting/promote via controls); empty states that direct rather than decorate — per column (*"nothing here"*, faint dashed), per empty stage (*"No tasks in this stage — add one below"*), and the home register (*"No projects yet — create one to lay out its RIBA stages"*).
 
 ---
 
@@ -273,7 +273,7 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 **Phase 3 — Nesting.** Add `parent_id`. Drop-onto-card nests (single level); children render as an indented checklist with done toggle and promote; nest-here zone on hover; counts exclude children; promote returns the child to the **parent's column**; delete-parent **prompts** (delete vs explode).
 *Acceptance:* drag A onto B → A becomes B's child; reload preserves it; promote returns A to a top-level card in **B's column** (B's status); deleting B offers delete-children vs explode-out; B's column count is unaffected by A.
 
-**Phase 4 — Design pass.** Implement §5 in full: titleblock header, ink-over-pencil spine, vendored Hanken Grotesk + IBM Plex Mono, palette tokens, four-column treatment, urgent/statutory card treatment, nest-zone styling, motion, reduced-motion, mobile stacking, focus states, empty states.
+**Phase 4 — Design pass.** Implement §5 in full: dark glass theme + tokens, titleblock + RIBA-coloured spine, horizontal stage paging, vendored Hanken Grotesk + IBM Plex Mono, four-column glass treatment, urgent/statutory card treatment, nest-zone styling, motion, reduced-motion, mobile swipe/stacking, focus states, empty states.
 *Acceptance:* matches the design language on desktop and mobile; operable without drag; reduced-motion honoured; AA contrast.
 
 **Phase 5 — Template library.** Author further templates (New Build, Loft Conversion, Garage Conversion, Listed/Conservation) as JSON. Optionally a simple in-app "save current project as template" (with a name/overwrite rule).
@@ -314,6 +314,12 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 10. **Design language expanded** (§5): ink-over-pencil spine, statutory tag + urgent corner-flag, nest-zone styling, child leader-line + roll-up, tabular figures, contrast guidance, empty states. Speculative ideas moved to **Appendix C**.
 11. **Naming** standardised to *ArcKanban* (DB `arckanban.db`); statutory terminology spelled out (Building Regulations Principal Designer). **Repository-state** note added.
 12. **Two design proposals promoted** into the spec — **triage filters** (§3.10) and the **awaiting-on** chase-note (§3.4 / §5 / new `tasks.awaiting_on` column).
+
+### v0.2 → v0.3 (design pivot)
+13. **Dark glass theme** — deep-navy canvas under an ambient glow, frosted-glass floating panels and cards; replaces the light "paper" palette. New token set (§5). *(Data model and API are unchanged.)*
+14. **Horizontal stage paging** — one stage's Kanban fills the screen, flipped by floating arrows / spine / swipe / ←→ keys; replaces the vertical accordion.
+15. **RIBA stage colours** on the spine (`--riba-0…7`) — approximate spectrum pending official brand hexes.
+16. **Active vs current stage** are now distinct on the spine: a blue focus ring marks the stage you're *viewing*, a filled RIBA-colour glow marks the project's *current* stage.
 
 ---
 
