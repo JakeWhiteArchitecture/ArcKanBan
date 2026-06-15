@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.6 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.7 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.7):** stable external **`uid`s** (UUIDs) on projects/sections/tasks — the foundation for the share loop and `.md` linking (avoids integer-id collision/reuse across databases & backups); **per-project RIBA-stage scope** so stages outside the appointment can be disabled (greyed in the spine, skipped in paging); and **Phase 7 — Share & collaborate** specified (`.eml` export/import + role-scoped viewer). Full deltas in §11.
 
 > **Revision note (v0.6):** adds an **activity log** — a persisted `events` table rendered as a right-hand **narrative drawer** (person → action → task/section, with date & time; e.g. *“JW completed ‘Measured survey’ · 15 Jun 2026 · 14:32”*), structured for future local `.md` export; **undo** of the last action via right-click on empty space; and a fix so the drag **slide (FLIP) animation** runs reliably. Full deltas in §11.
 
@@ -52,6 +54,7 @@ Templates do the structural work: a template is a set of stages each with a stan
 - A project records its **current RIBA stage** (the "you are here" pointer).
 - Projects are listed on the home register, **newest first** (`ORDER BY id DESC` — avoids relying on text-date sorting), each showing job no., name, a mini stage spine, and current stage.
 - Delete a project (with confirmation) removes it and all its tasks. Deletion is performed by an **explicit cascade in the route** (and `PRAGMA foreign_keys = ON` per connection), so it cannot silently no-op — SQLite does not enforce foreign keys by default.
+- A project has an **appointment scope** — the subset of RIBA stages it covers. Out-of-scope stages are **disabled**: greyed in the spine, skipped by paging, and shown as an "outside the appointment scope" placeholder (their tasks are retained, just hidden, until re-enabled). The **current stage always stays in scope**. Default: all eight. Edited via a **Scope** popover (`projects.stages` — CSV of enabled indices; NULL = all).
 
 ### 3.2 Templates
 - Templates are plain **JSON files** in `templates_lib/`, discovered automatically and offered in the new-project picker.
@@ -241,15 +244,18 @@ Responsive to mobile (within a stage the four columns stack to one and scroll ve
 ```
 projects(
   id            INTEGER PK,
+  uid           TEXT UNIQUE,                   -- stable external id (UUID; share loop + .md links)
   number        TEXT,
   name          TEXT NOT NULL,
   template      TEXT,
   current_stage INTEGER NOT NULL DEFAULT 0,
+  stages        TEXT,                          -- appointment scope: CSV of enabled stages; NULL = all
   created_at    TEXT NOT NULL                  -- ISO-8601; ordering uses id DESC
 )
 
 sections(                                      -- "sections of work" (optional grouping)
   id         INTEGER PK,
+  uid        TEXT UNIQUE,                      -- stable external id (UUID)
   project_id INTEGER NOT NULL  -> projects.id (cascade delete),
   stage      INTEGER NOT NULL,                 -- 0..7 (a section lives in one stage)
   title      TEXT NOT NULL,
@@ -258,6 +264,7 @@ sections(                                      -- "sections of work" (optional g
 
 tasks(
   id          INTEGER PK,
+  uid         TEXT UNIQUE,                     -- stable external id (UUID); used by the share/merge loop
   project_id  INTEGER NOT NULL  -> projects.id (cascade delete),
   stage       INTEGER NOT NULL,                -- 0..7
   title       TEXT NOT NULL,
@@ -295,7 +302,7 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 5. the **status value set** changes to `upcoming | todo | awaiting | done` — any existing `'urgent'` status rows are migrated to `status='todo', urgent=1`;
 6. the **`sections`** table + **`tasks.section_id`** (`ON DELETE SET NULL` → orphaned tasks fall back to the loose 'General' lane).
 
-(This corrects the v0.1 doc's claim that `parent_id` was the only schema change.) Enable `PRAGMA foreign_keys = ON` per connection; perform project/parent deletes explicitly in the route regardless.
+(This corrects the v0.1 doc's claim that `parent_id` was the only schema change.) Enable `PRAGMA foreign_keys = ON` per connection; perform project/parent deletes explicitly in the route regardless. Stable **`uid`s** are additive columns **auto-filled by `AFTER INSERT` triggers** (and backfilled once for existing rows, with unique indexes); **`projects.stages`** is additive (NULL ⇒ all stages in scope).
 
 ---
 
@@ -326,6 +333,13 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 
 **Phase 6 — Sections of work + drag *(done)*.** Add the `sections` table + `tasks.section_id`. Render glass swimlanes within a stage (a 'General' lane for loose tasks); create / rename / delete a section (delete orphans its tasks to General). Native drag of tasks across the **section × status grid within a stage**, persisting `status` / `section_id` / `position`; ‹ › steppers remain the fallback. Templates may declare a `section` per task.
 *Acceptance:* template imports sections and assigns tasks; drag a card to another lane or column → survives reload; deleting a section moves its tasks to General (none lost); drag never crosses stages.
+
+**Phase 7 — Share & collaborate *(spec; v2)*.** Send a project to a client/consultant and merge their changes back, staying local and sovereign.
+- **Export** a project as **JSON**, wrapped in a generated **`.eml`** (written to disk — no SMTP, no hosting, no external call), carrying a **self-contained, role-scoped viewer** (the JSON embedded in a single HTML file): a **client** viewer permits only **Awaiting → Done** (sign-off); a **consultant** viewer permits **any status on tasks assigned to them** (new `tasks.assignee`).
+- The viewer emits a **changeset** back, also as an `.eml`, addressed to the practitioner — so both ends just open-and-send.
+- **Import** matches by **`uid`** (within the named project, with provenance: source project uid + exported-at + schema version), is **idempotent** (already-applied = no-op, so prior edits aren't clobbered), opens a **review list** of incoming changes (**Apply all / Cancel**; per-item later), **validates strictly** (only permitted transitions on known uids), and logs each accepted change as an **event** ("Client completed X").
+- Model additions: `tasks.assignee`, viewer **roles** (client / consultant). Built on the v0.7 `uid`s.
+*Acceptance:* export produces an `.eml` whose viewer enforces its role; a returned changeset imports by uid with a review gate; re-importing the same changeset is a no-op; unknown/stale uids are surfaced, not misapplied.
 
 ---
 
@@ -390,6 +404,11 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 29. **Activity log** — persisted `events` table + a right-hand **narrative drawer** ("JW completed “X” · date · time"): person → action → task/section. Logged across the meaningful mutations; structured for future `.md` export. New endpoint `POST /api/projects/<id>/tasks/restore` (used by undo).
 30. **Undo** — right-click empty space → Actions → **Undo {last action}** (move, urgent, type, add, delete-via-restore, section reassignment, bulk section move). Reverts the most recent action; multi-level later.
 31. **FLIP reorder fix** — the slide animation now freezes in-flight transforms before measuring, so it runs every time instead of occasionally snapping into place.
+
+### v0.6 → v0.7 (stable ids, appointment scope, Phase 7 spec)
+32. **Stable `uid`s** (UUIDs via `AFTER INSERT` triggers) on projects / sections / tasks, with unique indexes and a one-time backfill — foundation for the share loop and `.md` linking, immune to integer-id reuse/collision across DBs and backups. `task_to_dict` carries `uid`.
+33. **Appointment scope** — `projects.stages` (CSV; NULL = all). Out-of-scope RIBA stages are greyed in the spine, skipped in paging, and shown as an "outside scope" placeholder; edited via the **Scope** popover; the current stage stays in scope (`POST /api/projects/<id>/stages`).
+34. **Phase 7 — Share & collaborate** specified (§8): `.eml` export/import, client/consultant viewer roles (`tasks.assignee`), `uid`-based idempotent merge behind a review gate.
 
 ---
 

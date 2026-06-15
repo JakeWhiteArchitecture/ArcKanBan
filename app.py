@@ -154,6 +154,27 @@ def init_db():
     _ensure_column(db, "tasks", "position", "position INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "tasks", "section_id", "section_id INTEGER REFERENCES sections(id)")
     _ensure_column(db, "tasks", "parent_id", "parent_id INTEGER REFERENCES tasks(id)")
+    # Stable external UUIDs (for the future share loop + .md linking) and the
+    # per-project RIBA-stage scope (which stages are in the appointment).
+    _ensure_column(db, "projects", "uid", "uid TEXT")
+    _ensure_column(db, "sections", "uid", "uid TEXT")
+    _ensure_column(db, "tasks", "uid", "uid TEXT")
+    _ensure_column(db, "projects", "stages", "stages TEXT")  # CSV of enabled stage indices; NULL = all
+    for tbl in ("projects", "sections", "tasks"):
+        db.execute("UPDATE %s SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL OR uid = ''" % tbl)
+    db.executescript(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_uid ON projects(uid);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sections_uid ON sections(uid);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_uid ON tasks(uid);
+        CREATE TRIGGER IF NOT EXISTS projects_uid AFTER INSERT ON projects WHEN NEW.uid IS NULL
+          BEGIN UPDATE projects SET uid = lower(hex(randomblob(16))) WHERE id = NEW.id; END;
+        CREATE TRIGGER IF NOT EXISTS sections_uid AFTER INSERT ON sections WHEN NEW.uid IS NULL
+          BEGIN UPDATE sections SET uid = lower(hex(randomblob(16))) WHERE id = NEW.id; END;
+        CREATE TRIGGER IF NOT EXISTS tasks_uid AFTER INSERT ON tasks WHEN NEW.uid IS NULL
+          BEGIN UPDATE tasks SET uid = lower(hex(randomblob(16))) WHERE id = NEW.id; END;
+        """
+    )
     # Old 'urgent' status rows (if any) become To Do + the urgent flag.
     db.execute("UPDATE tasks SET status='todo', urgent=1 WHERE status='urgent'")
     db.commit()
@@ -284,6 +305,7 @@ def next_position(db, project_id, stage, status, section_id, parent_id=None):
 def task_to_dict(row):
     return {
         "id": row["id"],
+        "uid": row["uid"],
         "stage": row["stage"],
         "title": row["title"],
         "status": row["status"],
@@ -305,6 +327,18 @@ def section_in_stage(db, section_id, project_id, stage):
         (section_id, project_id, stage),
     ).fetchone()
     return row is not None
+
+
+def enabled_stages(project_row):
+    """Set of RIBA stages in the project's appointment scope (NULL/empty = all)."""
+    raw = project_row["stages"] if "stages" in project_row.keys() else None
+    if not raw:
+        return set(range(8))
+    try:
+        out = {int(x) for x in raw.split(",") if x.strip() != ""}
+    except ValueError:
+        return set(range(8))
+    return out or set(range(8))
 
 
 def get_project_or_404(db, project_id):
@@ -507,6 +541,10 @@ def board(project_id):
     layout = request.args.get("layout") or request.cookies.get("layout") or "swimlane"
     if layout not in ("swimlane", "grouped"):
         layout = "swimlane"
+    en = enabled_stages(p)
+    stages = build_stages(db, project_id)
+    for s in stages:
+        s["enabled"] = s["idx"] in en
     ev_rows = db.execute(
         "SELECT * FROM events WHERE project_id=? ORDER BY id DESC LIMIT 200", (project_id,)
     ).fetchall()
@@ -518,12 +556,14 @@ def board(project_id):
             "name": p["name"],
             "current_stage": p["current_stage"],
         },
-        stages=build_stages(db, project_id),
+        stages=stages,
         status_labels=STATUS_LABELS,
         type_labels=TYPE_LABELS,
         statuses=STATUSES,
         layout=layout,
         events=[format_event(e) for e in ev_rows],
+        enabled=sorted(en),
+        riba=RIBA_STAGES,
     ))
     if request.args.get("layout") in ("swimlane", "grouped"):
         resp.set_cookie("layout", layout, max_age=31536000, samesite="Lax")
@@ -583,6 +623,30 @@ def api_set_current_stage(project_id):
     ev = log_event(db, project_id, "set current stage", None, "to %d · %s" % (stage, RIBA_STAGES[stage]))
     db.commit()
     return jsonify(ok=True, current_stage=stage, event=ev)
+
+
+@app.route("/api/projects/<int:project_id>/stages", methods=["POST"])
+def api_set_stages(project_id):
+    """Set the project's RIBA-stage scope (which stages are in the appointment)."""
+    db = get_db()
+    p = get_project_or_404(db, project_id)
+    data = request.get_json(silent=True) or {}
+    raw = data.get("stages")
+    if not isinstance(raw, list):
+        return jsonify(ok=False, error="Invalid scope."), 400
+    try:
+        stages = sorted({int(x) for x in raw if 0 <= int(x) <= 7})
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="Invalid scope."), 400
+    if not stages:
+        return jsonify(ok=False, error="At least one stage must stay in scope."), 400
+    if p["current_stage"] not in stages:
+        return jsonify(ok=False, error="The current stage must stay in scope."), 400
+    db.execute("UPDATE projects SET stages=? WHERE id=?",
+               (",".join(str(s) for s in stages), project_id))
+    ev = log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages))
+    db.commit()
+    return jsonify(ok=True, stages=stages, event=ev)
 
 
 @app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])

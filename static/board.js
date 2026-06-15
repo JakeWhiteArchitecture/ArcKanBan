@@ -24,6 +24,9 @@
   var currentStage = Number(board.dataset.currentStage);
   var LAYOUT = board.dataset.layout || "swimlane";
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var enabledStages = (board.dataset.stages || "0,1,2,3,4,5,6,7").split(",").map(Number);
+  function isEnabled(n) { return enabledStages.indexOf(Number(n)) >= 0; }
+  function nextEnabled(from, dir) { for (var i = Number(from) + dir; i >= 0 && i <= 7; i += dir) if (isEnabled(i)) return i; return null; }
 
   var activity = {}, dismissed = {};
 
@@ -74,8 +77,8 @@
       c.classList.toggle("is-active", i === n);
     });
     var prev = document.querySelector(".nav-arrow.prev"), next = document.querySelector(".nav-arrow.next");
-    if (prev) prev.disabled = n <= 0;
-    if (next) next.disabled = n >= 7;
+    if (prev) prev.disabled = nextEnabled(n, -1) === null;
+    if (next) next.disabled = nextEnabled(n, +1) === null;
   }
   function gotoStage(n, instant) {
     n = Math.max(0, Math.min(7, Number(n)));
@@ -564,6 +567,12 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   function applyCollapse(on) { document.getElementById("titleblock").classList.toggle("is-collapsed", on); }
+  function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
+  function applyScope() {
+    var set = [];
+    document.querySelectorAll('#scope-pop input[type="checkbox"]').forEach(function (b) { if (b.checked) set.push(Number(b.value)); });
+    saveScope(set);
+  }
   function laneKey(l) { return l.dataset.section ? "s" + l.dataset.section : "g" + l.dataset.stage; }
   function loadLanes() { try { return JSON.parse(localStorage.getItem(LS_LANES)) || {}; } catch (e) { return {}; } }
   function persistLanes() { var s = {}; document.querySelectorAll(".section-lane.is-collapsed").forEach(function (l) { s[laneKey(l)] = 1; }); localStorage.setItem(LS_LANES, JSON.stringify(s)); }
@@ -734,9 +743,12 @@
         case "delete-section": deleteSection(el); break;
         case "toggle-lane": toggleLane(el); break;
         case "set-current": setCurrentStage(el.dataset.stage); break;
-        case "goto-stage": lastActive = Number(el.dataset.stage); gotoStage(el.dataset.stage); break;
-        case "nav-prev": lastActive = activeStage() - 1; gotoStage(lastActive); break;
-        case "nav-next": lastActive = activeStage() + 1; gotoStage(lastActive); break;
+        case "goto-stage": { var gs = Number(el.dataset.stage); if (isEnabled(gs)) { lastActive = gs; gotoStage(gs); } break; }
+        case "nav-prev": { var pe = nextEnabled(activeStage(), -1); if (pe != null) { lastActive = pe; gotoStage(pe); } break; }
+        case "nav-next": { var ne = nextEnabled(activeStage(), +1); if (ne != null) { lastActive = ne; gotoStage(ne); } break; }
+        case "toggle-scope": { var sp = document.getElementById("scope-pop"); sp.hidden = !sp.hidden; break; }
+        case "apply-scope": applyScope(); break;
+        case "enable-stage": { var set = enabledStages.slice(); var es = Number(el.dataset.stage); if (set.indexOf(es) < 0) set.push(es); saveScope(set); break; }
         case "toggle-titleblock": {
           var on = !document.getElementById("titleblock").classList.contains("is-collapsed");
           applyCollapse(on); localStorage.setItem(LS_COLLAPSE, on ? "1" : "0"); break;
@@ -763,7 +775,11 @@
     if (e.target.closest("input, textarea, select")) return;   // keep the native menu on fields
     e.preventDefault(); openActionsMenu(e.clientX, e.clientY);
   });
-  document.addEventListener("click", function (e) { if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu(); });
+  document.addEventListener("click", function (e) {
+    if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu();
+    var sp = document.getElementById("scope-pop");
+    if (sp && !sp.hidden && !e.target.closest("#scope-pop") && !e.target.closest('[data-action="toggle-scope"]')) sp.hidden = true;
+  });
   track.addEventListener("scroll", closeMenu);
   document.addEventListener("submit", function (e) {
     var add = e.target.closest('[data-action="add-task"]'); if (add) { e.preventDefault(); addTask(add); return; }
@@ -778,7 +794,8 @@
     if (e.key === "Escape") { closeMenu(); clearSelection(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
-      lastActive = activeStage() + (e.key === "ArrowRight" ? 1 : -1); gotoStage(lastActive);
+      var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);
+      if (te != null) { lastActive = te; gotoStage(te); }
     }
   });
 
@@ -788,5 +805,6 @@
   applyLanes();
   updateUrgentTally();
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
-  gotoStage(saved != null && saved !== "" ? Number(saved) : currentStage, true);
+  var startN = (saved != null && saved !== "" && isEnabled(Number(saved))) ? Number(saved) : currentStage;
+  gotoStage(startN, true);
 })();

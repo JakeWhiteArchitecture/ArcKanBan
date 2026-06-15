@@ -478,6 +478,29 @@ body.hide-done .columns { grid-template-columns: repeat(3, 1fr); }
 .log-empty { padding: 16px 10px; color: var(--ink-dim); font-style: italic; font-size: 0.85rem; }
 @media (prefers-reduced-motion: reduce) { .log-drawer { transition: none; } }
 
+/* ---- Appointment scope (disable RIBA stages) -------------------------- */
+.scope-btn { align-self: center; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-soft); border-radius: var(--radius-sm); padding: 5px 11px; font-size: 0.78rem; cursor: pointer; }
+.scope-btn:hover { color: var(--ink); border-color: var(--glass-bright); }
+.titleblock.is-collapsed .scope-btn { display: none; }
+.spine-cell.is-disabled { opacity: 0.34; filter: grayscale(0.7); cursor: not-allowed; }
+
+.scope-pop { position: fixed; top: calc(var(--tb-h) + 6px); right: 16px; z-index: 70; width: 300px; padding: 12px;
+  background: var(--glass-deep); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-bright); border-radius: var(--radius); box-shadow: var(--shadow-lift);
+  display: flex; flex-direction: column; gap: 2px; }
+.scope-pop[hidden] { display: none; }
+.scope-head { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); margin-bottom: 6px; }
+.scope-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; font-size: 0.86rem; cursor: pointer; }
+.scope-row:hover { background: var(--glass); }
+.scope-row input { accent-color: var(--blue); }
+.scope-num { font-family: var(--font-mono); color: var(--ink-soft); width: 1.2em; text-align: center; }
+.scope-pop .btn { margin-top: 8px; }
+
+.stage-disabled { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--ink-dim); text-align: center; }
+.stage-disabled .stage-num { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--radius-sm); color: #07101f; opacity: 0.5; background: var(--c); }
+.stage-disabled .stage-name { color: var(--ink-soft); font-size: 1.1rem; }
+.stage-off-note { margin: 0; font-style: italic; }
+
 /* ====================================================================== */
 /*  RESPONSIVE                                                             */
 /* ====================================================================== */

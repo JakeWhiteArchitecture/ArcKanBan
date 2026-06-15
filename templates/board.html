@@ -18,7 +18,7 @@
   <ol class="spine" aria-label="RIBA Plan of Work — click a stage to view it">
     {% for i in range(8) %}
       {% set state = 'current' if i == project.current_stage else ('past' if i < project.current_stage else 'future') %}
-      <li class="spine-cell is-{{ state }}" style="--c: var(--riba-{{ i }})"
+      <li class="spine-cell is-{{ state }}{% if i not in enabled %} is-disabled{% endif %}" style="--c: var(--riba-{{ i }})"
           data-action="goto-stage" data-stage="{{ i }}" role="button" tabindex="0" title="Stage {{ i }}">
         <span class="spine-num">{{ i }}</span>
       </li>
@@ -29,6 +29,8 @@
     <a class="lt-opt{{ ' on' if layout == 'swimlane' else '' }}" href="{{ url_for('board', project_id=project.id, layout='swimlane') }}">Sections</a>
     <a class="lt-opt{{ ' on' if layout == 'grouped' else '' }}" href="{{ url_for('board', project_id=project.id, layout='grouped') }}">Status</a>
   </div>
+
+  <button type="button" class="scope-btn" data-action="toggle-scope" title="Appointment scope (RIBA stages)">Scope</button>
 
   <div class="tb-filters" role="group" aria-label="Triage filters">
     <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
@@ -51,6 +53,18 @@
   </div>
 </header>
 
+<div class="scope-pop" id="scope-pop" hidden aria-label="Appointment scope">
+  <div class="scope-head">Appointment scope — RIBA stages</div>
+  {% for i in range(8) %}
+    <label class="scope-row">
+      <input type="checkbox" value="{{ i }}" {% if i in enabled %}checked{% endif %}
+             {% if i == project.current_stage %}disabled title="The current stage stays in scope"{% endif %}>
+      <span class="scope-num">{{ i }}</span> {{ riba[i] }}
+    </label>
+  {% endfor %}
+  <button type="button" class="btn btn-primary btn-sm" data-action="apply-scope">Apply scope</button>
+</div>
+
 <div class="nudge" id="nudge" hidden role="status">
   <span class="nudge-text"></span>
   <span class="nudge-actions">
@@ -59,13 +73,14 @@
   </span>
 </div>
 
-<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}">
+<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
   <button type="button" class="nav-arrow prev" data-action="nav-prev" aria-label="Previous stage">‹</button>
   <button type="button" class="nav-arrow next" data-action="nav-next" aria-label="Next stage">›</button>
 
   <div class="stage-track" id="stage-track">
     {% for s in stages %}
-      <section class="stage-slide stage" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">
+      <section class="stage-slide stage{% if not s.enabled %} stage-off{% endif %}" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">
+        {% if s.enabled %}
         <div class="slide-head">
           <span class="stage-num" style="--c: var(--riba-{{ s.idx }})">{{ s.idx }}</span>
           <h2 class="stage-name">{{ s.name }}</h2>
@@ -90,6 +105,14 @@
             <input type="text" name="title" placeholder="+ New section of work…" autocomplete="off">
             <button type="submit" class="btn-quiet">Add section</button>
           </form>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="stage-disabled">
+          <span class="stage-num" style="--c: var(--riba-{{ s.idx }})">{{ s.idx }}</span>
+          <h2 class="stage-name">{{ s.name }}</h2>
+          <p class="stage-off-note">Outside the appointment scope.</p>
+          <button type="button" class="btn-quiet" data-action="enable-stage" data-stage="{{ s.idx }}">Add to scope</button>
         </div>
         {% endif %}
       </section>
