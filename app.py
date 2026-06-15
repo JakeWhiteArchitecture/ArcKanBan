@@ -537,10 +537,7 @@ def create_project():
 def board(project_id):
     db = get_db()
     p = get_project_or_404(db, project_id)
-    # Layout: 'swimlane' (section bands) or 'grouped' (status columns + bubbles).
-    layout = request.args.get("layout") or request.cookies.get("layout") or "swimlane"
-    if layout not in ("swimlane", "grouped"):
-        layout = "swimlane"
+    layout = "grouped"  # status-primary is the only layout
     en = enabled_stages(p)
     stages = build_stages(db, project_id)
     for s in stages:
@@ -565,8 +562,6 @@ def board(project_id):
         enabled=sorted(en),
         riba=RIBA_STAGES,
     ))
-    if request.args.get("layout") in ("swimlane", "grouped"):
-        resp.set_cookie("layout", layout, max_age=31536000, samesite="Lax")
     return resp
 
 

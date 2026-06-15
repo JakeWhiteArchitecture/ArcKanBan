@@ -79,6 +79,9 @@
     var prev = document.querySelector(".nav-arrow.prev"), next = document.querySelector(".nav-arrow.next");
     if (prev) prev.disabled = nextEnabled(n, -1) === null;
     if (next) next.disabled = nextEnabled(n, +1) === null;
+    var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[n];
+    var star = document.querySelector(".tb-star");
+    if (star) { var cur = n === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
   }
   function gotoStage(n, instant) {
     n = Math.max(0, Math.min(7, Number(n)));
@@ -195,15 +198,9 @@
       cell.classList.add(i < n ? "is-past" : (i === n ? "is-current" : "is-future"));
     });
     var csn = document.querySelector(".compact-stage-num"); if (csn) csn.textContent = n;
-    document.querySelectorAll(".here-tag").forEach(function (t) { t.remove(); });
-    var nameEl = document.querySelector("#stage-" + n + " .slide-head .stage-name");
-    if (nameEl) { var tag = document.createElement("span"); tag.className = "here-tag"; tag.textContent = "you are here"; nameEl.insertAdjacentElement("afterend", tag); }
-    document.querySelectorAll(".stage-slide").forEach(function (st) {
-      var idx = Number(st.dataset.stage);
-      var btn = st.querySelector(".set-current"); var badge = st.querySelector(".current-badge");
-      if (btn) btn.hidden = idx === n; if (badge) badge.hidden = idx !== n;
-    });
-    document.getElementById("nudge").hidden = true; gotoStage(n); evaluateNudge();
+    document.getElementById("nudge").hidden = true;
+    gotoStage(n);      // also refreshes the focused-stage name + star via updateNav
+    evaluateNudge();
   }
 
   // ---- inline editing ----------------------------------------------------
@@ -744,6 +741,7 @@
         case "delete-section": deleteSection(el); break;
         case "toggle-lane": toggleLane(el); break;
         case "set-current": setCurrentStage(el.dataset.stage); break;
+        case "star-current": setCurrentStage(activeStage()); break;
         case "goto-stage": { var gs = Number(el.dataset.stage); if (isEnabled(gs)) { lastActive = gs; gotoStage(gs); } break; }
         case "nav-prev": { var pe = nextEnabled(activeStage(), -1); if (pe != null) { lastActive = pe; gotoStage(pe); } break; }
         case "nav-next": { var ne = nextEnabled(activeStage(), +1); if (ne != null) { lastActive = ne; gotoStage(ne); } break; }

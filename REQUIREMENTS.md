@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.7 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.8 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.8):** the board is now **Status‑only** (the Sections/Status toggle is removed; the swimlane layout is retired from the UI). The **RIBA spine is centred on the page** with the **focused stage's name beneath it**, and a **star** to its right marks and sets the current stage (filled = current; click to set) — replacing the "you are here" tag and "Current stage" badge. **Hide‑done** now hides done *cards* but keeps the Done **column** as a drop target. Full deltas in §11.
 
 > **Revision note (v0.7):** stable external **`uid`s** (UUIDs) on projects/sections/tasks — the foundation for the share loop and `.md` linking (avoids integer-id collision/reuse across databases & backups); **per-project RIBA-stage scope** so stages outside the appointment can be disabled (greyed in the spine, skipped in paging); and **Phase 7 — Share & collaborate** specified (`.eml` export/import + role-scoped viewer). Full deltas in §11.
 
@@ -150,9 +152,7 @@ An optional grouping between a stage and its tasks: **Stage → Section → Task
 - Drag (§3.6) moves a task between lanes (sets `section_id`); add-task is per-lane.
 - Stage count pips (§3.5) and the urgent tally count **all top-level tasks in the stage**, across every lane.
 
-**Two layouts, one toggle.** The titleblock toggles how sections are shown (the choice is remembered):
-- **Sections** (swimlanes) — section-primary: each section a glass band with the four columns running through it. Best for working a section as a unit.
-- **Status** (grouped) — status-primary: four full-height columns, cards grouped into section **bubbles** (+ a loose area). Best for triage. Here **clicking a card links its section across columns** (highlights its bubbles, dims the rest); **dragging a card to another column changes status and auto-regroups it into its section's bubble** (never loose); a task's **section** is reassigned by selecting it and clicking a chip in the section bar — a status-drag never changes section. **Drag a section by its bubble header** to bulk-move all its tasks to another status (they glue onto that section's tasks already there).
+**Layout — Status (status-primary).** *(v0.8: this is now the single layout; the earlier "Sections" swimlane was retired from the UI, code dormant.)* Four full-height columns, cards grouped into section **bubbles** (+ a loose area). **Clicking a card links its section across columns** (highlights its bubbles, dims the rest); **dragging a card to another column changes status and auto-regroups it into its section's bubble** (never loose); a task's **section** is reassigned via the chip bar or right-click — a status-drag never changes section. **Drag a section by its bubble header** to bulk-move all its tasks to another status (they glue onto that section's tasks already there). **Hide-done** hides done cards but keeps the Done column as a drop target.
 
 ### 3.12 Activity log & undo
 - Every meaningful change is recorded as an **event** (person → action → task/section) in an `events` table and shown in a **narrative drawer** — a right-hand pop-out ("Log" in the titleblock): *"JW completed “Measured survey” · 15 Jun 2026 · 14:32"*. Logged on add / move / complete / urgent / type / section-assign / section create-rename-delete / bulk section move / set-current-stage / delete / restore. Events are **structured** (actor, verb, target, detail, timestamp) so they can feed local `.md` files later. Actor is single-user for now (`ARCKANBAN_ACTOR`, default "JW").
@@ -409,6 +409,11 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 32. **Stable `uid`s** (UUIDs via `AFTER INSERT` triggers) on projects / sections / tasks, with unique indexes and a one-time backfill — foundation for the share loop and `.md` linking, immune to integer-id reuse/collision across DBs and backups. `task_to_dict` carries `uid`.
 33. **Appointment scope** — `projects.stages` (CSV; NULL = all). Out-of-scope RIBA stages are greyed in the spine, skipped in paging, and shown as an "outside scope" placeholder; edited via the **Scope** popover; the current stage stays in scope (`POST /api/projects/<id>/stages`).
 34. **Phase 7 — Share & collaborate** specified (§8): `.eml` export/import, client/consultant viewer roles (`tasks.assignee`), `uid`-based idempotent merge behind a review gate.
+
+### v0.7 → v0.8 (Status-only board, centred spine + star)
+35. **Status-only** — the Sections/Status toggle is removed; the server always renders the Status (grouped) layout (swimlane code dormant).
+36. **Centred RIBA spine** on the page, with the **focused stage's name** beneath it and a **star** to its right: filled when the focused stage is the current stage, click to set it. Replaces the "you are here" tag, the "Current stage" badge, and the per-slide "Set as current stage" button.
+37. **Hide-done fix** — hides done cards/bubbles but keeps the Done column as a drop target so tasks can still be completed.
 
 ---
 
