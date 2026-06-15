@@ -1,0 +1,53 @@
+{# Grouped (status-primary) layout: 4 columns, each grouping cards into
+   section "bubbles" + a loose area. Click a card to link its section across
+   columns; drag changes status and auto-regroups into the section bubble. #}
+<div class="grouped" data-stage="{{ s.idx }}">
+  <div class="section-bar" data-stage="{{ s.idx }}">
+    <span class="section-bar-label">Sections</span>
+    <span class="sec-chip sec-chip-general" data-section="" data-pos="-1" title="Loose tasks">
+      <span class="sec-chip-name">General</span>
+    </span>
+    {% for sec in s.sections %}
+      <span class="sec-chip" data-section="{{ sec.id }}" data-pos="{{ sec.pos }}">
+        <span class="sec-chip-name editable" data-action="rename-section" role="button" tabindex="0">{{ sec.title }}</span>
+        <span class="sec-chip-roll">{{ sec.done }}/{{ sec.total }}</span>
+        <button type="button" class="sec-chip-del" data-action="delete-section" data-section="{{ sec.id }}"
+                aria-label="Delete section" title="Delete section (tasks → General)">×</button>
+      </span>
+    {% endfor %}
+    <form class="add-section-chip" data-action="add-section" data-stage="{{ s.idx }}">
+      <input type="text" name="title" placeholder="+ section" autocomplete="off" aria-label="New section">
+    </form>
+  </div>
+
+  <div class="columns gcolumns">
+    {% for st in statuses %}
+      <section class="column col-{{ st }}" data-status="{{ st }}">
+        <h3 class="col-head">{{ status_labels[st] }} <span class="col-count">{{ s.grouped[st].count }}</span></h3>
+        <div class="col-body" data-stage="{{ s.idx }}" data-status="{{ st }}">
+          {% for b in s.grouped[st].bubbles %}
+            <div class="bubble" data-section="{{ b.id }}" data-pos="{{ b.pos }}">
+              <div class="bubble-head"><span class="bubble-name">{{ b.title }}</span><span class="bubble-count">{{ b.tasks|length }}</span></div>
+              <div class="col-cards bubble-cards" data-stage="{{ s.idx }}" data-status="{{ st }}" data-section="{{ b.id }}">
+                {% for t in b.tasks %}{% include "_card.html" %}{% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+          <div class="col-cards loose-cards" data-stage="{{ s.idx }}" data-status="{{ st }}" data-section="">
+            {% for t in s.grouped[st].loose %}{% include "_card.html" %}{% endfor %}
+          </div>
+        </div>
+        {% if st == 'todo' %}
+        <form class="add-task" data-action="add-task" data-stage="{{ s.idx }}">
+          <input type="text" name="title" placeholder="Add a task…" autocomplete="off">
+          <select name="section" aria-label="Section">
+            <option value="">General</option>
+            {% for sec in s.sections %}<option value="{{ sec.id }}">{{ sec.title }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="btn-quiet btn-sm">Add</button>
+        </form>
+        {% endif %}
+      </section>
+    {% endfor %}
+  </div>
+</div>

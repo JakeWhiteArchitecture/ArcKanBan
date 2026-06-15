@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ project.number }} {{ project.name }} — ArcKanban{% endblock %}
+{% block body_class %}page-board{% endblock %}
+
+{% block content %}
+<header class="titleblock" id="titleblock">
+  <button type="button" class="tb-collapse" data-action="toggle-titleblock"
+          aria-label="Collapse titleblock" title="Collapse"><span class="chevron">▾</span></button>
+
+  <div class="tb-id">
+    <a class="tb-home" href="{{ url_for('index') }}" title="Register" aria-label="Back to register">⌂</a>
+    <span class="tb-cell tb-job-no editable" data-action="edit-project-number" role="button"
+          tabindex="0" title="Edit job number">{{ project.number or '—' }}</span>
+    <span class="tb-cell tb-name editable" data-action="edit-project-name" role="button"
+          tabindex="0" title="Edit project name">{{ project.name }}</span>
+  </div>
+
+  <ol class="spine" aria-label="RIBA Plan of Work — click a stage to view it">
+    {% for i in range(8) %}
+      {% set state = 'current' if i == project.current_stage else ('past' if i < project.current_stage else 'future') %}
+      <li class="spine-cell is-{{ state }}" style="--c: var(--riba-{{ i }})"
+          data-action="goto-stage" data-stage="{{ i }}" role="button" tabindex="0" title="Stage {{ i }}">
+        <span class="spine-num">{{ i }}</span>
+      </li>
+    {% endfor %}
+  </ol>
+
+  <div class="layout-toggle" role="group" aria-label="Board layout" title="Section bands vs status columns">
+    <a class="lt-opt{{ ' on' if layout == 'swimlane' else '' }}" href="{{ url_for('board', project_id=project.id, layout='swimlane') }}">Sections</a>
+    <a class="lt-opt{{ ' on' if layout == 'grouped' else '' }}" href="{{ url_for('board', project_id=project.id, layout='grouped') }}">Status</a>
+  </div>
+
+  <div class="tb-filters" role="group" aria-label="Triage filters">
+    <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
+    <button type="button" class="filter-btn" data-filter="statutory" aria-pressed="false">Statutory</button>
+    <button type="button" class="filter-btn" data-filter="done" aria-pressed="false">Hide done</button>
+  </div>
+
+  <span class="tb-urgent" id="tb-urgent" hidden></span>
+
+  <form class="tb-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
+        onsubmit="return confirm('Delete this project and all its tasks?');">
+    <button type="submit" class="btn-quiet btn-danger btn-sm">Delete</button>
+  </form>
+
+  <div class="tb-compact" aria-hidden="true">
+    <span class="tb-compact-no">{{ project.number or '—' }}</span>
+    <span class="tb-compact-stage">Stage <span class="compact-stage-num">{{ project.current_stage }}</span></span>
+  </div>
+</header>
+
+<div class="nudge" id="nudge" hidden role="status">
+  <span class="nudge-text"></span>
+  <span class="nudge-actions">
+    <button type="button" class="btn btn-primary btn-sm" data-action="nudge-set">Set as current</button>
+    <button type="button" class="btn-quiet btn-sm" data-action="nudge-dismiss">Dismiss</button>
+  </span>
+</div>
+
+<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}">
+  <button type="button" class="nav-arrow prev" data-action="nav-prev" aria-label="Previous stage">‹</button>
+  <button type="button" class="nav-arrow next" data-action="nav-next" aria-label="Next stage">›</button>
+
+  <div class="stage-track" id="stage-track">
+    {% for s in stages %}
+      <section class="stage-slide stage" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">
+        <div class="slide-head">
+          <span class="stage-num" style="--c: var(--riba-{{ s.idx }})">{{ s.idx }}</span>
+          <h2 class="stage-name">{{ s.name }}</h2>
+          {% if s.idx == project.current_stage %}<span class="here-tag">you are here</span>{% endif %}
+          <button type="button" class="btn-quiet btn-sm set-current" data-action="set-current"
+                  data-stage="{{ s.idx }}" {% if s.idx == project.current_stage %}hidden{% endif %}>Set as current stage</button>
+          <span class="current-badge" {% if s.idx != project.current_stage %}hidden{% endif %}>Current stage</span>
+          <span class="stage-counts slide-counts" aria-hidden="true">
+            {% for st in statuses %}
+              {% if s.counts[st] %}<span class="pip pip-{{ st }}">{{ s.counts[st] }} {{ status_labels[st]|lower }}</span>{% endif %}
+            {% endfor %}
+            {% if s.counts.urgent %}<span class="pip pip-urgent">{{ s.counts.urgent }} urgent</span>{% endif %}
+          </span>
+        </div>
+
+        {% if layout == 'grouped' %}
+          {% include "_grouped.html" %}
+        {% else %}
+        <div class="lanes">
+          {% for lane in s.lanes %}{% with stage_idx = s.idx %}{% include "_lane.html" %}{% endwith %}{% endfor %}
+          <form class="add-section" data-action="add-section" data-stage="{{ s.idx }}">
+            <input type="text" name="title" placeholder="+ New section of work…" autocomplete="off">
+            <button type="submit" class="btn-quiet">Add section</button>
+          </form>
+        </div>
+        {% endif %}
+      </section>
+    {% endfor %}
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='board.js') }}"></script>
+{% endblock %}

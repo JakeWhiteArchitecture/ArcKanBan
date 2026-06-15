@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}ArcKanban — Register{% endblock %}
+{% block body_class %}page-home{% endblock %}
+
+{% block content %}
+<main class="register">
+  <header class="register-head">
+    <h1 class="wordmark">ArcKanban</h1>
+    <p class="tagline">The arc of a job, traced across the RIBA Plan of Work.</p>
+  </header>
+
+  <section class="new-project" aria-labelledby="new-project-h">
+    <h2 id="new-project-h">New project</h2>
+    <form method="post" action="{{ url_for('create_project') }}" class="new-project-form">
+      <label class="field field-no">
+        <span>Job no.</span>
+        <input type="text" name="number" inputmode="numeric" placeholder="2401" autocomplete="off">
+      </label>
+      <label class="field field-name">
+        <span>Name</span>
+        <input type="text" name="name" placeholder="14 Elm Road — rear extension" required autocomplete="off">
+      </label>
+      <label class="field field-template">
+        <span>Template</span>
+        <select name="template">
+          <option value="__blank__">Blank</option>
+          {% for t in templates %}
+            <option value="{{ t.file }}">{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary">Lay out project</button>
+    </form>
+  </section>
+
+  <section class="projects" aria-labelledby="projects-h">
+    <h2 id="projects-h" class="visually-hidden">Projects</h2>
+    {% if projects %}
+      <ul class="project-grid">
+        {% for p in projects %}
+          <li class="project-card">
+            <a class="project-open" href="{{ url_for('board', project_id=p.id) }}">
+              <span class="job-no">{{ p.number or '—' }}</span>
+              <span class="project-name">{{ p.name }}</span>
+            </a>
+            <ol class="spine spine-mini" aria-label="Plan of Work progress">
+              {% for c in p.spine %}
+                <li class="spine-cell is-{{ c.state }}"><span>{{ c.idx }}</span></li>
+              {% endfor %}
+            </ol>
+            <div class="project-foot">
+              <span class="stage-label"><span class="stage-num">{{ p.current_stage }}</span> {{ p.current_stage_name }}</span>
+              <form method="post" action="{{ url_for('delete_project', project_id=p.id) }}"
+                    onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks?');">
+                <button type="submit" class="btn-quiet btn-danger" aria-label="Delete project">Delete</button>
+              </form>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">No projects yet — create one above to lay out its RIBA stages.</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}
