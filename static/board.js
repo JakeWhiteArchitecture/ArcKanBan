@@ -24,6 +24,9 @@
   var currentStage = Number(board.dataset.currentStage);
   var LAYOUT = board.dataset.layout || "swimlane";
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var enabledStages = (board.dataset.stages || "0,1,2,3,4,5,6,7").split(",").map(Number);
+  function isEnabled(n) { return enabledStages.indexOf(Number(n)) >= 0; }
+  function nextEnabled(from, dir) { for (var i = Number(from) + dir; i >= 0 && i <= 7; i += dir) if (isEnabled(i)) return i; return null; }
 
   var activity = {}, dismissed = {};
 
@@ -36,8 +39,26 @@
     var json = {};
     try { json = await res.json(); } catch (e) {}
     if (!res.ok || !json.ok) { alert((json && json.error) || "Something went wrong."); return null; }
+    if (json.event) prependLogEvent(json.event);
     return json;
   }
+
+  // ---- activity log + undo helpers --------------------------------------
+  function prependLogEvent(ev) {
+    var list = document.getElementById("log-list"); if (!list || !ev) return;
+    var empty = list.querySelector(".log-empty"); if (empty) empty.remove();
+    var li = document.createElement("li"); li.className = "log-item";
+    var t = document.createElement("span"); t.className = "log-text"; t.textContent = ev.text;
+    var w = document.createElement("time"); w.className = "log-when"; w.textContent = ev.when;
+    li.appendChild(t); li.appendChild(w);
+    list.insertBefore(li, list.firstChild);
+  }
+  var undoStack = [];
+  function pushUndo(label, run) { undoStack.push({ label: label, run: run }); }
+  async function runUndo() { var u = undoStack.pop(); if (u) await u.run(); }
+  function cardTitle(card) { var t = card.querySelector(".task-title"); return t ? t.textContent.trim() : "task"; }
+  async function undoUpdate(id, body) { var r = await api("/api/tasks/" + id, body); if (r) location.reload(); }
+  async function undoMove(id, status, section) { var r = await api("/api/tasks/" + id, { status: status, section_id: section || null }); if (r) location.reload(); }
 
   function cardOf(el) { return el.closest(".card"); }
   function laneOf(el) { return el.closest(".section-lane"); }
@@ -56,8 +77,11 @@
       c.classList.toggle("is-active", i === n);
     });
     var prev = document.querySelector(".nav-arrow.prev"), next = document.querySelector(".nav-arrow.next");
-    if (prev) prev.disabled = n <= 0;
-    if (next) next.disabled = n >= 7;
+    if (prev) prev.disabled = nextEnabled(n, -1) === null;
+    if (next) next.disabled = nextEnabled(n, +1) === null;
+    var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[n];
+    var star = document.querySelector(".tb-star");
+    if (star) { var cur = n === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
   }
   function gotoStage(n, instant) {
     n = Math.max(0, Math.min(7, Number(n)));
@@ -174,15 +198,9 @@
       cell.classList.add(i < n ? "is-past" : (i === n ? "is-current" : "is-future"));
     });
     var csn = document.querySelector(".compact-stage-num"); if (csn) csn.textContent = n;
-    document.querySelectorAll(".here-tag").forEach(function (t) { t.remove(); });
-    var nameEl = document.querySelector("#stage-" + n + " .slide-head .stage-name");
-    if (nameEl) { var tag = document.createElement("span"); tag.className = "here-tag"; tag.textContent = "you are here"; nameEl.insertAdjacentElement("afterend", tag); }
-    document.querySelectorAll(".stage-slide").forEach(function (st) {
-      var idx = Number(st.dataset.stage);
-      var btn = st.querySelector(".set-current"); var badge = st.querySelector(".current-badge");
-      if (btn) btn.hidden = idx === n; if (badge) badge.hidden = idx !== n;
-    });
-    document.getElementById("nudge").hidden = true; gotoStage(n); evaluateNudge();
+    document.getElementById("nudge").hidden = true;
+    gotoStage(n);      // also refreshes the focused-stage name + star via updateNav
+    evaluateNudge();
   }
 
   // ---- inline editing ----------------------------------------------------
@@ -305,12 +323,15 @@
   async function assignSelectedTo(sec) {
     var card = selectedCard; if (!card) return;
     var colBody = colBodyOf(card), stageEl = stageOf(card);
-    if ((card.dataset.section || "") === sec) { clearSelection(); return; }
-    var r = await api("/api/tasks/" + card.dataset.taskId, { section_id: sec || null });
+    var prev = card.dataset.section || "";
+    if (prev === sec) { clearSelection(); return; }
+    var id = card.dataset.taskId, title = cardTitle(card);
+    var r = await api("/api/tasks/" + id, { section_id: sec || null });
     if (!r) { clearSelection(); return; }
     card.dataset.section = sec || "";
     ensureContainer(colBody, sec).appendChild(card);
     recountStageFull(stageEl);
+    pushUndo("move of “" + title + "”", function () { return undoUpdate(id, { section_id: prev || null }); });
     clearSelection();
   }
 
@@ -330,8 +351,10 @@
     return out;
   }
   async function assignCardToSection(card, sec) {
-    if ((card.dataset.section || "") === sec) return;
-    var r = await api("/api/tasks/" + card.dataset.taskId, { section_id: sec || null });
+    var prev = card.dataset.section || "";
+    if (prev === sec) return;
+    var id = card.dataset.taskId, title = cardTitle(card);
+    var r = await api("/api/tasks/" + id, { section_id: sec || null });
     if (!r) return;
     card.dataset.section = sec || "";
     var stageEl = stageOf(card);
@@ -343,6 +366,7 @@
       if (lane) { var cont = lane.querySelector('.col-cards[data-status="' + card.dataset.status + '"]'); if (cont) cont.appendChild(card); }
     }
     recountStageFull(stageEl);
+    pushUndo("move of “" + title + "”", function () { return undoUpdate(id, { section_id: prev || null }); });
   }
   function openSectionMenu(card, x, y) {
     closeMenu();
@@ -356,6 +380,21 @@
       if (it.id !== cur) el.addEventListener("click", function () { assignCardToSection(card, it.id); closeMenu(); });
       menu.appendChild(el);
     });
+    document.body.appendChild(menu);
+    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
+    ctxMenu = menu;
+  }
+  function openActionsMenu(x, y) {
+    closeMenu();
+    var menu = document.createElement("div"); menu.className = "ctx-menu";
+    var head = document.createElement("div"); head.className = "ctx-head"; head.textContent = "Actions"; menu.appendChild(head);
+    var last = undoStack[undoStack.length - 1];
+    var item = document.createElement("div");
+    item.className = "ctx-item" + (last ? "" : " is-disabled");
+    var s = document.createElement("span"); s.textContent = last ? ("Undo " + last.label) : "Nothing to undo"; item.appendChild(s);
+    if (last) item.addEventListener("click", function () { closeMenu(); runUndo(); });
+    menu.appendChild(item);
     document.body.appendChild(menu);
     menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
     menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
@@ -376,9 +415,11 @@
     var i = STATUSES.indexOf(card.dataset.status), ni = i + dir;
     if (ni < 0 || ni >= STATUSES.length) return;
     var newStatus = STATUSES[ni];
-    var r = await api("/api/tasks/" + card.dataset.taskId, { status: newStatus });
+    var prev = card.dataset.status, sec = card.dataset.section || "", id = card.dataset.taskId, title = cardTitle(card);
+    var r = await api("/api/tasks/" + id, { status: newStatus });
     if (!r) return;
     applyCardStatus(card, newStatus);
+    pushUndo("move of “" + title + "”", function () { return undoMove(id, prev, sec); });
     var stageEl = stageOf(card);
     if (LAYOUT === "grouped") {
       var destCol = stageEl.querySelector('.col-body[data-status="' + newStatus + '"]');
@@ -391,10 +432,12 @@
   }
   async function toggleUrgent(btn) {
     var card = cardOf(btn), next = card.dataset.urgent !== "1";
-    var r = await api("/api/tasks/" + card.dataset.taskId, { urgent: next });
+    var id = card.dataset.taskId, prev = card.dataset.urgent === "1", title = cardTitle(card);
+    var r = await api("/api/tasks/" + id, { urgent: next });
     if (!r) return;
     card.dataset.urgent = next ? "1" : "0"; card.classList.toggle("is-urgent", next);
     btn.setAttribute("aria-pressed", next ? "true" : "false");
+    pushUndo("urgent change on “" + title + "”", function () { return undoUpdate(id, { urgent: prev }); });
     recountStageFull(stageOf(card)); registerActivity(card.dataset.stage, card.dataset.taskId);
   }
   async function changeType(select) {
@@ -404,10 +447,12 @@
         !confirm("Remove the statutory marker from this task? Statutory tasks carry legal duties.")) {
       select.value = oldType; return;
     }
-    var r = await api("/api/tasks/" + card.dataset.taskId, { type: newType });
+    var id = card.dataset.taskId, title = cardTitle(card);
+    var r = await api("/api/tasks/" + id, { type: newType });
     if (!r) { select.value = oldType; return; }
     card.dataset.type = newType;
     card.classList.remove("type-client", "type-statutory", "type-admin"); card.classList.add("type-" + newType);
+    pushUndo("type change on “" + title + "”", function () { return undoUpdate(id, { type: oldType }); });
     registerActivity(card.dataset.stage, card.dataset.taskId);
   }
   async function deleteTask(btn) {
@@ -417,6 +462,8 @@
     var r = await api("/api/tasks/" + card.dataset.taskId + "/delete", {});
     if (!r) return;
     card.remove(); recountStageFull(stageEl);
+    if (r.task) pushUndo("delete of “" + (r.task.title || "task") + "”",
+      async function () { var rr = await api("/api/projects/" + projectId + "/tasks/restore", r.task); if (rr) location.reload(); });
   }
   async function addTask(form) {
     var stage = Number(form.dataset.stage);
@@ -438,6 +485,8 @@
     }
     cont.insertAdjacentHTML("beforeend", r.html);
     titleInput.value = ""; titleInput.focus();
+    var newId = r.task.id;
+    pushUndo("add of “" + title + "”", async function () { var rr = await api("/api/tasks/" + newId + "/delete", {}); if (rr) location.reload(); });
     recountStageFull(stageEl); registerActivity(stage, r.task.id);
   }
 
@@ -515,6 +564,12 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   function applyCollapse(on) { document.getElementById("titleblock").classList.toggle("is-collapsed", on); }
+  function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
+  function applyScope() {
+    var set = [];
+    document.querySelectorAll('#scope-pop input[type="checkbox"]').forEach(function (b) { if (b.checked) set.push(Number(b.value)); });
+    saveScope(set);
+  }
   function laneKey(l) { return l.dataset.section ? "s" + l.dataset.section : "g" + l.dataset.stage; }
   function loadLanes() { try { return JSON.parse(localStorage.getItem(LS_LANES)) || {}; } catch (e) { return {}; } }
   function persistLanes() { var s = {}; document.querySelectorAll(".section-lane.is-collapsed").forEach(function (l) { s[laneKey(l)] = 1; }); localStorage.setItem(LS_LANES, JSON.stringify(s)); }
@@ -522,7 +577,7 @@
   function toggleLane(btn) { laneOf(btn).classList.toggle("is-collapsed"); persistLanes(); }
 
   // ---- native drag -------------------------------------------------------
-  var draggingCard = null, draggingBubble = null, lastOver = null, lastOverCol = null;
+  var draggingCard = null, draggingBubble = null, lastOver = null, lastOverCol = null, dragFrom = null;
   function getDragAfterElement(container, y) {
     var els = [].slice.call(container.querySelectorAll(".card:not(.dragging)"));
     var closest = { offset: -Infinity, el: null };
@@ -536,23 +591,24 @@
   function flipReorder(scope, mutate) {
     if (reduceMotion) { mutate(); return; }
     var cards = [].slice.call(scope.querySelectorAll(".card:not(.dragging)"));
+    // First: each card's *current on-screen* position (includes any in-flight slide).
     var first = cards.map(function (c) { return c.getBoundingClientRect(); });
     mutate();
-    var deltas = cards.map(function (c, i) {
-      var l = c.getBoundingClientRect();
-      return { dx: first[i].left - l.left, dy: first[i].top - l.top };
-    });
     cards.forEach(function (c, i) {
-      var d = deltas[i]; if (!d.dx && !d.dy) return;
-      c.style.transition = "none"; c.style.transform = "translate(" + d.dx + "px," + d.dy + "px)";
+      // Cancel any running slide → card reverts to its base, then measure the new layout.
+      if (c._flip) { c._flip.cancel(); c._flip = null; }
+      var l = c.getBoundingClientRect();
+      var dx = first[i].left - l.left, dy = first[i].top - l.top;
+      if (!dx && !dy) return;
+      // Web Animations API: interruption-safe — a new reorder cancels the prior run and
+      // slides on from where the card currently is, so it never falls back to a snap
+      // (no CSS-transition flush or rAF timing to miss).
+      c._flip = c.animate(
+        [{ transform: "translate(" + dx + "px," + dy + "px)" }, { transform: "translate(0px,0px)" }],
+        { duration: 170, easing: "cubic-bezier(.2,.7,.3,1)" }
+      );
+      c._flip.onfinish = function () { c._flip = null; };
     });
-    requestAnimationFrame(function () {
-      cards.forEach(function (c, i) {
-        var d = deltas[i]; if (!d.dx && !d.dy) return;
-        c.style.transition = "transform 160ms cubic-bezier(.2,.7,.3,1)"; c.style.transform = "";
-      });
-    });
-    setTimeout(function () { cards.forEach(function (c) { c.style.transition = ""; c.style.transform = ""; }); }, 220);
   }
   function maybePlace(container, y) {
     var after = getDragAfterElement(container, y);
@@ -568,6 +624,7 @@
       if (e.target.closest("button, select, input, textarea, a, .task-title, .awaiting-on, [contenteditable]")) { e.preventDefault(); return; }
       clearSelection();
       draggingCard = card; card.classList.add("dragging");
+      dragFrom = { id: card.dataset.taskId, status: card.dataset.status, section: card.dataset.section || "", title: cardTitle(card) };
       e.dataTransfer.effectAllowed = "move";
       try { e.dataTransfer.setData("text/plain", card.dataset.taskId); } catch (_) {}
       return;
@@ -591,17 +648,17 @@
     if (LAYOUT === "grouped") {
       var colBody = e.target.closest(".col-body"); if (!colBody) return;
       e.preventDefault(); e.dataTransfer.dropEffect = "move";
-      if (lastOverCol && lastOverCol !== colBody) lastOverCol.classList.remove("drag-over");
-      colBody.classList.add("drag-over"); lastOverCol = colBody;
+      lastOverCol = colBody;
       if (colBody.dataset.status === draggingCard.dataset.status) {
         var cont = containerFor(colBody, draggingCard.dataset.section || "");
-        if (cont) maybePlace(cont, e.clientY);
+        if (cont) maybePlace(cont, e.clientY);   // slide into its section bubble
+      } else if (draggingCard.parentElement !== colBody) {
+        // cross-column: slide the card itself into the destination column (no highlight)
+        flipReorder(stageOf(colBody), function () { colBody.appendChild(draggingCard); });
       }
     } else {
       var container = e.target.closest(".col-cards"); if (!container) return;
       e.preventDefault(); e.dataTransfer.dropEffect = "move";
-      if (lastOver && lastOver !== container) lastOver.classList.remove("drag-over");
-      container.classList.add("drag-over"); lastOver = container;
       maybePlace(container, e.clientY);
     }
   });
@@ -615,6 +672,7 @@
       var fromStatus = sourceCol.dataset.status, toStatus = destCol.dataset.status, sec = bubble.dataset.section;
       if (toStatus === fromStatus) return;
       var bcards = [].slice.call(bubble.querySelectorAll(".bubble-cards > .card"));
+      var secName = (bubble.querySelector(".bubble-name") || {}).textContent || "section";
       var rb = await api("/api/sections/" + sec + "/move", { from_status: fromStatus, to_status: toStatus });
       if (!rb) { location.reload(); return; }
       var destCont = ensureContainer(destCol, sec);
@@ -623,6 +681,10 @@
       var sEl2 = stageOf(destCol); recountStageFull(sEl2);
       if (sEl2) sEl2.querySelectorAll(".card").forEach(function (c) { c.style.transform = ""; c.style.transition = ""; });
       bcards.forEach(function (c) { registerActivity(destCol.dataset.stage, c.dataset.taskId); });
+      pushUndo("move of section “" + secName + "”", async function () {
+        var rr = await api("/api/sections/" + sec + "/move", { from_status: toStatus, to_status: fromStatus });
+        if (rr) location.reload();
+      });
       return;
     }
     if (!draggingCard) return;
@@ -645,6 +707,12 @@
       { status: status, section_id: section || null, index: index });
     if (!r) { location.reload(); return; }
     applyCardStatus(card, status);
+    card.dataset.section = section || "";
+    if (dragFrom && (dragFrom.status !== status || dragFrom.section !== (section || ""))) {
+      var df = dragFrom;
+      pushUndo("move of “" + df.title + "”", function () { return undoMove(df.id, df.status, df.section); });
+    }
+    dragFrom = null;
     var sEl = stageOf(card);
     recountStageFull(sEl);
     if (sEl) sEl.querySelectorAll(".card").forEach(function (c) { c.style.transform = ""; c.style.transition = ""; });
@@ -673,12 +741,20 @@
         case "delete-section": deleteSection(el); break;
         case "toggle-lane": toggleLane(el); break;
         case "set-current": setCurrentStage(el.dataset.stage); break;
-        case "goto-stage": lastActive = Number(el.dataset.stage); gotoStage(el.dataset.stage); break;
-        case "nav-prev": lastActive = activeStage() - 1; gotoStage(lastActive); break;
-        case "nav-next": lastActive = activeStage() + 1; gotoStage(lastActive); break;
+        case "star-current": setCurrentStage(activeStage()); break;
+        case "goto-stage": { var gs = Number(el.dataset.stage); if (isEnabled(gs)) { lastActive = gs; gotoStage(gs); } break; }
+        case "nav-prev": { var pe = nextEnabled(activeStage(), -1); if (pe != null) { lastActive = pe; gotoStage(pe); } break; }
+        case "nav-next": { var ne = nextEnabled(activeStage(), +1); if (ne != null) { lastActive = ne; gotoStage(ne); } break; }
+        case "toggle-scope": { var sp = document.getElementById("scope-pop"); sp.hidden = !sp.hidden; break; }
+        case "apply-scope": applyScope(); break;
+        case "enable-stage": { var set = enabledStages.slice(); var es = Number(el.dataset.stage); if (set.indexOf(es) < 0) set.push(es); saveScope(set); break; }
         case "toggle-titleblock": {
           var on = !document.getElementById("titleblock").classList.contains("is-collapsed");
           applyCollapse(on); localStorage.setItem(LS_COLLAPSE, on ? "1" : "0"); break;
+        }
+        case "toggle-log": {
+          var d = document.getElementById("log-drawer");
+          d.setAttribute("aria-hidden", d.classList.toggle("open") ? "false" : "true"); break;
         }
         case "nudge-set": setCurrentStage(document.getElementById("nudge").dataset.stage); break;
         case "nudge-dismiss": { var s = Number(document.getElementById("nudge").dataset.stage); dismissed[s] = true; document.getElementById("nudge").hidden = true; break; }
@@ -693,10 +769,16 @@
   });
   document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); });
   document.addEventListener("contextmenu", function (e) {
-    var card = e.target.closest(".card"); if (!card) return;
-    e.preventDefault(); openSectionMenu(card, e.clientX, e.clientY);
+    var card = e.target.closest(".card");
+    if (card) { e.preventDefault(); openSectionMenu(card, e.clientX, e.clientY); return; }
+    if (e.target.closest("input, textarea, select")) return;   // keep the native menu on fields
+    e.preventDefault(); openActionsMenu(e.clientX, e.clientY);
   });
-  document.addEventListener("click", function (e) { if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu(); });
+  document.addEventListener("click", function (e) {
+    if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu();
+    var sp = document.getElementById("scope-pop");
+    if (sp && !sp.hidden && !e.target.closest("#scope-pop") && !e.target.closest('[data-action="toggle-scope"]')) sp.hidden = true;
+  });
   track.addEventListener("scroll", closeMenu);
   document.addEventListener("submit", function (e) {
     var add = e.target.closest('[data-action="add-task"]'); if (add) { e.preventDefault(); addTask(add); return; }
@@ -711,7 +793,8 @@
     if (e.key === "Escape") { closeMenu(); clearSelection(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
-      lastActive = activeStage() + (e.key === "ArrowRight" ? 1 : -1); gotoStage(lastActive);
+      var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);
+      if (te != null) { lastActive = te; gotoStage(te); }
     }
   });
 
@@ -721,5 +804,6 @@
   applyLanes();
   updateUrgentTally();
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
-  gotoStage(saved != null && saved !== "" ? Number(saved) : currentStage, true);
+  var startN = (saved != null && saved !== "" && isEnabled(Number(saved))) ? Number(saved) : currentStage;
+  gotoStage(startN, true);
 })();

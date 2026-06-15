@@ -7,47 +7,66 @@
   <button type="button" class="tb-collapse" data-action="toggle-titleblock"
           aria-label="Collapse titleblock" title="Collapse"><span class="chevron">▾</span></button>
 
-  <div class="tb-id">
-    <a class="tb-home" href="{{ url_for('index') }}" title="Register" aria-label="Back to register">⌂</a>
-    <span class="tb-cell tb-job-no editable" data-action="edit-project-number" role="button"
-          tabindex="0" title="Edit job number">{{ project.number or '—' }}</span>
-    <span class="tb-cell tb-name editable" data-action="edit-project-name" role="button"
-          tabindex="0" title="Edit project name">{{ project.name }}</span>
+  <div class="tb-left">
+    <div class="tb-id">
+      <a class="tb-home" href="{{ url_for('index') }}" title="Register" aria-label="Back to register">⌂</a>
+      <span class="tb-cell tb-job-no editable" data-action="edit-project-number" role="button"
+            tabindex="0" title="Edit job number">{{ project.number or '—' }}</span>
+      <span class="tb-cell tb-name editable" data-action="edit-project-name" role="button"
+            tabindex="0" title="Edit project name">{{ project.name }}</span>
+    </div>
   </div>
 
-  <ol class="spine" aria-label="RIBA Plan of Work — click a stage to view it">
-    {% for i in range(8) %}
-      {% set state = 'current' if i == project.current_stage else ('past' if i < project.current_stage else 'future') %}
-      <li class="spine-cell is-{{ state }}" style="--c: var(--riba-{{ i }})"
-          data-action="goto-stage" data-stage="{{ i }}" role="button" tabindex="0" title="Stage {{ i }}">
-        <span class="spine-num">{{ i }}</span>
-      </li>
-    {% endfor %}
-  </ol>
-
-  <div class="layout-toggle" role="group" aria-label="Board layout" title="Section bands vs status columns">
-    <a class="lt-opt{{ ' on' if layout == 'swimlane' else '' }}" href="{{ url_for('board', project_id=project.id, layout='swimlane') }}">Sections</a>
-    <a class="lt-opt{{ ' on' if layout == 'grouped' else '' }}" href="{{ url_for('board', project_id=project.id, layout='grouped') }}">Status</a>
+  <div class="tb-center">
+    <ol class="spine" aria-label="RIBA Plan of Work — click a stage to view it">
+      {% for i in range(8) %}
+        {% set state = 'current' if i == project.current_stage else ('past' if i < project.current_stage else 'future') %}
+        <li class="spine-cell is-{{ state }}{% if i not in enabled %} is-disabled{% endif %}" style="--c: var(--riba-{{ i }})"
+            data-action="goto-stage" data-stage="{{ i }}" role="button" tabindex="0" title="Stage {{ i }}">
+          <span class="spine-num">{{ i }}</span>
+        </li>
+      {% endfor %}
+    </ol>
+    <div class="tb-focus">
+      <span class="tb-focus-name">{{ riba[project.current_stage] }}</span>
+      <button type="button" class="tb-star is-current" data-action="star-current"
+              aria-label="Set the focused stage as the current stage" title="Current stage">★</button>
+    </div>
   </div>
 
-  <div class="tb-filters" role="group" aria-label="Triage filters">
-    <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
-    <button type="button" class="filter-btn" data-filter="statutory" aria-pressed="false">Statutory</button>
-    <button type="button" class="filter-btn" data-filter="done" aria-pressed="false">Hide done</button>
+  <div class="tb-right">
+    <button type="button" class="scope-btn" data-action="toggle-scope" title="Appointment scope (RIBA stages)">Scope</button>
+    <div class="tb-filters" role="group" aria-label="Triage filters">
+      <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
+      <button type="button" class="filter-btn" data-filter="statutory" aria-pressed="false">Statutory</button>
+      <button type="button" class="filter-btn" data-filter="done" aria-pressed="false">Hide done</button>
+    </div>
+    <button type="button" class="log-toggle" data-action="toggle-log" title="Activity log">Log</button>
+    <form class="tb-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
+          onsubmit="return confirm('Delete this project and all its tasks?');">
+      <button type="submit" class="btn-quiet btn-danger btn-sm">Delete</button>
+    </form>
   </div>
 
   <span class="tb-urgent" id="tb-urgent" hidden></span>
-
-  <form class="tb-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
-        onsubmit="return confirm('Delete this project and all its tasks?');">
-    <button type="submit" class="btn-quiet btn-danger btn-sm">Delete</button>
-  </form>
 
   <div class="tb-compact" aria-hidden="true">
     <span class="tb-compact-no">{{ project.number or '—' }}</span>
     <span class="tb-compact-stage">Stage <span class="compact-stage-num">{{ project.current_stage }}</span></span>
   </div>
 </header>
+
+<div class="scope-pop" id="scope-pop" hidden aria-label="Appointment scope">
+  <div class="scope-head">Appointment scope — RIBA stages</div>
+  {% for i in range(8) %}
+    <label class="scope-row">
+      <input type="checkbox" value="{{ i }}" {% if i in enabled %}checked{% endif %}
+             {% if i == project.current_stage %}disabled title="The current stage stays in scope"{% endif %}>
+      <span class="scope-num">{{ i }}</span> {{ riba[i] }}
+    </label>
+  {% endfor %}
+  <button type="button" class="btn btn-primary btn-sm" data-action="apply-scope">Apply scope</button>
+</div>
 
 <div class="nudge" id="nudge" hidden role="status">
   <span class="nudge-text"></span>
@@ -57,20 +76,15 @@
   </span>
 </div>
 
-<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}">
+<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
   <button type="button" class="nav-arrow prev" data-action="nav-prev" aria-label="Previous stage">‹</button>
   <button type="button" class="nav-arrow next" data-action="nav-next" aria-label="Next stage">›</button>
 
   <div class="stage-track" id="stage-track">
     {% for s in stages %}
-      <section class="stage-slide stage" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">
+      <section class="stage-slide stage{% if not s.enabled %} stage-off{% endif %}" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">
+        {% if s.enabled %}
         <div class="slide-head">
-          <span class="stage-num" style="--c: var(--riba-{{ s.idx }})">{{ s.idx }}</span>
-          <h2 class="stage-name">{{ s.name }}</h2>
-          {% if s.idx == project.current_stage %}<span class="here-tag">you are here</span>{% endif %}
-          <button type="button" class="btn-quiet btn-sm set-current" data-action="set-current"
-                  data-stage="{{ s.idx }}" {% if s.idx == project.current_stage %}hidden{% endif %}>Set as current stage</button>
-          <span class="current-badge" {% if s.idx != project.current_stage %}hidden{% endif %}>Current stage</span>
           <span class="stage-counts slide-counts" aria-hidden="true">
             {% for st in statuses %}
               {% if s.counts[st] %}<span class="pip pip-{{ st }}">{{ s.counts[st] }} {{ status_labels[st]|lower }}</span>{% endif %}
@@ -90,10 +104,32 @@
           </form>
         </div>
         {% endif %}
+        {% else %}
+        <div class="stage-disabled">
+          <span class="stage-num" style="--c: var(--riba-{{ s.idx }})">{{ s.idx }}</span>
+          <h2 class="stage-name">{{ s.name }}</h2>
+          <p class="stage-off-note">Outside the appointment scope.</p>
+          <button type="button" class="btn-quiet" data-action="enable-stage" data-stage="{{ s.idx }}">Add to scope</button>
+        </div>
+        {% endif %}
       </section>
     {% endfor %}
   </div>
 </main>
+
+<aside class="log-drawer" id="log-drawer" aria-hidden="true">
+  <header class="log-head">
+    <span>Activity</span>
+    <button type="button" class="log-close" data-action="toggle-log" aria-label="Close activity log">×</button>
+  </header>
+  <ul class="log-list" id="log-list">
+    {% for ev in events %}
+      <li class="log-item"><span class="log-text">{{ ev.text }}</span><time class="log-when">{{ ev.when }}</time></li>
+    {% else %}
+      <li class="log-empty">No activity yet — changes you make will appear here.</li>
+    {% endfor %}
+  </ul>
+</aside>
 {% endblock %}
 
 {% block scripts %}
