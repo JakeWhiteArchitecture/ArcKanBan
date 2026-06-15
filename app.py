@@ -711,6 +711,35 @@ def api_delete_section(section_id):
     return jsonify(ok=True)
 
 
+@app.route("/api/sections/<int:section_id>/move", methods=["POST"])
+def api_move_section(section_id):
+    """Move a whole section's tasks from one status to another (bulk), gluing
+    them onto any of the section's tasks already in the destination status."""
+    db = get_db()
+    row = db.execute("SELECT * FROM sections WHERE id=?", (section_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such section."), 404
+    data = request.get_json(silent=True) or {}
+    frm, to = data.get("from_status"), data.get("to_status")
+    if frm not in STATUSES or to not in STATUSES:
+        return jsonify(ok=False, error="Invalid status."), 400
+    if frm == to:
+        return jsonify(ok=True, moved=[])
+    moved = [r["id"] for r in db.execute(
+        "SELECT id FROM tasks WHERE section_id=? AND status=? AND parent_id IS NULL "
+        "ORDER BY position, id", (section_id, frm))]
+    if not moved:
+        return jsonify(ok=True, moved=[])
+    existing = [r["id"] for r in db.execute(
+        "SELECT id FROM tasks WHERE section_id=? AND status=? AND parent_id IS NULL "
+        "ORDER BY position, id", (section_id, to))]
+    db.executemany("UPDATE tasks SET status=? WHERE id=?", [(to, t) for t in moved])
+    for i, tid in enumerate(existing + moved):     # glue: existing first, arrivals after
+        db.execute("UPDATE tasks SET position=? WHERE id=?", (i, tid))
+    db.commit()
+    return jsonify(ok=True, moved=moved, to_status=to)
+
+
 @app.route("/api/tasks/<int:task_id>/delete", methods=["POST"])
 def api_delete_task(task_id):
     db = get_db()

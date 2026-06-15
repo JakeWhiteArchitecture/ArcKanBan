@@ -27,7 +27,7 @@
         <div class="col-body" data-stage="{{ s.idx }}" data-status="{{ st }}">
           {% for b in s.grouped[st].bubbles %}
             <div class="bubble" data-section="{{ b.id }}" data-pos="{{ b.pos }}">
-              <div class="bubble-head"><span class="bubble-name">{{ b.title }}</span><span class="bubble-count">{{ b.tasks|length }}</span></div>
+              <div class="bubble-head" draggable="true" title="Drag this section to another status"><span class="bubble-name">{{ b.title }}</span><span class="bubble-count">{{ b.tasks|length }}</span></div>
               <div class="col-cards bubble-cards" data-stage="{{ s.idx }}" data-status="{{ st }}" data-section="{{ b.id }}">
                 {% for t in b.tasks %}{% include "_card.html" %}{% endfor %}
               </div>

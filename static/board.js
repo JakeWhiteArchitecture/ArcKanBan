@@ -269,6 +269,7 @@
     var bubble = document.createElement("div");
     bubble.className = "bubble"; bubble.dataset.section = sec; bubble.dataset.pos = pos;
     var head = document.createElement("div"); head.className = "bubble-head";
+    head.draggable = true; head.title = "Drag this section to another status";
     var nm = document.createElement("span"); nm.className = "bubble-name"; nm.textContent = sectionTitle(stageEl, sec);
     var ct = document.createElement("span"); ct.className = "bubble-count"; ct.textContent = "0";
     head.appendChild(nm); head.appendChild(ct);
@@ -311,6 +312,54 @@
     ensureContainer(colBody, sec).appendChild(card);
     recountStageFull(stageEl);
     clearSelection();
+  }
+
+  // ---- right-click: assign to / break out of a section ------------------
+  var ctxMenu = null;
+  function closeMenu() { if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; } }
+  function stageSections(stageEl) {
+    var out = [];
+    if (LAYOUT === "grouped")
+      stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").forEach(function (ch) {
+        out.push({ id: ch.dataset.section, title: ch.querySelector(".sec-chip-name").textContent.trim() });
+      });
+    else
+      stageEl.querySelectorAll(".section-lane:not(.is-general)").forEach(function (l) {
+        out.push({ id: l.dataset.section, title: l.querySelector(".lane-title").textContent.trim() });
+      });
+    return out;
+  }
+  async function assignCardToSection(card, sec) {
+    if ((card.dataset.section || "") === sec) return;
+    var r = await api("/api/tasks/" + card.dataset.taskId, { section_id: sec || null });
+    if (!r) return;
+    card.dataset.section = sec || "";
+    var stageEl = stageOf(card);
+    if (LAYOUT === "grouped") {
+      ensureContainer(colBodyOf(card), sec).appendChild(card);
+    } else {
+      var lane = sec ? stageEl.querySelector('.section-lane[data-section="' + sec + '"]')
+                     : stageEl.querySelector(".section-lane.is-general");
+      if (lane) { var cont = lane.querySelector('.col-cards[data-status="' + card.dataset.status + '"]'); if (cont) cont.appendChild(card); }
+    }
+    recountStageFull(stageEl);
+  }
+  function openSectionMenu(card, x, y) {
+    closeMenu();
+    var stageEl = stageOf(card), cur = card.dataset.section || "";
+    var menu = document.createElement("div"); menu.className = "ctx-menu";
+    var head = document.createElement("div"); head.className = "ctx-head"; head.textContent = "Move to section"; menu.appendChild(head);
+    [{ id: "", title: "General (no section)" }].concat(stageSections(stageEl)).forEach(function (it) {
+      var el = document.createElement("div");
+      el.className = "ctx-item" + (it.id === cur ? " is-current" : "");
+      var s = document.createElement("span"); s.textContent = it.title; el.appendChild(s);
+      if (it.id !== cur) el.addEventListener("click", function () { assignCardToSection(card, it.id); closeMenu(); });
+      menu.appendChild(el);
+    });
+    document.body.appendChild(menu);
+    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
+    ctxMenu = menu;
   }
 
   // ---- task mutations ----------------------------------------------------
@@ -473,7 +522,7 @@
   function toggleLane(btn) { laneOf(btn).classList.toggle("is-collapsed"); persistLanes(); }
 
   // ---- native drag -------------------------------------------------------
-  var draggingCard = null, lastOver = null, lastOverCol = null;
+  var draggingCard = null, draggingBubble = null, lastOver = null, lastOverCol = null;
   function getDragAfterElement(container, y) {
     var els = [].slice.call(container.querySelectorAll(".card:not(.dragging)"));
     var closest = { offset: -Infinity, el: null };
@@ -514,14 +563,30 @@
     });
   }
   document.addEventListener("dragstart", function (e) {
-    var card = e.target.closest(".card"); if (!card) return;
-    if (e.target.closest("button, select, input, textarea, a, .task-title, .awaiting-on, [contenteditable]")) { e.preventDefault(); return; }
-    clearSelection();
-    draggingCard = card; card.classList.add("dragging");
-    e.dataTransfer.effectAllowed = "move";
-    try { e.dataTransfer.setData("text/plain", card.dataset.taskId); } catch (_) {}
+    var card = e.target.closest(".card");
+    if (card) {
+      if (e.target.closest("button, select, input, textarea, a, .task-title, .awaiting-on, [contenteditable]")) { e.preventDefault(); return; }
+      clearSelection();
+      draggingCard = card; card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", card.dataset.taskId); } catch (_) {}
+      return;
+    }
+    var head = LAYOUT === "grouped" ? e.target.closest(".bubble-head") : null;
+    if (head) {
+      draggingBubble = head.closest(".bubble"); draggingBubble.classList.add("dragging-bubble");
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", "bubble"); } catch (_) {}
+    }
   });
   track.addEventListener("dragover", function (e) {
+    if (draggingBubble) {
+      var cb = e.target.closest(".col-body"); if (!cb) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+      if (lastOverCol && lastOverCol !== cb) lastOverCol.classList.remove("drag-over");
+      cb.classList.add("drag-over"); lastOverCol = cb;
+      return;
+    }
     if (!draggingCard) return;
     if (LAYOUT === "grouped") {
       var colBody = e.target.closest(".col-body"); if (!colBody) return;
@@ -542,6 +607,24 @@
   });
   track.addEventListener("drop", function (e) { if (draggingCard) e.preventDefault(); });
   document.addEventListener("dragend", async function () {
+    if (draggingBubble) {
+      var bubble = draggingBubble; draggingBubble = null; bubble.classList.remove("dragging-bubble");
+      if (lastOverCol) lastOverCol.classList.remove("drag-over");
+      var sourceCol = colBodyOf(bubble), destCol = lastOverCol || sourceCol; lastOverCol = null;
+      if (!sourceCol || !destCol) return;
+      var fromStatus = sourceCol.dataset.status, toStatus = destCol.dataset.status, sec = bubble.dataset.section;
+      if (toStatus === fromStatus) return;
+      var bcards = [].slice.call(bubble.querySelectorAll(".bubble-cards > .card"));
+      var rb = await api("/api/sections/" + sec + "/move", { from_status: fromStatus, to_status: toStatus });
+      if (!rb) { location.reload(); return; }
+      var destCont = ensureContainer(destCol, sec);
+      bcards.forEach(function (c) { applyCardStatus(c, toStatus); destCont.appendChild(c); });
+      bubble.remove();
+      var sEl2 = stageOf(destCol); recountStageFull(sEl2);
+      if (sEl2) sEl2.querySelectorAll(".card").forEach(function (c) { c.style.transform = ""; c.style.transition = ""; });
+      bcards.forEach(function (c) { registerActivity(destCol.dataset.stage, c.dataset.taskId); });
+      return;
+    }
     if (!draggingCard) return;
     var card = draggingCard; draggingCard = null; card.classList.remove("dragging");
     if (lastOver) { lastOver.classList.remove("drag-over"); lastOver = null; }
@@ -609,6 +692,12 @@
     }
   });
   document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); });
+  document.addEventListener("contextmenu", function (e) {
+    var card = e.target.closest(".card"); if (!card) return;
+    e.preventDefault(); openSectionMenu(card, e.clientX, e.clientY);
+  });
+  document.addEventListener("click", function (e) { if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu(); });
+  track.addEventListener("scroll", closeMenu);
   document.addEventListener("submit", function (e) {
     var add = e.target.closest('[data-action="add-task"]'); if (add) { e.preventDefault(); addTask(add); return; }
     var sec = e.target.closest('[data-action="add-section"]'); if (sec) { e.preventDefault(); addSection(sec); }
@@ -619,7 +708,7 @@
       if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .lane-title, .sec-chip-name")) { e.preventDefault(); t.click(); }
       return;
     }
-    if (e.key === "Escape" && selectedCard) { clearSelection(); return; }
+    if (e.key === "Escape") { closeMenu(); clearSelection(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
       lastActive = activeStage() + (e.key === "ArrowRight" ? 1 : -1); gotoStage(lastActive);
