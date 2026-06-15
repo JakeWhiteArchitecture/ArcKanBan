@@ -1,0 +1,7 @@
+# ArcKanban
+arckanban.db
+arckanban.db-journal
+__pycache__/
+*.pyc
+.venv/
+venv/

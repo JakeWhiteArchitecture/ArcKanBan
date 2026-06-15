@@ -1,0 +1,40 @@
+{
+  "name": "Residential Extension",
+  "tasks": [
+    { "stage": 0, "title": "Initial client enquiry & brief discussion", "type": "client" },
+    { "stage": 0, "title": "Agree scope & fee proposal / appointment", "type": "admin" },
+
+    { "stage": 1, "title": "Confirm CDM / Building Regulations Principal Designer appointment", "type": "statutory" },
+    { "stage": 1, "title": "Measured survey of existing building", "type": "client" },
+    { "stage": 1, "title": "Site & context appraisal", "type": "client" },
+    { "stage": 1, "title": "Planning pre-application enquiry", "type": "statutory" },
+    { "stage": 1, "title": "Develop & sign off project brief", "type": "client" },
+
+    { "stage": 2, "title": "Prepare concept design options", "type": "client" },
+    { "stage": 2, "title": "Client review & select preferred option", "type": "client" },
+    { "stage": 2, "title": "Outline cost / feasibility check", "type": "admin" },
+
+    { "stage": 3, "title": "Develop coordinated plans, sections & elevations", "type": "client" },
+    { "stage": 3, "title": "Structural coordination with engineer", "type": "client" },
+    { "stage": 3, "title": "Prepare planning drawings & documents", "type": "statutory" },
+    { "stage": 3, "title": "Submit planning application", "type": "statutory" },
+
+    { "stage": 4, "title": "Prepare Building Regulations package", "type": "statutory" },
+    { "stage": 4, "title": "Submit Building Regulations application", "type": "statutory" },
+    { "stage": 4, "title": "Serve party wall notices", "type": "statutory" },
+    { "stage": 4, "title": "Coordinate consultant information", "type": "client" },
+    { "stage": 4, "title": "Prepare tender / construction information", "type": "client" },
+
+    { "stage": 5, "title": "Tender & appoint contractor", "type": "admin" },
+    { "stage": 5, "title": "Discharge pre-commencement planning conditions", "type": "statutory" },
+    { "stage": 5, "title": "Building Control inspections", "type": "statutory" },
+    { "stage": 5, "title": "Site inspections / contract administration", "type": "client" },
+
+    { "stage": 6, "title": "Snagging & defects list", "type": "client" },
+    { "stage": 6, "title": "Completion certificate (Building Control)", "type": "statutory" },
+    { "stage": 6, "title": "Compile Health & Safety file", "type": "statutory" },
+    { "stage": 6, "title": "Final account & handover documents", "type": "admin" },
+
+    { "stage": 7, "title": "Post-occupancy / aftercare check-in", "type": "client" }
+  ]
+}
