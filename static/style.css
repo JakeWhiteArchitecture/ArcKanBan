@@ -315,7 +315,8 @@ a { color: var(--blue); text-decoration: none; }
 
 /* ---- Drag ------------------------------------------------------------- */
 .card { cursor: grab; }
-.card.dragging { opacity: 0.45; cursor: grabbing; box-shadow: var(--shadow-lift); }
+/* no highlight: the card just slides into its destination gap (siblings shift) */
+.card.dragging { opacity: 0.4; cursor: grabbing; }
 .drag-handle { cursor: grab; color: var(--ink-dim); font-size: 0.95rem; line-height: 1; letter-spacing: -2px; user-select: none; }
 .drag-handle:hover { color: var(--ink-soft); }
 /* keep interactive controls from showing the grab cursor */

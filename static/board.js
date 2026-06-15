@@ -650,17 +650,17 @@
     if (LAYOUT === "grouped") {
       var colBody = e.target.closest(".col-body"); if (!colBody) return;
       e.preventDefault(); e.dataTransfer.dropEffect = "move";
-      if (lastOverCol && lastOverCol !== colBody) lastOverCol.classList.remove("drag-over");
-      colBody.classList.add("drag-over"); lastOverCol = colBody;
+      lastOverCol = colBody;
       if (colBody.dataset.status === draggingCard.dataset.status) {
         var cont = containerFor(colBody, draggingCard.dataset.section || "");
-        if (cont) maybePlace(cont, e.clientY);
+        if (cont) maybePlace(cont, e.clientY);   // slide into its section bubble
+      } else if (draggingCard.parentElement !== colBody) {
+        // cross-column: slide the card itself into the destination column (no highlight)
+        flipReorder(stageOf(colBody), function () { colBody.appendChild(draggingCard); });
       }
     } else {
       var container = e.target.closest(".col-cards"); if (!container) return;
       e.preventDefault(); e.dataTransfer.dropEffect = "move";
-      if (lastOver && lastOver !== container) lastOver.classList.remove("drag-over");
-      container.classList.add("drag-over"); lastOver = container;
       maybePlace(container, e.clientY);
     }
   });
