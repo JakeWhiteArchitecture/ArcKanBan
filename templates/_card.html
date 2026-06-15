@@ -3,21 +3,22 @@
          draggable="true" data-task-id="{{ t.id }}" data-status="{{ t.status }}" data-stage="{{ t.stage }}"
          data-type="{{ t.type }}" data-urgent="{{ 1 if t.urgent else 0 }}"
          data-section="{{ t.section_id if t.section_id is not none else '' }}">
-  <header class="card-top">
+  <div class="card-top">
     <span class="drag-handle" aria-hidden="true" title="Drag to move">⠿</span>
     <select class="type-select" data-action="change-type" aria-label="Task type">
       {% for ty in ['client', 'statutory', 'admin'] %}
         <option value="{{ ty }}" {% if t.type == ty %}selected{% endif %}>{{ type_labels[ty] }}</option>
       {% endfor %}
     </select>
-    {% if t.type == 'statutory' %}<span class="statutory-tag">Statutory</span>{% endif %}
     <span class="card-top-spacer"></span>
+    <button type="button" class="step step-prev" data-action="status-prev"
+            {% if si == 0 %}disabled{% endif %} aria-label="Move left" title="Move left">‹</button>
+    <button type="button" class="step step-next" data-action="status-next"
+            {% if si == statuses|length - 1 %}disabled{% endif %} aria-label="Move right" title="Move right">›</button>
     <button type="button" class="flag" data-action="toggle-urgent"
-            aria-pressed="{{ 'true' if t.urgent else 'false' }}"
-            aria-label="Mark urgent" title="Urgent">!</button>
-    <button type="button" class="card-del" data-action="delete-task"
-            aria-label="Delete task" title="Delete">×</button>
-  </header>
+            aria-pressed="{{ 'true' if t.urgent else 'false' }}" aria-label="Mark urgent" title="Urgent">!</button>
+    <button type="button" class="card-del" data-action="delete-task" aria-label="Delete task" title="Delete">×</button>
+  </div>
 
   <div class="task-title" data-action="edit-title" role="button" tabindex="0">{{ t.title }}</div>
 
@@ -25,12 +26,4 @@
     <span class="awaiting-mark">⧖</span>
     <span class="awaiting-text {% if not t.awaiting_on %}is-empty{% endif %}">{{ t.awaiting_on or 'who / what?' }}</span>
   </div>
-
-  <footer class="card-foot">
-    <button type="button" class="step step-prev" data-action="status-prev"
-            {% if si == 0 %}disabled{% endif %} aria-label="Move left">‹</button>
-    <span class="status-label">{{ status_labels[t.status] }}</span>
-    <button type="button" class="step step-next" data-action="status-next"
-            {% if si == statuses|length - 1 %}disabled{% endif %} aria-label="Move right">›</button>
-  </footer>
 </article>

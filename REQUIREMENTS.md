@@ -365,6 +365,7 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 22. **Grouped view**: section **bubbles** within each status column + a loose area; **click-to-link** (highlight a card's section across columns, dim the rest).
 23. **Drag auto-regroups**: in the grouped view, dropping a card in another column keeps its section and lands in that section's bubble (created if needed) — never the empty workspace. A status-drag never changes section.
 24. **Section reassignment** via the chip bar (select card → click chip); the viewed stage is remembered across reloads/toggles.
+25. **Compact cards + sliding reorder**: the per-card status label and footer row are gone (the column states the status); the ‹ › steppers fold into the card's control row; statutory shows as a red type label. Drag reorder now uses a **FLIP** animation — sibling cards slide aside live instead of snapping into place on release (honours `prefers-reduced-motion`).
 
 ---
 

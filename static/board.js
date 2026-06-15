@@ -359,9 +359,6 @@
     if (!r) { select.value = oldType; return; }
     card.dataset.type = newType;
     card.classList.remove("type-client", "type-statutory", "type-admin"); card.classList.add("type-" + newType);
-    var tag = card.querySelector(".statutory-tag");
-    if (newType === "statutory" && !tag) { tag = document.createElement("span"); tag.className = "statutory-tag"; tag.textContent = "Statutory"; select.insertAdjacentElement("afterend", tag); }
-    else if (newType !== "statutory" && tag) tag.remove();
     registerActivity(card.dataset.stage, card.dataset.taskId);
   }
   async function deleteTask(btn) {
@@ -486,6 +483,36 @@
     });
     return closest.el;
   }
+  // FLIP: let sibling cards slide to their new spots instead of snapping.
+  function flipReorder(scope, mutate) {
+    if (reduceMotion) { mutate(); return; }
+    var cards = [].slice.call(scope.querySelectorAll(".card:not(.dragging)"));
+    var first = cards.map(function (c) { return c.getBoundingClientRect(); });
+    mutate();
+    var deltas = cards.map(function (c, i) {
+      var l = c.getBoundingClientRect();
+      return { dx: first[i].left - l.left, dy: first[i].top - l.top };
+    });
+    cards.forEach(function (c, i) {
+      var d = deltas[i]; if (!d.dx && !d.dy) return;
+      c.style.transition = "none"; c.style.transform = "translate(" + d.dx + "px," + d.dy + "px)";
+    });
+    requestAnimationFrame(function () {
+      cards.forEach(function (c, i) {
+        var d = deltas[i]; if (!d.dx && !d.dy) return;
+        c.style.transition = "transform 160ms cubic-bezier(.2,.7,.3,1)"; c.style.transform = "";
+      });
+    });
+    setTimeout(function () { cards.forEach(function (c) { c.style.transition = ""; c.style.transform = ""; }); }, 220);
+  }
+  function maybePlace(container, y) {
+    var after = getDragAfterElement(container, y);
+    if (draggingCard.parentElement === container && after === draggingCard.nextElementSibling) return;
+    flipReorder(stageOf(container) || container, function () {
+      if (after == null) container.appendChild(draggingCard);
+      else container.insertBefore(draggingCard, after);
+    });
+  }
   document.addEventListener("dragstart", function (e) {
     var card = e.target.closest(".card"); if (!card) return;
     if (e.target.closest("button, select, input, textarea, a, .task-title, .awaiting-on, [contenteditable]")) { e.preventDefault(); return; }
@@ -503,15 +530,14 @@
       colBody.classList.add("drag-over"); lastOverCol = colBody;
       if (colBody.dataset.status === draggingCard.dataset.status) {
         var cont = containerFor(colBody, draggingCard.dataset.section || "");
-        if (cont) { var after = getDragAfterElement(cont, e.clientY); if (after == null) cont.appendChild(draggingCard); else cont.insertBefore(draggingCard, after); }
+        if (cont) maybePlace(cont, e.clientY);
       }
     } else {
       var container = e.target.closest(".col-cards"); if (!container) return;
       e.preventDefault(); e.dataTransfer.dropEffect = "move";
       if (lastOver && lastOver !== container) lastOver.classList.remove("drag-over");
       container.classList.add("drag-over"); lastOver = container;
-      var a = getDragAfterElement(container, e.clientY);
-      if (a == null) container.appendChild(draggingCard); else container.insertBefore(draggingCard, a);
+      maybePlace(container, e.clientY);
     }
   });
   track.addEventListener("drop", function (e) { if (draggingCard) e.preventDefault(); });
@@ -536,7 +562,10 @@
       { status: status, section_id: section || null, index: index });
     if (!r) { location.reload(); return; }
     applyCardStatus(card, status);
-    recountStageFull(stageOf(card)); registerActivity(card.dataset.stage, card.dataset.taskId);
+    var sEl = stageOf(card);
+    recountStageFull(sEl);
+    if (sEl) sEl.querySelectorAll(".card").forEach(function (c) { c.style.transform = ""; c.style.transition = ""; });
+    registerActivity(card.dataset.stage, card.dataset.taskId);
   });
 
   // ---- event wiring ------------------------------------------------------

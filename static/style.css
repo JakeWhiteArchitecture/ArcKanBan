@@ -326,7 +326,7 @@ a { color: var(--blue); text-decoration: none; }
 .card {
   background: var(--glass-raised); border: 1px solid var(--glass-border);
   border-left: 3px solid var(--ink-soft); border-radius: var(--radius-sm);
-  padding: var(--u); position: relative; box-shadow: 0 6px 18px rgba(0,0,0,0.30);
+  padding: 7px 8px; position: relative; box-shadow: 0 6px 18px rgba(0,0,0,0.30);
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
 }
 .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
@@ -334,12 +334,12 @@ a { color: var(--blue); text-decoration: none; }
 .card.type-statutory { border-left-color: var(--redline); }
 .card.type-admin { border-left-color: var(--ink-dim); }
 
-.card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.card-top { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
 .card-top-spacer { flex: 1; }
 .type-select { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 2px; cursor: pointer; }
 .type-select:hover { border-color: var(--glass-border); }
 .type-select option { background: var(--bg-2); color: var(--ink); }
-.statutory-tag { font-family: var(--font-mono); font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--redline); border: 1px solid var(--redline); border-radius: 4px; padding: 0 4px; }
+.card.type-statutory .type-select { color: var(--redline); font-weight: 700; }
 
 .flag { width: 22px; height: 22px; border-radius: 5px; cursor: pointer; line-height: 1; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-soft); font-weight: 800; }
 .flag[aria-pressed="true"] { color: #fff; background: var(--redline); border-color: var(--redline); box-shadow: 0 0 14px var(--redline-tint); }
@@ -357,11 +357,9 @@ a { color: var(--blue); text-decoration: none; }
 .card.status-awaiting .awaiting-on { display: flex; }
 .awaiting-text.is-empty { color: color-mix(in srgb, var(--ochre) 60%, transparent); font-style: italic; }
 
-.card-foot { display: flex; align-items: center; justify-content: space-between; margin-top: var(--u); gap: 6px; }
-.step { width: 26px; height: 22px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
+.step { width: 22px; height: 20px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
 .step:disabled { opacity: 0.3; cursor: default; }
 .step:not(:disabled):hover { border-color: var(--blue); color: var(--blue); }
-.status-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
 .card.status-done .task-title { color: var(--ink-soft); }
 
 /* ---- Add-task --------------------------------------------------------- */
