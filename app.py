@@ -2,12 +2,13 @@
 ArcKanban — a project tracker for a sole-trader architectural practice.
 
 Single-file Flask app over SQLite. Local-first, no cloud, no build step.
-See REQUIREMENTS.md for the full specification. This module is the foundation
-(Increment 1): projects, templates, the RIBA accordion board, the four-column
+See REQUIREMENTS.md for the full specification. This module covers projects,
+templates, the horizontally-paged RIBA board, section swimlanes, the four-column
 per-stage Kanban, the urgent flag, awaiting-on notes, triage filters, the
-stage-advancement nudge, status moves via the steppers, and the spine.
+stage-advancement nudge, status moves via the steppers, and drag (within a
+stage, across sections and status columns).
 
-Drag-and-drop and task nesting arrive in the next increment.
+Parent/child task nesting arrives in the next increment.
 """
 
 import json
@@ -111,6 +112,13 @@ def init_db():
             current_stage INTEGER NOT NULL DEFAULT 0,
             created_at    TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS sections (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            stage      INTEGER NOT NULL,
+            title      TEXT NOT NULL,
+            position   INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS tasks (
             id          INTEGER PRIMARY KEY,
             project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -121,6 +129,7 @@ def init_db():
             urgent      INTEGER NOT NULL DEFAULT 0,
             awaiting_on TEXT,
             position    INTEGER NOT NULL DEFAULT 0,
+            section_id  INTEGER REFERENCES sections(id) ON DELETE SET NULL,
             parent_id   INTEGER REFERENCES tasks(id) ON DELETE CASCADE
         );
         """
@@ -129,6 +138,7 @@ def init_db():
     _ensure_column(db, "tasks", "urgent", "urgent INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "tasks", "awaiting_on", "awaiting_on TEXT")
     _ensure_column(db, "tasks", "position", "position INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "tasks", "section_id", "section_id INTEGER REFERENCES sections(id)")
     _ensure_column(db, "tasks", "parent_id", "parent_id INTEGER REFERENCES tasks(id)")
     # Old 'urgent' status rows (if any) become To Do + the urgent flag.
     db.execute("UPDATE tasks SET status='todo', urgent=1 WHERE status='urgent'")
@@ -180,7 +190,9 @@ def load_template(filename):
         ttype = t.get("type", "admin")
         if ttype not in TYPES:
             ttype = "admin"
-        tasks.append({"stage": stage, "title": title, "type": ttype})
+        section = t.get("section")
+        section = str(section).strip() if section else None
+        tasks.append({"stage": stage, "title": title, "type": ttype, "section": section})
     return {"name": data.get("name", filename), "tasks": tasks}
 
 
@@ -192,12 +204,12 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def next_position(db, project_id, stage, status, parent_id=None):
-    """Next sort position at the end of one list (project, stage, status)."""
+def next_position(db, project_id, stage, status, section_id, parent_id=None):
+    """Next sort position at the end of one list (project, stage, section, status)."""
     row = db.execute(
         """SELECT COALESCE(MAX(position) + 1, 0) AS p FROM tasks
-           WHERE project_id=? AND stage=? AND status=? AND parent_id IS ?""",
-        (project_id, stage, status, parent_id),
+           WHERE project_id=? AND stage=? AND status=? AND section_id IS ? AND parent_id IS ?""",
+        (project_id, stage, status, section_id, parent_id),
     ).fetchone()
     return row["p"]
 
@@ -212,8 +224,20 @@ def task_to_dict(row):
         "urgent": bool(row["urgent"]),
         "awaiting_on": row["awaiting_on"] or "",
         "position": row["position"],
+        "section_id": row["section_id"],
         "parent_id": row["parent_id"],
     }
+
+
+def section_in_stage(db, section_id, project_id, stage):
+    """True if section_id is None, or a section of this project in this stage."""
+    if section_id is None:
+        return True
+    row = db.execute(
+        "SELECT 1 FROM sections WHERE id=? AND project_id=? AND stage=?",
+        (section_id, project_id, stage),
+    ).fetchone()
+    return row is not None
 
 
 def get_project_or_404(db, project_id):
@@ -225,27 +249,59 @@ def get_project_or_404(db, project_id):
     return row
 
 
+def build_lane(section_id, title, stage_rows):
+    """One swimlane: a section's (or the loose 'General' lane's) status columns."""
+    columns = {s: [] for s in STATUSES}
+    urgent = done = total = 0
+    for r in stage_rows:
+        if r["section_id"] != section_id:
+            continue
+        columns[r["status"]].append(task_to_dict(r))
+        total += 1
+        if r["urgent"]:
+            urgent += 1
+        if r["status"] == "done":
+            done += 1
+    return {
+        "id": section_id,
+        "title": title,
+        "columns": columns,
+        "counts": {"urgent": urgent, "done_n": done, "total": total},
+    }
+
+
 def build_stages(db, project_id):
-    """Group a project's top-level tasks into stages → status columns + counts."""
+    """Group top-level tasks into stages → section swimlanes → status columns."""
+    sections = db.execute(
+        "SELECT * FROM sections WHERE project_id=? ORDER BY stage, position, id",
+        (project_id,),
+    ).fetchall()
     rows = db.execute(
         """SELECT * FROM tasks WHERE project_id=? AND parent_id IS NULL
            ORDER BY stage, position, id""",
         (project_id,),
     ).fetchall()
+    by_stage = {}
+    for s in sections:
+        by_stage.setdefault(s["stage"], []).append(s)
+
     stages = []
     for idx, name in enumerate(RIBA_STAGES):
-        columns = {s: [] for s in STATUSES}
-        urgent = 0
-        for r in rows:
-            if r["stage"] != idx:
-                continue
-            columns[r["status"]].append(task_to_dict(r))
-            if r["urgent"]:
-                urgent += 1
-        counts = {s: len(columns[s]) for s in STATUSES}
-        counts["urgent"] = urgent
-        stages.append({"idx": idx, "name": name, "columns": columns, "counts": counts})
+        stage_rows = [r for r in rows if r["stage"] == idx]
+        lanes = [build_lane(s["id"], s["title"], stage_rows) for s in by_stage.get(idx, [])]
+        lanes.append(build_lane(None, None, stage_rows))  # 'General' loose lane, last
+        counts = {st: sum(len(l["columns"][st]) for l in lanes) for st in STATUSES}
+        counts["urgent"] = sum(l["counts"]["urgent"] for l in lanes)
+        stages.append({"idx": idx, "name": name, "lanes": lanes, "counts": counts})
     return stages
+
+
+def render_lane(lane, stage_idx):
+    """Render one swimlane partial (used when a section is created)."""
+    return render_template(
+        "_lane.html", lane=lane, stage_idx=stage_idx,
+        status_labels=STATUS_LABELS, type_labels=TYPE_LABELS, statuses=STATUSES,
+    )
 
 
 def mini_spine(current_stage):
@@ -315,14 +371,31 @@ def create_project():
         if tpl is None:
             flash("That template could not be read — created a blank project instead.")
         else:
-            pos_by_stage = {}
+            section_ids = {}      # (stage, name) -> section id
+            sec_pos = {}          # stage -> next section position
+            pos_by_lane = {}      # (stage, section_id) -> next task position
             for t in tpl["tasks"]:
-                pos = pos_by_stage.get(t["stage"], 0)
-                pos_by_stage[t["stage"]] = pos + 1
+                stage, sname = t["stage"], t.get("section")
+                section_id = None
+                if sname:
+                    key = (stage, sname)
+                    if key not in section_ids:
+                        p = sec_pos.get(stage, 0)
+                        sec_pos[stage] = p + 1
+                        cur2 = db.execute(
+                            "INSERT INTO sections (project_id, stage, title, position) "
+                            "VALUES (?, ?, ?, ?)",
+                            (project_id, stage, sname, p),
+                        )
+                        section_ids[key] = cur2.lastrowid
+                    section_id = section_ids[key]
+                lane = (stage, section_id)
+                pos = pos_by_lane.get(lane, 0)
+                pos_by_lane[lane] = pos + 1
                 db.execute(
                     "INSERT INTO tasks (project_id, stage, title, status, type, "
-                    "position) VALUES (?, ?, ?, 'todo', ?, ?)",
-                    (project_id, t["stage"], t["title"], t["type"], pos),
+                    "position, section_id) VALUES (?, ?, ?, 'todo', ?, ?, ?)",
+                    (project_id, stage, t["title"], t["type"], pos, section_id),
                 )
     db.commit()
     return redirect(url_for("board", project_id=project_id))
@@ -418,11 +491,19 @@ def api_add_task(project_id):
     ttype = data.get("type", "admin")
     if ttype not in TYPES:
         ttype = "admin"
-    pos = next_position(db, project_id, stage, "todo")
+    section_id = data.get("section_id") or None
+    if section_id is not None:
+        try:
+            section_id = int(section_id)
+        except (TypeError, ValueError):
+            return jsonify(ok=False, error="Invalid section."), 400
+        if not section_in_stage(db, section_id, project_id, stage):
+            return jsonify(ok=False, error="Section not in this stage."), 400
+    pos = next_position(db, project_id, stage, "todo", section_id)
     cur = db.execute(
-        "INSERT INTO tasks (project_id, stage, title, status, type, position) "
-        "VALUES (?, ?, ?, 'todo', ?, ?)",
-        (project_id, stage, title, ttype, pos),
+        "INSERT INTO tasks (project_id, stage, title, status, type, position, section_id) "
+        "VALUES (?, ?, ?, 'todo', ?, ?, ?)",
+        (project_id, stage, title, ttype, pos, section_id),
     )
     db.commit()
     row = db.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone()
@@ -467,11 +548,11 @@ def api_update_task(task_id):
         status = data["status"]
         if status not in STATUSES:
             return jsonify(ok=False, error="Invalid status."), 400
-        # Moving columns: append to the end of the destination list.
+        # Stepper move within the same section: append to the destination column.
         fields.append("status=?")
         values.append(status)
         fields.append("position=?")
-        values.append(next_position(db, row["project_id"], row["stage"], status))
+        values.append(next_position(db, row["project_id"], row["stage"], status, row["section_id"]))
 
     if not fields:
         return jsonify(ok=True)
@@ -481,6 +562,102 @@ def api_update_task(task_id):
     db.commit()
     new_row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     return jsonify(ok=True, task=task_to_dict(new_row))
+
+
+@app.route("/api/tasks/<int:task_id>/move", methods=["POST"])
+def api_move_task(task_id):
+    """Drag: set status + section, then renumber the destination column 0..n."""
+    db = get_db()
+    row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such task."), 404
+    data = request.get_json(silent=True) or {}
+    status = data.get("status")
+    if status not in STATUSES:
+        return jsonify(ok=False, error="Invalid status."), 400
+    section_id = data.get("section_id") or None
+    if section_id is not None:
+        try:
+            section_id = int(section_id)
+        except (TypeError, ValueError):
+            return jsonify(ok=False, error="Invalid section."), 400
+    # Sections live within a stage — a task never moves stage by drag.
+    if not section_in_stage(db, section_id, row["project_id"], row["stage"]):
+        return jsonify(ok=False, error="Section not in this stage."), 400
+    try:
+        index = int(data.get("index", 0))
+    except (TypeError, ValueError):
+        index = 0
+
+    db.execute("UPDATE tasks SET status=?, section_id=? WHERE id=?", (status, section_id, task_id))
+    siblings = [r["id"] for r in db.execute(
+        """SELECT id FROM tasks WHERE project_id=? AND stage=? AND status=? AND section_id IS ?
+           AND parent_id IS NULL AND id<>? ORDER BY position, id""",
+        (row["project_id"], row["stage"], status, section_id, task_id),
+    )]
+    index = max(0, min(index, len(siblings)))
+    siblings.insert(index, task_id)
+    for i, tid in enumerate(siblings):
+        db.execute("UPDATE tasks SET position=? WHERE id=?", (i, tid))
+    db.commit()
+    new_row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    return jsonify(ok=True, task=task_to_dict(new_row))
+
+
+@app.route("/api/projects/<int:project_id>/sections", methods=["POST"])
+def api_add_section(project_id):
+    db = get_db()
+    get_project_or_404(db, project_id)
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify(ok=False, error="A section needs a title."), 400
+    try:
+        stage = int(data.get("stage"))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="Invalid stage."), 400
+    if not 0 <= stage <= 7:
+        return jsonify(ok=False, error="Stage out of range."), 400
+    p = db.execute(
+        "SELECT COALESCE(MAX(position)+1,0) AS p FROM sections WHERE project_id=? AND stage=?",
+        (project_id, stage),
+    ).fetchone()["p"]
+    cur = db.execute(
+        "INSERT INTO sections (project_id, stage, title, position) VALUES (?, ?, ?, ?)",
+        (project_id, stage, title, p),
+    )
+    db.commit()
+    lane = build_lane(cur.lastrowid, title, [])
+    return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "title": title},
+                   html=render_lane(lane, stage))
+
+
+@app.route("/api/sections/<int:section_id>", methods=["POST"])
+def api_update_section(section_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM sections WHERE id=?", (section_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such section."), 404
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify(ok=False, error="Title cannot be empty."), 400
+    db.execute("UPDATE sections SET title=? WHERE id=?", (title, section_id))
+    db.commit()
+    return jsonify(ok=True, title=title)
+
+
+@app.route("/api/sections/<int:section_id>/delete", methods=["POST"])
+def api_delete_section(section_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM sections WHERE id=?", (section_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such section."), 404
+    # Orphan the section's tasks to the loose 'General' lane, then delete the section.
+    db.execute("UPDATE tasks SET section_id=NULL WHERE section_id=?", (section_id,))
+    db.execute("DELETE FROM sections WHERE id=?", (section_id,))
+    db.commit()
+    return jsonify(ok=True)
 
 
 @app.route("/api/tasks/<int:task_id>/delete", methods=["POST"])

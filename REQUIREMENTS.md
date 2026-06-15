@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.3 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.4 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.4):** adds **sections of work** — an optional grouping between stage and task (**Stage → Section → Task → child**). Sections render as **glass swimlanes** stacked within a stage (pan = stages, scroll = sections, columns = status); loose tasks live in an always-present **"General"** lane. **Drag is implemented**: a task can be dragged to any **section × status cell within its stage** (never across stages) and reordered — persisting `status`, `section_id`, `position`; the ‹ › steppers stay as the click/touch fallback. New `sections` table + `tasks.section_id`. Full deltas in §11.
 
 > **Revision note (v0.3):** the board is now a **dark, glassy, floating-frame** UI on deep navy — the drawing-office instrument identity (titleblock, spine, mono register, redline/ochre/sage semantics) rendered in glass. Stages are **paged horizontally** (one stage's four-column Kanban fills the screen; flip with arrows / the spine / a swipe / the ←→ keys) rather than stacked in a vertical accordion. The top **spine carries the RIBA Plan of Work stage colours** (0→7). This reverses the earlier light "paper" palette. Full deltas in §11.
 
@@ -28,7 +30,9 @@ Guiding constraints:
 
 ## 2. Core concept (and one thing it deliberately is *not*)
 
-The board **pages horizontally through the eight RIBA stages** — one stage's **four-column Kanban** (see §3.4) fills the screen, and you flip between stages with floating arrows, the spine, a swipe, or the ←/→ keys. A horizontal **stage spine** across the top, coloured by the RIBA Plan of Work, marks where the job currently sits and doubles as navigation.
+The board **pages horizontally through the eight RIBA stages** — one stage fills the screen, and you flip between stages with floating arrows, the spine, a swipe, or the ←/→ keys. A horizontal **stage spine** across the top, coloured by the RIBA Plan of Work, marks where the job currently sits and doubles as navigation.
+
+Within a stage, tasks group into optional **sections of work** (§3.11) — glass swimlanes you scroll through; each section's tasks still flow across the four status columns (§3.4). So the board reads on three axes: **pan = stages, scroll = sections, columns = status**, with the hierarchy **Stage → Section → Task → child**.
 
 It is **not** a single board where cards are dragged *between* RIBA stages. A Stage 3 task does not become a Stage 4 task — tasks don't migrate across the Plan of Work, so that interaction was rejected as the wrong metaphor. Movement happens *within* a stage, along the status columns. This decision is recorded here so it isn't relitigated.
 
@@ -92,11 +96,11 @@ The eight stages of the RIBA Plan of Work 2020, fixed:
 - The collapsed summary shows live counts per status (e.g. *2 upcoming · 3 to do · 2 awaiting · 4 done*) plus a separate **redline urgent tally** (e.g. *· 1 urgent*) when any top-level card is flagged — urgency is orthogonal, so it is counted separately, not inside a status. All counts are **top-level cards only** (children excluded). Zero-count pips may be hidden to keep the summary clean.
 - The board **pages horizontally** — one stage at a time fills the screen; on load it opens on the **current stage**. Navigate by the floating ‹ › arrows, the spine, swipe, or ←/→ keys.
 
-### 3.6 Drag — reorder and re-status
-- **Reorder within a column** by dragging a card up/down; the new order persists (via `position`).
-- **Move across columns** by dragging a card into another column; this changes its status and persists. Movement is unrestricted in either direction.
-- Drag must feel precise: a card lifts on grab (shadow + slight scale), columns show a clear insertion point, drop settles without a full-page reload.
-- **Click fallback (and the primary path on touch):** each card carries **‹ ›** buttons that step it left/right across the four status columns with a single click. (These move a task between *status columns* — never between RIBA stages, which is a hard non-goal.) Drag is an enhancement, not the only path.
+### 3.6 Drag — reorder, re-status, re-section *(implemented)*
+- Drag a card to **any section × status cell within its stage** — changing its **status** (column), its **section** (lane, §3.11), or both — and **reorder** within a cell. It persists `status`, `section_id`, and `position` (the destination column is renumbered `0..n`).
+- **Drag never crosses stages.** Sections are stage-bound and each stage is its own page, so there is no cross-stage drag (a hard non-goal, §9) and no cross-stage tension.
+- Implemented with the browser's **native drag-and-drop** — no library, no CDN, in keeping with sovereignty. A grabbed card lifts (handle = ⠿, or grab the card body), the target cell highlights, and the drop settles without a reload.
+- **Click / touch fallback:** each card's **‹ ›** buttons step it across the four status columns (staying in its section). Drag is an enhancement, not the only path. *(Native DnD is mouse/desktop; the steppers cover status on touch — moving sections on touch is a known gap, and keyboard DnD / SortableJS-for-nesting are candidates for the nesting increment.)*
 
 ### 3.7 Nesting — parent/child tasks
 The headline new interaction: **drag one card onto another and the target becomes its parent.**
@@ -128,6 +132,16 @@ The practitioner often starts working ahead before formally "moving" the job. Th
 
 ### 3.10 Triage filters
 Quiet toggles in the titleblock that narrow what the whole board shows, for fast triage of §1's questions — **Urgent only**, **Statutory only**, **Hide done**. Filters apply across all expanded stages, are **client-side** (no server round-trip), and may be **remembered** in `localStorage` (still sovereign — nothing leaves the machine). "Hide done" hides Done cards (and may collapse the Done column); the type/urgent filters narrow to matching cards. Filters never alter data — only the view, and an active filter is always visibly indicated so the board is never silently partial.
+
+### 3.11 Sections of work
+An optional grouping between a stage and its tasks: **Stage → Section → Task → child.** "Measured Building Survey" is a section; "Site survey" a task within it. Tasks need not belong to a section.
+
+- A **section belongs to one stage** — no cross-stage sections, no cross-stage tension. It carries a title and a `position`.
+- Sections render as **glass swimlanes** stacked down a stage; each lane runs the four status columns through *its own* tasks. Loose (un-sectioned) tasks live in an always-present **"General"** lane, shown last — so there is always somewhere to add or drop a loose task.
+- Each lane shows a **roll-up** (done/total + an urgent tally) and is **collapsible** to its header.
+- Create a section (per stage), **rename** it inline, and **delete** it — **deleting a section orphans its tasks to General** (it never destroys them).
+- Drag (§3.6) moves a task between lanes (sets `section_id`); add-task is per-lane.
+- Stage count pips (§3.5) and the urgent tally count **all top-level tasks in the stage**, across every lane.
 
 ---
 
@@ -222,22 +236,31 @@ projects(
   created_at    TEXT NOT NULL                  -- ISO-8601; ordering uses id DESC
 )
 
-tasks(
+sections(                                      -- "sections of work" (optional grouping)
   id         INTEGER PK,
   project_id INTEGER NOT NULL  -> projects.id (cascade delete),
-  stage      INTEGER NOT NULL,                 -- 0..7
+  stage      INTEGER NOT NULL,                 -- 0..7 (a section lives in one stage)
   title      TEXT NOT NULL,
-  status     TEXT NOT NULL DEFAULT 'todo',     -- upcoming | todo | awaiting | done
-  type       TEXT NOT NULL DEFAULT 'admin',    -- client | statutory | admin
+  position   INTEGER NOT NULL DEFAULT 0
+)
+
+tasks(
+  id          INTEGER PK,
+  project_id  INTEGER NOT NULL  -> projects.id (cascade delete),
+  stage       INTEGER NOT NULL,                -- 0..7
+  title       TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'todo',    -- upcoming | todo | awaiting | done
+  type        TEXT NOT NULL DEFAULT 'admin',   -- client | statutory | admin
   urgent      INTEGER NOT NULL DEFAULT 0,      -- 0/1 flag, orthogonal to status
   awaiting_on TEXT NULL,                       -- optional: who/what an Awaiting task is blocked on
   position    INTEGER NOT NULL DEFAULT 0,      -- sort order WITHIN one list (see below)
-  parent_id  INTEGER NULL  -> tasks.id         -- nesting (single level)
+  section_id  INTEGER NULL  -> sections.id,    -- swimlane; ON DELETE SET NULL → 'General'
+  parent_id   INTEGER NULL  -> tasks.id        -- nesting (single level)
 )
 ```
 
 **`position` scope.** `position` orders a card *within a single list*, where a "list" is:
-- for a **top-level** card: the tuple `(project_id, stage, status)` — i.e. one column of one stage;
+- for a **top-level** card: the tuple `(project_id, stage, section_id, status)` — i.e. one column of one section's swimlane;
 - for a **child**: its siblings under one `parent_id`.
 
 Positions are not global. On every drop/step, **renumber the affected list `0,1,2,…`** — at this scale (see §9) nothing fancier (fractional ranks, gap strategies) is warranted.
@@ -247,7 +270,8 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 2. `tasks.urgent`;
 3. `tasks.awaiting_on`;
 4. `tasks.position` *(if v0.1 lacks it)*;
-5. the **status value set** changes to `upcoming | todo | awaiting | done` — any existing `'urgent'` status rows are migrated to `status='todo', urgent=1`.
+5. the **status value set** changes to `upcoming | todo | awaiting | done` — any existing `'urgent'` status rows are migrated to `status='todo', urgent=1`;
+6. the **`sections`** table + **`tasks.section_id`** (`ON DELETE SET NULL` → orphaned tasks fall back to the loose 'General' lane).
 
 (This corrects the v0.1 doc's claim that `parent_id` was the only schema change.) Enable `PRAGMA foreign_keys = ON` per connection; perform project/parent deletes explicitly in the route regardless.
 
@@ -256,8 +280,8 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 ## 7. Tech stack
 - **Backend:** Python 3, Flask, Jinja templates.
 - **Database:** SQLite, single file (`arckanban.db`) in the app folder, created on first run.
-- **Frontend:** vanilla JS, no framework, no bundler. SortableJS vendored into `static/` for drag.
-- **Persistence of drag/steps:** small JSON endpoints (`fetch`) that update status / position / parent_id / urgent / type and return ok; no page reload. **Mutating endpoints check the `Origin` header (same-origin)** — a localhost service is otherwise reachable by any page in the user's browser; cheap insurance, on-brand for a sovereign tool.
+- **Frontend:** vanilla JS, no framework, no bundler. **Drag uses the browser's native drag-and-drop** — no library, no CDN (the CDNs are blocked in the build environment anyway, and native keeps it sovereign). SortableJS may be vendored later for the nesting gesture + touch support.
+- **Persistence of drag/steps:** small JSON endpoints (`fetch`) that update status / position / section_id / parent_id / urgent / type and return ok; no page reload. **Mutating endpoints check the `Origin` header (same-origin)** — a localhost service is otherwise reachable by any page in the user's browser; cheap insurance, on-brand for a sovereign tool.
 - **Run:** `pip install flask` → `python app.py` → `http://127.0.0.1:5000`.
 
 ---
@@ -277,6 +301,9 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 *Acceptance:* matches the design language on desktop and mobile; operable without drag; reduced-motion honoured; AA contrast.
 
 **Phase 5 — Template library.** Author further templates (New Build, Loft Conversion, Garage Conversion, Listed/Conservation) as JSON. Optionally a simple in-app "save current project as template" (with a name/overwrite rule).
+
+**Phase 6 — Sections of work + drag *(done)*.** Add the `sections` table + `tasks.section_id`. Render glass swimlanes within a stage (a 'General' lane for loose tasks); create / rename / delete a section (delete orphans its tasks to General). Native drag of tasks across the **section × status grid within a stage**, persisting `status` / `section_id` / `position`; ‹ › steppers remain the fallback. Templates may declare a `section` per task.
+*Acceptance:* template imports sections and assigns tasks; drag a card to another lane or column → survives reload; deleting a section moves its tasks to General (none lost); drag never crosses stages.
 
 ---
 
@@ -320,6 +347,12 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 14. **Horizontal stage paging** — one stage's Kanban fills the screen, flipped by floating arrows / spine / swipe / ←→ keys; replaces the vertical accordion.
 15. **RIBA stage colours** on the spine (`--riba-0…7`) — approximate spectrum pending official brand hexes.
 16. **Active vs current stage** are now distinct on the spine: a blue focus ring marks the stage you're *viewing*, a filled RIBA-colour glow marks the project's *current* stage.
+
+### v0.3 → v0.4 (sections of work + drag)
+17. **Sections of work** — optional grouping (`sections` table + `tasks.section_id`); the hierarchy is now **Stage → Section → Task → child**. Glass swimlanes within a stage + an always-present 'General' lane; create / rename / delete (delete orphans tasks to General).
+18. **Drag implemented** (native HTML5 DnD, no dependency): move a task across any section × status cell **within its stage**, with reorder; persists `status` / `section_id` / `position`. Steppers remain the click/touch fallback.
+19. **Templates may declare a `section`** per task; the Residential Extension template now ships with sections (Measured Building Survey, Planning Application, Building Regulations, Party Wall, Handover).
+20. `position` scope extended to include `section_id`; SortableJS replaced by native drag in §7.
 
 ---
 

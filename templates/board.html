@@ -74,26 +74,13 @@
           </span>
         </div>
 
-        <div class="columns">
-          {% for st in statuses %}
-            <section class="column col-{{ st }}" data-status="{{ st }}">
-              <h3 class="col-head">{{ status_labels[st] }} <span class="col-count">{{ s.counts[st] }}</span></h3>
-              <div class="col-cards" data-stage="{{ s.idx }}" data-status="{{ st }}">
-                {% for t in s.columns[st] %}{% include "_card.html" %}{% endfor %}
-              </div>
-            </section>
-          {% endfor %}
+        <div class="lanes">
+          {% for lane in s.lanes %}{% with stage_idx = s.idx %}{% include "_lane.html" %}{% endwith %}{% endfor %}
+          <form class="add-section" data-action="add-section" data-stage="{{ s.idx }}">
+            <input type="text" name="title" placeholder="+ New section of work…" autocomplete="off">
+            <button type="submit" class="btn-quiet">Add section</button>
+          </form>
         </div>
-
-        <form class="add-task" data-action="add-task" data-stage="{{ s.idx }}">
-          <input type="text" name="title" placeholder="Add a task to this stage…" autocomplete="off">
-          <select name="type" aria-label="Task type">
-            <option value="client">Client</option>
-            <option value="statutory">Statutory</option>
-            <option value="admin" selected>Admin</option>
-          </select>
-          <button type="submit" class="btn-quiet">Add</button>
-        </form>
       </section>
     {% endfor %}
   </div>
