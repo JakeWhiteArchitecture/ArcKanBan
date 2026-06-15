@@ -22,6 +22,7 @@ from flask import (
     flash,
     g,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -271,7 +272,8 @@ def build_lane(section_id, title, stage_rows):
 
 
 def build_stages(db, project_id):
-    """Group top-level tasks into stages → section swimlanes → status columns."""
+    """Build both layouts per stage: section swimlanes AND status-primary
+    columns-with-section-bubbles. The chosen layout is picked in the template."""
     sections = db.execute(
         "SELECT * FROM sections WHERE project_id=? ORDER BY stage, position, id",
         (project_id,),
@@ -288,11 +290,40 @@ def build_stages(db, project_id):
     stages = []
     for idx, name in enumerate(RIBA_STAGES):
         stage_rows = [r for r in rows if r["stage"] == idx]
-        lanes = [build_lane(s["id"], s["title"], stage_rows) for s in by_stage.get(idx, [])]
-        lanes.append(build_lane(None, None, stage_rows))  # 'General' loose lane, last
+        secs = by_stage.get(idx, [])
+
+        # Swimlane layout: section lanes (+ loose 'General'), each with 4 columns.
+        lanes = [build_lane(s["id"], s["title"], stage_rows) for s in secs]
+        lanes.append(build_lane(None, None, stage_rows))
+
+        # Grouped layout: 4 status columns, each grouping cards into section bubbles.
+        pos_of = {s["id"]: i for i, s in enumerate(secs)}
+        grouped = {}
+        for st in STATUSES:
+            bubbles = []
+            for s in secs:
+                tl = [task_to_dict(r) for r in stage_rows
+                      if r["section_id"] == s["id"] and r["status"] == st]
+                if tl:
+                    bubbles.append({"id": s["id"], "title": s["title"],
+                                    "pos": pos_of[s["id"]], "tasks": tl})
+            loose = [task_to_dict(r) for r in stage_rows
+                     if r["section_id"] is None and r["status"] == st]
+            grouped[st] = {"bubbles": bubbles, "loose": loose,
+                           "count": len(loose) + sum(len(b["tasks"]) for b in bubbles)}
+
+        # Section meta (for the grouped section bar): per-section roll-up.
+        sec_meta = []
+        for i, s in enumerate(secs):
+            st_rows = [r for r in stage_rows if r["section_id"] == s["id"]]
+            sec_meta.append({"id": s["id"], "title": s["title"], "pos": i,
+                             "total": len(st_rows),
+                             "done": sum(1 for r in st_rows if r["status"] == "done")})
+
         counts = {st: sum(len(l["columns"][st]) for l in lanes) for st in STATUSES}
         counts["urgent"] = sum(l["counts"]["urgent"] for l in lanes)
-        stages.append({"idx": idx, "name": name, "lanes": lanes, "counts": counts})
+        stages.append({"idx": idx, "name": name, "lanes": lanes, "grouped": grouped,
+                       "sections": sec_meta, "counts": counts})
     return stages
 
 
@@ -405,7 +436,11 @@ def create_project():
 def board(project_id):
     db = get_db()
     p = get_project_or_404(db, project_id)
-    return render_template(
+    # Layout: 'swimlane' (section bands) or 'grouped' (status columns + bubbles).
+    layout = request.args.get("layout") or request.cookies.get("layout") or "swimlane"
+    if layout not in ("swimlane", "grouped"):
+        layout = "swimlane"
+    resp = make_response(render_template(
         "board.html",
         project={
             "id": p["id"],
@@ -417,7 +452,11 @@ def board(project_id):
         status_labels=STATUS_LABELS,
         type_labels=TYPE_LABELS,
         statuses=STATUSES,
-    )
+        layout=layout,
+    ))
+    if request.args.get("layout") in ("swimlane", "grouped"):
+        resp.set_cookie("layout", layout, max_age=31536000, samesite="Lax")
+    return resp
 
 
 @app.route("/projects/<int:project_id>/delete", methods=["POST"])
@@ -544,15 +583,27 @@ def api_update_task(task_id):
         fields.append("awaiting_on=?")
         values.append((data["awaiting_on"] or "").strip() or None)
 
+    # Status and/or section change → reposition once at the end of the target column.
+    new_status, new_section, reposition = row["status"], row["section_id"], False
     if "status" in data:
-        status = data["status"]
-        if status not in STATUSES:
+        if data["status"] not in STATUSES:
             return jsonify(ok=False, error="Invalid status."), 400
-        # Stepper move within the same section: append to the destination column.
-        fields.append("status=?")
-        values.append(status)
+        new_status = data["status"]
+        fields.append("status=?"); values.append(new_status); reposition = True
+    if "section_id" in data:
+        sid = data["section_id"] or None
+        if sid is not None:
+            try:
+                sid = int(sid)
+            except (TypeError, ValueError):
+                return jsonify(ok=False, error="Invalid section."), 400
+            if not section_in_stage(db, sid, row["project_id"], row["stage"]):
+                return jsonify(ok=False, error="Section not in this stage."), 400
+        new_section = sid
+        fields.append("section_id=?"); values.append(new_section); reposition = True
+    if reposition:
         fields.append("position=?")
-        values.append(next_position(db, row["project_id"], row["stage"], status, row["section_id"]))
+        values.append(next_position(db, row["project_id"], row["stage"], new_status, new_section))
 
     if not fields:
         return jsonify(ok=True)

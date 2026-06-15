@@ -25,6 +25,11 @@
     {% endfor %}
   </ol>
 
+  <div class="layout-toggle" role="group" aria-label="Board layout" title="Section bands vs status columns">
+    <a class="lt-opt{{ ' on' if layout == 'swimlane' else '' }}" href="{{ url_for('board', project_id=project.id, layout='swimlane') }}">Sections</a>
+    <a class="lt-opt{{ ' on' if layout == 'grouped' else '' }}" href="{{ url_for('board', project_id=project.id, layout='grouped') }}">Status</a>
+  </div>
+
   <div class="tb-filters" role="group" aria-label="Triage filters">
     <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
     <button type="button" class="filter-btn" data-filter="statutory" aria-pressed="false">Statutory</button>
@@ -52,7 +57,7 @@
   </span>
 </div>
 
-<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}">
+<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}">
   <button type="button" class="nav-arrow prev" data-action="nav-prev" aria-label="Previous stage">‹</button>
   <button type="button" class="nav-arrow next" data-action="nav-next" aria-label="Next stage">›</button>
 
@@ -74,6 +79,9 @@
           </span>
         </div>
 
+        {% if layout == 'grouped' %}
+          {% include "_grouped.html" %}
+        {% else %}
         <div class="lanes">
           {% for lane in s.lanes %}{% with stage_idx = s.idx %}{% include "_lane.html" %}{% endwith %}{% endfor %}
           <form class="add-section" data-action="add-section" data-stage="{{ s.idx }}">
@@ -81,6 +89,7 @@
             <button type="submit" class="btn-quiet">Add section</button>
           </form>
         </div>
+        {% endif %}
       </section>
     {% endfor %}
   </div>

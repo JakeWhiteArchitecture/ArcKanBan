@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.4 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.5 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.5):** the section view is now a **toggle** (titleblock) between two renderings of the same data — **Sections** (swimlanes, section-primary) and **Status** (status-primary columns with section *bubbles*). In the Status view, dragging a card to another column changes status and **auto-regroups it into its section's bubble** (never dumped loose); **clicking a card links its section across columns** (highlight + dim); section is reassigned via the **chip bar** (select a card, click a section chip). A status-drag never changes section. Full deltas in §11.
 
 > **Revision note (v0.4):** adds **sections of work** — an optional grouping between stage and task (**Stage → Section → Task → child**). Sections render as **glass swimlanes** stacked within a stage (pan = stages, scroll = sections, columns = status); loose tasks live in an always-present **"General"** lane. **Drag is implemented**: a task can be dragged to any **section × status cell within its stage** (never across stages) and reordered — persisting `status`, `section_id`, `position`; the ‹ › steppers stay as the click/touch fallback. New `sections` table + `tasks.section_id`. Full deltas in §11.
 
@@ -142,6 +144,10 @@ An optional grouping between a stage and its tasks: **Stage → Section → Task
 - Create a section (per stage), **rename** it inline, and **delete** it — **deleting a section orphans its tasks to General** (it never destroys them).
 - Drag (§3.6) moves a task between lanes (sets `section_id`); add-task is per-lane.
 - Stage count pips (§3.5) and the urgent tally count **all top-level tasks in the stage**, across every lane.
+
+**Two layouts, one toggle.** The titleblock toggles how sections are shown (the choice is remembered):
+- **Sections** (swimlanes) — section-primary: each section a glass band with the four columns running through it. Best for working a section as a unit.
+- **Status** (grouped) — status-primary: four full-height columns, cards grouped into section **bubbles** (+ a loose area). Best for triage. Here **clicking a card links its section across columns** (highlights its bubbles, dims the rest); **dragging a card to another column changes status and auto-regroups it into its section's bubble** (never loose); a task's **section** is reassigned by selecting it and clicking a chip in the section bar — a status-drag never changes section.
 
 ---
 
@@ -353,6 +359,12 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 18. **Drag implemented** (native HTML5 DnD, no dependency): move a task across any section × status cell **within its stage**, with reorder; persists `status` / `section_id` / `position`. Steppers remain the click/touch fallback.
 19. **Templates may declare a `section`** per task; the Residential Extension template now ships with sections (Measured Building Survey, Planning Application, Building Regulations, Party Wall, Handover).
 20. `position` scope extended to include `section_id`; SortableJS replaced by native drag in §7.
+
+### v0.4 → v0.5 (section view toggle)
+21. **Layout toggle** (titleblock, remembered via cookie): **Sections** (swimlanes) ⇄ **Status** (status-primary columns + section bubbles) — two renderings of the same data.
+22. **Grouped view**: section **bubbles** within each status column + a loose area; **click-to-link** (highlight a card's section across columns, dim the rest).
+23. **Drag auto-regroups**: in the grouped view, dropping a card in another column keeps its section and lands in that section's bubble (created if needed) — never the empty workspace. A status-drag never changes section.
+24. **Section reassignment** via the chip bar (select card → click chip); the viewed stage is remembered across reloads/toggles.
 
 ---
 
