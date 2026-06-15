@@ -38,6 +38,8 @@
 
   <span class="tb-urgent" id="tb-urgent" hidden></span>
 
+  <button type="button" class="log-toggle" data-action="toggle-log" title="Activity log">Log</button>
+
   <form class="tb-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
         onsubmit="return confirm('Delete this project and all its tasks?');">
     <button type="submit" class="btn-quiet btn-danger btn-sm">Delete</button>
@@ -94,6 +96,20 @@
     {% endfor %}
   </div>
 </main>
+
+<aside class="log-drawer" id="log-drawer" aria-hidden="true">
+  <header class="log-head">
+    <span>Activity</span>
+    <button type="button" class="log-close" data-action="toggle-log" aria-label="Close activity log">×</button>
+  </header>
+  <ul class="log-list" id="log-list">
+    {% for ev in events %}
+      <li class="log-item"><span class="log-text">{{ ev.text }}</span><time class="log-when">{{ ev.when }}</time></li>
+    {% else %}
+      <li class="log-empty">No activity yet — changes you make will appear here.</li>
+    {% endfor %}
+  </ul>
+</aside>
 {% endblock %}
 
 {% block scripts %}

@@ -62,6 +62,10 @@ STATUS_LABELS = {
 TYPES = ["client", "statutory", "admin"]
 TYPE_LABELS = {"client": "Client", "statutory": "Statutory", "admin": "Admin"}
 
+# The person credited in the activity log. Single-user for now; override with
+# ARCKANBAN_ACTOR. (Will become per-user when the .md-file linking lands.)
+ACTOR = os.environ.get("ARCKANBAN_ACTOR", "JW")
+
 app = Flask(__name__)
 # Local single-user app: a fixed dev key is sufficient (only used for flash()).
 app.secret_key = "arckanban-local"
@@ -133,6 +137,15 @@ def init_db():
             section_id  INTEGER REFERENCES sections(id) ON DELETE SET NULL,
             parent_id   INTEGER REFERENCES tasks(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS events (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            actor      TEXT NOT NULL,
+            verb       TEXT NOT NULL,
+            target     TEXT,
+            detail     TEXT,
+            created_at TEXT NOT NULL
+        );
         """
     )
     # Additive migrations for an existing v0.1-shaped database (see REQUIREMENTS §6).
@@ -203,6 +216,59 @@ def load_template(filename):
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def format_event(e):
+    """Render one event row/dict as a plain-English line + timestamp."""
+    parts = [e["actor"], e["verb"]]
+    if e["target"]:
+        parts.append("“" + e["target"] + "”")
+    if e["detail"]:
+        parts.append(e["detail"])
+    try:
+        when = datetime.fromisoformat(e["created_at"]).strftime("%d %b %Y · %H:%M")
+    except (ValueError, TypeError):
+        when = e["created_at"]
+    return {"text": " ".join(parts), "when": when, "iso": e["created_at"]}
+
+
+def log_event(db, project_id, verb, target=None, detail=None):
+    """Record one activity event (person → action → task/section) and return it
+    rendered, so the endpoint can hand it straight to the narrative drawer."""
+    ts = now_iso()
+    db.execute(
+        "INSERT INTO events (project_id, actor, verb, target, detail, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (project_id, ACTOR, verb, target, detail, ts),
+    )
+    return format_event({"actor": ACTOR, "verb": verb, "target": target,
+                         "detail": detail, "created_at": ts})
+
+
+def task_update_event(db, row, data):
+    """Pick the single most meaningful event for a task update (or None)."""
+    pid, title = row["project_id"], row["title"]
+    if "status" in data and data["status"] != row["status"]:
+        if data["status"] == "done":
+            return log_event(db, pid, "completed", title)
+        return log_event(db, pid, "moved", title, "to " + STATUS_LABELS[data["status"]])
+    if "section_id" in data:
+        sid = data["section_id"] or None
+        try:
+            sid = int(sid) if sid is not None else None
+        except (TypeError, ValueError):
+            sid = None
+        if sid != row["section_id"]:
+            if sid is None:
+                return log_event(db, pid, "moved", title, "out to General")
+            nm = db.execute("SELECT title FROM sections WHERE id=?", (sid,)).fetchone()
+            return log_event(db, pid, "moved", title, "into “%s”" % (nm["title"] if nm else "section"))
+    if "urgent" in data and bool(data["urgent"]) != bool(row["urgent"]):
+        return (log_event(db, pid, "flagged", title, "as urgent") if data["urgent"]
+                else log_event(db, pid, "unflagged", title))
+    if "type" in data and data["type"] != row["type"]:
+        return log_event(db, pid, "retagged", title, "as " + TYPE_LABELS[data["type"]])
+    return None
 
 
 def next_position(db, project_id, stage, status, section_id, parent_id=None):
@@ -397,6 +463,7 @@ def create_project():
     )
     project_id = cur.lastrowid
 
+    log_event(db, project_id, "created project", name)
     if template_file and template_file != "__blank__":
         tpl = load_template(template_file)
         if tpl is None:
@@ -440,6 +507,9 @@ def board(project_id):
     layout = request.args.get("layout") or request.cookies.get("layout") or "swimlane"
     if layout not in ("swimlane", "grouped"):
         layout = "swimlane"
+    ev_rows = db.execute(
+        "SELECT * FROM events WHERE project_id=? ORDER BY id DESC LIMIT 200", (project_id,)
+    ).fetchall()
     resp = make_response(render_template(
         "board.html",
         project={
@@ -453,6 +523,7 @@ def board(project_id):
         type_labels=TYPE_LABELS,
         statuses=STATUSES,
         layout=layout,
+        events=[format_event(e) for e in ev_rows],
     ))
     if request.args.get("layout") in ("swimlane", "grouped"):
         resp.set_cookie("layout", layout, max_age=31536000, samesite="Lax")
@@ -509,8 +580,9 @@ def api_set_current_stage(project_id):
     if not 0 <= stage <= 7:
         return jsonify(ok=False, error="Stage out of range."), 400
     db.execute("UPDATE projects SET current_stage=? WHERE id=?", (stage, project_id))
+    ev = log_event(db, project_id, "set current stage", None, "to %d · %s" % (stage, RIBA_STAGES[stage]))
     db.commit()
-    return jsonify(ok=True, current_stage=stage)
+    return jsonify(ok=True, current_stage=stage, event=ev)
 
 
 @app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])
@@ -544,12 +616,50 @@ def api_add_task(project_id):
         "VALUES (?, ?, ?, 'todo', ?, ?, ?)",
         (project_id, stage, title, ttype, pos, section_id),
     )
+    ev = log_event(db, project_id, "added", title, "to To Do")
     db.commit()
     row = db.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone()
     html = render_template("_card.html", t=task_to_dict(row),
                            status_labels=STATUS_LABELS, type_labels=TYPE_LABELS,
                            statuses=STATUSES)
-    return jsonify(ok=True, task=task_to_dict(row), html=html)
+    return jsonify(ok=True, task=task_to_dict(row), html=html, event=ev)
+
+
+@app.route("/api/projects/<int:project_id>/tasks/restore", methods=["POST"])
+def api_restore_task(project_id):
+    """Re-create a deleted task from its captured fields (used by Undo)."""
+    db = get_db()
+    get_project_or_404(db, project_id)
+    d = request.get_json(silent=True) or {}
+    title = (d.get("title") or "").strip()
+    try:
+        stage = int(d.get("stage"))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="Invalid stage."), 400
+    if not title or not 0 <= stage <= 7:
+        return jsonify(ok=False, error="Nothing to restore."), 400
+    ttype = d.get("type") if d.get("type") in TYPES else "admin"
+    status = d.get("status") if d.get("status") in STATUSES else "todo"
+    urgent = 1 if d.get("urgent") else 0
+    awaiting_on = (d.get("awaiting_on") or "").strip() or None
+    section_id = d.get("section_id") or None
+    if section_id is not None:
+        try:
+            section_id = int(section_id)
+        except (TypeError, ValueError):
+            section_id = None
+        if section_id is not None and not section_in_stage(db, section_id, project_id, stage):
+            section_id = None
+    pos = next_position(db, project_id, stage, status, section_id)
+    cur = db.execute(
+        "INSERT INTO tasks (project_id, stage, title, status, type, urgent, awaiting_on, position, section_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, stage, title, status, ttype, urgent, awaiting_on, pos, section_id),
+    )
+    ev = log_event(db, project_id, "restored", title)
+    db.commit()
+    row = db.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone()
+    return jsonify(ok=True, task=task_to_dict(row), event=ev)
 
 
 @app.route("/api/tasks/<int:task_id>", methods=["POST"])
@@ -610,9 +720,10 @@ def api_update_task(task_id):
 
     values.append(task_id)
     db.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=?", values)
+    ev = task_update_event(db, row, data)
     db.commit()
     new_row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-    return jsonify(ok=True, task=task_to_dict(new_row))
+    return jsonify(ok=True, task=task_to_dict(new_row), event=ev)
 
 
 @app.route("/api/tasks/<int:task_id>/move", methods=["POST"])
@@ -650,9 +761,19 @@ def api_move_task(task_id):
     siblings.insert(index, task_id)
     for i, tid in enumerate(siblings):
         db.execute("UPDATE tasks SET position=? WHERE id=?", (i, tid))
+    ev = None
+    if status != row["status"]:
+        ev = log_event(db, row["project_id"], "completed" if status == "done" else "moved",
+                       row["title"], None if status == "done" else "to " + STATUS_LABELS[status])
+    elif section_id != row["section_id"]:
+        if section_id is None:
+            ev = log_event(db, row["project_id"], "moved", row["title"], "out to General")
+        else:
+            nm = db.execute("SELECT title FROM sections WHERE id=?", (section_id,)).fetchone()
+            ev = log_event(db, row["project_id"], "moved", row["title"], "into “%s”" % (nm["title"] if nm else "section"))
     db.commit()
     new_row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-    return jsonify(ok=True, task=task_to_dict(new_row))
+    return jsonify(ok=True, task=task_to_dict(new_row), event=ev)
 
 
 @app.route("/api/projects/<int:project_id>/sections", methods=["POST"])
@@ -677,10 +798,11 @@ def api_add_section(project_id):
         "INSERT INTO sections (project_id, stage, title, position) VALUES (?, ?, ?, ?)",
         (project_id, stage, title, p),
     )
+    ev = log_event(db, project_id, "created section", title)
     db.commit()
     lane = build_lane(cur.lastrowid, title, [])
     return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "title": title},
-                   html=render_lane(lane, stage))
+                   html=render_lane(lane, stage), event=ev)
 
 
 @app.route("/api/sections/<int:section_id>", methods=["POST"])
@@ -693,9 +815,10 @@ def api_update_section(section_id):
     title = (data.get("title") or "").strip()
     if not title:
         return jsonify(ok=False, error="Title cannot be empty."), 400
+    ev = log_event(db, row["project_id"], "renamed section", title, "(was “%s”)" % row["title"])
     db.execute("UPDATE sections SET title=? WHERE id=?", (title, section_id))
     db.commit()
-    return jsonify(ok=True, title=title)
+    return jsonify(ok=True, title=title, event=ev)
 
 
 @app.route("/api/sections/<int:section_id>/delete", methods=["POST"])
@@ -705,10 +828,11 @@ def api_delete_section(section_id):
     if row is None:
         return jsonify(ok=False, error="No such section."), 404
     # Orphan the section's tasks to the loose 'General' lane, then delete the section.
+    ev = log_event(db, row["project_id"], "deleted section", row["title"])
     db.execute("UPDATE tasks SET section_id=NULL WHERE section_id=?", (section_id,))
     db.execute("DELETE FROM sections WHERE id=?", (section_id,))
     db.commit()
-    return jsonify(ok=True)
+    return jsonify(ok=True, event=ev)
 
 
 @app.route("/api/sections/<int:section_id>/move", methods=["POST"])
@@ -736,8 +860,10 @@ def api_move_section(section_id):
     db.executemany("UPDATE tasks SET status=? WHERE id=?", [(to, t) for t in moved])
     for i, tid in enumerate(existing + moved):     # glue: existing first, arrivals after
         db.execute("UPDATE tasks SET position=? WHERE id=?", (i, tid))
+    ev = log_event(db, row["project_id"], "moved section", row["title"],
+                   "to %s (%d tasks)" % (STATUS_LABELS[to], len(moved)))
     db.commit()
-    return jsonify(ok=True, moved=moved, to_status=to)
+    return jsonify(ok=True, moved=moved, to_status=to, event=ev)
 
 
 @app.route("/api/tasks/<int:task_id>/delete", methods=["POST"])
@@ -746,10 +872,13 @@ def api_delete_task(task_id):
     row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     if row is None:
         return jsonify(ok=False, error="No such task."), 404
+    deleted = task_to_dict(row)
+    deleted["awaiting_on"] = row["awaiting_on"] or ""
+    ev = log_event(db, row["project_id"], "deleted", row["title"])
     # Nesting arrives next increment; for now a task has no children.
     db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
     db.commit()
-    return jsonify(ok=True)
+    return jsonify(ok=True, event=ev, task=deleted)
 
 
 # --------------------------------------------------------------------------- #

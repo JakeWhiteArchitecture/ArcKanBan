@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.5 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.6 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.6):** adds an **activity log** — a persisted `events` table rendered as a right-hand **narrative drawer** (person → action → task/section, with date & time; e.g. *“JW completed ‘Measured survey’ · 15 Jun 2026 · 14:32”*), structured for future local `.md` export; **undo** of the last action via right-click on empty space; and a fix so the drag **slide (FLIP) animation** runs reliably. Full deltas in §11.
 
 > **Revision note (v0.5):** the section view is now a **toggle** (titleblock) between two renderings of the same data — **Sections** (swimlanes, section-primary) and **Status** (status-primary columns with section *bubbles*). In the Status view, dragging a card to another column changes status and **auto-regroups it into its section's bubble** (never dumped loose); **clicking a card links its section across columns** (highlight + dim); section is reassigned via the **chip bar** (select a card, click a section chip). A status-drag never changes section. Full deltas in §11.
 
@@ -147,7 +149,11 @@ An optional grouping between a stage and its tasks: **Stage → Section → Task
 
 **Two layouts, one toggle.** The titleblock toggles how sections are shown (the choice is remembered):
 - **Sections** (swimlanes) — section-primary: each section a glass band with the four columns running through it. Best for working a section as a unit.
-- **Status** (grouped) — status-primary: four full-height columns, cards grouped into section **bubbles** (+ a loose area). Best for triage. Here **clicking a card links its section across columns** (highlights its bubbles, dims the rest); **dragging a card to another column changes status and auto-regroups it into its section's bubble** (never loose); a task's **section** is reassigned by selecting it and clicking a chip in the section bar — a status-drag never changes section.
+- **Status** (grouped) — status-primary: four full-height columns, cards grouped into section **bubbles** (+ a loose area). Best for triage. Here **clicking a card links its section across columns** (highlights its bubbles, dims the rest); **dragging a card to another column changes status and auto-regroups it into its section's bubble** (never loose); a task's **section** is reassigned by selecting it and clicking a chip in the section bar — a status-drag never changes section. **Drag a section by its bubble header** to bulk-move all its tasks to another status (they glue onto that section's tasks already there).
+
+### 3.12 Activity log & undo
+- Every meaningful change is recorded as an **event** (person → action → task/section) in an `events` table and shown in a **narrative drawer** — a right-hand pop-out ("Log" in the titleblock): *"JW completed “Measured survey” · 15 Jun 2026 · 14:32"*. Logged on add / move / complete / urgent / type / section-assign / section create-rename-delete / bulk section move / set-current-stage / delete / restore. Events are **structured** (actor, verb, target, detail, timestamp) so they can feed local `.md` files later. Actor is single-user for now (`ARCKANBAN_ACTOR`, default "JW").
+- **Right-click** a card → assign it to a section / break it out to General. **Right-click empty space** → Actions → **Undo {last action}** (covers move, urgent, type, add, delete-via-restore, section reassignment, bulk section move). Single most-recent action for now; more actions / multi-level later.
 
 ---
 
@@ -263,6 +269,16 @@ tasks(
   section_id  INTEGER NULL  -> sections.id,    -- swimlane; ON DELETE SET NULL → 'General'
   parent_id   INTEGER NULL  -> tasks.id        -- nesting (single level)
 )
+
+events(                                        -- activity log (narrative drawer; future .md export)
+  id         INTEGER PK,
+  project_id INTEGER NOT NULL  -> projects.id (cascade delete),
+  actor      TEXT NOT NULL,                    -- person (single-user for now; ARCKANBAN_ACTOR)
+  verb       TEXT NOT NULL,                    -- added | completed | moved | flagged | deleted | …
+  target     TEXT,                             -- task/section name snapshot
+  detail     TEXT,                             -- e.g. 'to Awaiting', 'into "Planning"'
+  created_at TEXT NOT NULL                     -- ISO-8601
+)
 ```
 
 **`position` scope.** `position` orders a card *within a single list*, where a "list" is:
@@ -369,6 +385,11 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 26. **Right-click a card → section menu**: assign it to any section in the stage, or break it out to General. Works in both layouts (`api_update_task {section_id}`).
 27. **Urgent no longer masks the type band**: the type colour band is thicker and keeps its own colour; the red urgent ring sits *outside* it (was: urgent recoloured the whole border).
 28. **Drag a whole section across statuses** (grouped view): drag a section by its bubble header into another status column to move *all* its tasks at once; arrivals **glue** onto the section's existing tasks in the destination (`POST /api/sections/<id>/move`).
+
+### v0.5 → v0.6 (activity log, undo, FLIP fix)
+29. **Activity log** — persisted `events` table + a right-hand **narrative drawer** ("JW completed “X” · date · time"): person → action → task/section. Logged across the meaningful mutations; structured for future `.md` export. New endpoint `POST /api/projects/<id>/tasks/restore` (used by undo).
+30. **Undo** — right-click empty space → Actions → **Undo {last action}** (move, urgent, type, add, delete-via-restore, section reassignment, bulk section move). Reverts the most recent action; multi-level later.
+31. **FLIP reorder fix** — the slide animation now freezes in-flight transforms before measuring, so it runs every time instead of occasionally snapping into place.
 
 ---
 
