@@ -65,7 +65,7 @@ The eight stages of the RIBA Plan of Work 2020, fixed:
 | 7 | Use |
 
 ### 3.4 Tasks, statuses, and the urgent flag
-- A task belongs to one project and one stage, and carries a **title**, a **type**, a **status**, an **urgent flag**, a **position** (sort order), and an optional **parent** (see §3.7).
+- A task belongs to one project and one stage, and carries a **title**, a **type**, a **status**, an **urgent flag**, an optional **awaiting-on** note, a **position** (sort order), and an optional **parent** (see §3.7).
 - **Title** is editable inline.
 - **Type** in {client, statutory, admin}. Type is structural, not cosmetic: it encodes whose duty the task is, and statutory tasks (the ones with legal teeth — planning, Building Regs, party wall, CDM) must be visually unmistakable. It drives the card's left margin rule (see §5).
   - Type is **editable**, but changing a task **away from `statutory`** (statutory → client/admin) requires a **confirmation warning** — you are removing a legal-duty marker. Promoting *to* statutory is silent (it only adds rigour).
@@ -81,6 +81,7 @@ The eight stages of the RIBA Plan of Work 2020, fixed:
   *Awaiting* is the quiet workhorse: so much architectural work stalls on someone else's desk, and giving "blocked on others" its own column surfaces it at a glance. **Status is not a linear pipeline** — tasks move freely in any direction (To Do ↔ Awaiting, back out of Done, round and round) until they settle in Done.
 
 - **Urgent is a flag, not a column** — an independent boolean on the card, orthogonal to status. This is the change from v0.1: a task can now be **Awaiting *and* urgent** (blocked *and* on fire — the single most important quadrant for triage), which the old urgent-column model could not express. Urgent renders in **redline** (§5) and is toggled on the card.
+- **Awaiting — who/what.** A task carries an optional short free-text noting who or what it's blocked on (*planning officer*, *client sign-off*, *Building Control*). It is shown on the card when the task is in **Awaiting** (and editable inline there); hidden but retained otherwise. This turns the Awaiting column from a count into an actionable chase-list.
 - Add an ad-hoc task to any stage (title + type), appended as *To Do*, not urgent.
 - Delete a task.
 
@@ -123,13 +124,16 @@ The practitioner often starts working ahead before formally "moving" the job. Th
   - **Completion** — the current stage's top-level tasks are **≥ 80% Done** *and* at least one task has had activity in a later stage.
 - **Behaviour:** a single, **dismissible**, non-modal prompt appears in the titleblock naming the highest qualifying stage — *"Working in Stage 4 (Technical Design) — set as current? [Set] [Dismiss]."* **Set** updates `current_stage` (animating the spine, §5). **Dismiss** suppresses the prompt for that stage until further activity occurs there. No timers, no background polling, no machine learning.
 
+### 3.10 Triage filters
+Quiet toggles in the titleblock that narrow what the whole board shows, for fast triage of §1's questions — **Urgent only**, **Statutory only**, **Hide done**. Filters apply across all expanded stages, are **client-side** (no server round-trip), and may be **remembered** in `localStorage` (still sovereign — nothing leaves the machine). "Hide done" hides Done cards (and may collapse the Done column); the type/urgent filters narrow to matching cards. Filters never alter data — only the view, and an active filter is always visibly indicated so the board is never silently partial.
+
 ---
 
 ## 4. Screens
 
 **Home / Register.** New-project form (job no., name, template) above a grid of project cards. Each card: job no. (mono), name, mini spine (progress arc), current-stage label. Inline edit of job no./name.
 
-**Board.** Slim sticky titleblock strip — identity + horizontal stage spine in one collapsible row (§5), with the stage-advancement nudge surfacing here when triggered → eight stage accordions. Expanded stage: four-column Kanban with draggable cards, the urgent flag, nested children, an add-task row, and a "Set as current stage" control. Footer: delete-project (guarded).
+**Board.** Slim sticky titleblock strip — identity + horizontal stage spine in one collapsible row (§5), the **triage filter toggles** (§3.10), and the stage-advancement nudge surfacing here when triggered → eight stage accordions. Expanded stage: four-column Kanban with draggable cards, the urgent flag, the awaiting-on note on Awaiting cards, nested children, an add-task row, and a "Set as current stage" control. Footer: delete-project (guarded).
 
 ---
 
@@ -169,6 +173,7 @@ Four columns, restrained accents so the board reads calmly and the eye still lan
 - A **left margin rule** (3px) encodes type — redline (statutory), blue (client), graphite (admin) — like the margin of a drawing. Type label in small mono caps.
 - **Statutory emphasis:** beyond the redline margin, statutory cards carry a small redline mono tag (e.g. `STATUTORY`) so the legal-duty cards are unmistakable at a glance.
 - **Urgent flag:** a redline marker distinct in *form* from the statutory margin — a folded-corner "flag" (top-right) or a bold redline `!` badge — so a card that is *both* statutory and urgent reads as red margin **and** red flag (correctly, the hottest card on the board). Toggled by a control on the card.
+- **Awaiting note:** on an Awaiting card, a quiet ochre `⧖ <who/what>` line names who it's blocked on (§3.4), editable inline — the chase-list at a glance.
 - Title in body; a quiet drag handle (drafting-dot grip, visible on hover); **‹ ›** status steppers.
 - Nested children indented beneath, connected by a thin hairline **leader line** (like a dimension leader), each with a done checkbox, type badge, and promote (↥). Parent roll-up shown as a mono fraction (*2/3*) with a thin sage progress underline.
 
@@ -189,7 +194,7 @@ A single slim, **sticky** strip across the top — the titleblock and the stage 
 
 When the current stage advances (§3.9), the new cell **inks in** with a short draw-in animation (~250ms, reduced-motion honoured). Each cell may carry a hairline-thin done/total fill so the spine doubles as a progress sparkline; the home-register mini-spine uses the same treatment as a compact "arc."
 
-The strip is **collapsible**: a chevron drops it to a hairline showing only job no. + current stage number **+ the redline urgent tally** (so "what's on fire" survives the collapse), reclaiming nearly all the vertical space; sticky positioning keeps it in view as cards scroll.
+The strip is **collapsible**: a chevron drops it to a hairline showing only job no. + current stage number **+ the redline urgent tally** (so "what's on fire" survives the collapse), reclaiming nearly all the vertical space; sticky positioning keeps it in view as cards scroll. The **triage filter toggles** (§3.10) live in the strip as quiet mono controls; when a filter is active it shows a small redline dot, so a filtered board is never mistaken for an empty one.
 
 The spine stays **horizontal by design** — 0→7 reads left-to-right as progression, mirroring how the Plan of Work is drawn. *Optional, wide-screen only:* the strip may flip to a vertical left rail (recorded as an alternative, not the default — it competes with the columns for width and forces rotated type).
 
@@ -224,8 +229,9 @@ tasks(
   title      TEXT NOT NULL,
   status     TEXT NOT NULL DEFAULT 'todo',     -- upcoming | todo | awaiting | done
   type       TEXT NOT NULL DEFAULT 'admin',    -- client | statutory | admin
-  urgent     INTEGER NOT NULL DEFAULT 0,       -- 0/1 flag, orthogonal to status
-  position   INTEGER NOT NULL DEFAULT 0,       -- sort order WITHIN one list (see below)
+  urgent      INTEGER NOT NULL DEFAULT 0,      -- 0/1 flag, orthogonal to status
+  awaiting_on TEXT NULL,                       -- optional: who/what an Awaiting task is blocked on
+  position    INTEGER NOT NULL DEFAULT 0,      -- sort order WITHIN one list (see below)
   parent_id  INTEGER NULL  -> tasks.id         -- nesting (single level)
 )
 ```
@@ -239,8 +245,9 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 **Migrations.** From the v0.1 schema, this build adds — each as an **additive, idempotent migration** (`ALTER TABLE … ADD COLUMN` guarded by a column-exists check, never destructive):
 1. `tasks.parent_id`;
 2. `tasks.urgent`;
-3. `tasks.position` *(if v0.1 lacks it)*;
-4. the **status value set** changes to `upcoming | todo | awaiting | done` — any existing `'urgent'` status rows are migrated to `status='todo', urgent=1`.
+3. `tasks.awaiting_on`;
+4. `tasks.position` *(if v0.1 lacks it)*;
+5. the **status value set** changes to `upcoming | todo | awaiting | done` — any existing `'urgent'` status rows are migrated to `status='todo', urgent=1`.
 
 (This corrects the v0.1 doc's claim that `parent_id` was the only schema change.) Enable `PRAGMA foreign_keys = ON` per connection; perform project/parent deletes explicitly in the route regardless.
 
@@ -260,8 +267,8 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 **Phase 1 — Foundation.** Projects (create/edit/delete), templates, RIBA accordion, per-stage Kanban, add/delete task, set current stage, status moves, the spine. SQLite, Flask, the Residential Extension template. *Must be (re)established in this repo* — see *Repository state*.
 *Acceptance:* create a project from template → 28 tasks laid across stages 0–7; expand a stage, move and add tasks, set current stage.
 
-**Phase 2 — Four statuses + urgent flag + drag.** Status set = Upcoming · To Do · Awaiting · Done. Add the `urgent` flag and its redline rendering + count tally. Vendor SortableJS. Drag to reorder within a column (persist `position`) and across columns (persist `status`). ‹ › steppers as the click/touch path. Spine click navigates only; add "Set as current stage"; add the §3.9 nudge.
-*Acceptance:* four columns render; urgent flag toggles and survives reload; reorder survives reload; cross-column drag and ‹ › both change status; an Awaiting card can be urgent; spine click does **not** change current stage; nudge fires on either signal; no CDN requests.
+**Phase 2 — Four statuses + urgent flag + drag.** Status set = Upcoming · To Do · Awaiting · Done. Add the `urgent` flag and its redline rendering + count tally. Vendor SortableJS. Drag to reorder within a column (persist `position`) and across columns (persist `status`). ‹ › steppers as the click/touch path. Spine click navigates only; add "Set as current stage"; add the §3.9 nudge; add the **awaiting-on** note (§3.4) and the **triage filters** (§3.10).
+*Acceptance:* four columns render; urgent flag toggles and survives reload; reorder survives reload; cross-column drag and ‹ › both change status; an Awaiting card can be urgent; awaiting-on persists and shows on Awaiting cards; triage filters narrow the board client-side without touching data; spine click does **not** change current stage; nudge fires on either signal; no CDN requests.
 
 **Phase 3 — Nesting.** Add `parent_id`. Drop-onto-card nests (single level); children render as an indented checklist with done toggle and promote; nest-here zone on hover; counts exclude children; promote returns the child to the **parent's column**; delete-parent **prompts** (delete vs explode).
 *Acceptance:* drag A onto B → A becomes B's child; reload preserves it; promote returns A to a top-level card in **B's column** (B's status); deleting B offers delete-children vs explode-out; B's column count is unaffected by A.
@@ -306,6 +313,7 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 9. **Origin-header check** on mutating endpoints; **ordering by `id DESC`**; **expected-scale** note added (anti-over-engineering).
 10. **Design language expanded** (§5): ink-over-pencil spine, statutory tag + urgent corner-flag, nest-zone styling, child leader-line + roll-up, tabular figures, contrast guidance, empty states. Speculative ideas moved to **Appendix C**.
 11. **Naming** standardised to *ArcKanban* (DB `arckanban.db`); statutory terminology spelled out (Building Regulations Principal Designer). **Repository-state** note added.
+12. **Two design proposals promoted** into the spec — **triage filters** (§3.10) and the **awaiting-on** chase-note (§3.4 / §5 / new `tasks.awaiting_on` column).
 
 ---
 
@@ -316,10 +324,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 Single `app.py` (routes + SQLite helpers + RIBA constants); Jinja templates (`base`, `index`, `board`); `static/style.css` + `static/board.js`; `templates_lib/*.json`. DB auto-creates on run. *(This describes the v0.1 prototype's shape and is the intended structure for Phase 1 in this repo — extend it, don't replace it, once it exists here.)*
 
 ## Appendix C — Design proposals (for your call)
-Tasteful enhancements that fit the language but aren't yet committed — flagged for a yes/no/later:
+Tasteful enhancements that fit the language but aren't yet committed — flagged for a yes/no/later. *(Triage filters and the awaiting-on field were promoted into the spec in v0.2; the rest remain candidates.)*
 
-- **Triage filters** in the titleblock — quiet toggles: *Urgent only*, *Statutory only*, *Hide done*. Directly serves §1 ("what's on fire / what's owed") and recovers the "see all hot items at once" benefit lost with the urgent column. *(Strong candidate.)*
-- **"Awaiting — who/what"** — an optional free-text on an Awaiting card naming who it's blocked on (*"⧖ planning officer"*), shown on the card. Turns the Awaiting column from a count into an actionable chase-list. *(Strong candidate.)*
 - **Home register grouping** — sort/group projects by current stage ("all my Stage 4 jobs"); the mini-spine already reads as each job's progress arc.
 - **Last-updated "revision" line** in the titleblock corner (mono date) — completes the drawing-sheet metaphor.
 - **Density toggle** (comfortable / compact) for practitioners who want everything on one screen.
