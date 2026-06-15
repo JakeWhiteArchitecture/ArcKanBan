@@ -594,22 +594,23 @@
   function flipReorder(scope, mutate) {
     if (reduceMotion) { mutate(); return; }
     var cards = [].slice.call(scope.querySelectorAll(".card:not(.dragging)"));
-    // Freeze: cancel any in-flight transition/transform so we measure TRUE
-    // layout positions (measuring mid-animation was why it only worked sometimes).
-    cards.forEach(function (c) { c.style.transition = "none"; c.style.transform = ""; });
+    // First: each card's *current on-screen* position (includes any in-flight slide).
     var first = cards.map(function (c) { return c.getBoundingClientRect(); });
     mutate();
     cards.forEach(function (c, i) {
+      // Cancel any running slide → card reverts to its base, then measure the new layout.
+      if (c._flip) { c._flip.cancel(); c._flip = null; }
       var l = c.getBoundingClientRect();
       var dx = first[i].left - l.left, dy = first[i].top - l.top;
-      c.style.transform = (dx || dy) ? "translate(" + dx + "px," + dy + "px)" : "";
-    });
-    requestAnimationFrame(function () {
-      cards.forEach(function (c) {
-        if (!c.style.transform) return;
-        c.style.transition = "transform 160ms cubic-bezier(.2,.7,.3,1)";
-        c.style.transform = "";
-      });
+      if (!dx && !dy) return;
+      // Web Animations API: interruption-safe — a new reorder cancels the prior run and
+      // slides on from where the card currently is, so it never falls back to a snap
+      // (no CSS-transition flush or rAF timing to miss).
+      c._flip = c.animate(
+        [{ transform: "translate(" + dx + "px," + dy + "px)" }, { transform: "translate(0px,0px)" }],
+        { duration: 170, easing: "cubic-bezier(.2,.7,.3,1)" }
+      );
+      c._flip.onfinish = function () { c._flip = null; };
     });
   }
   function maybePlace(container, y) {
