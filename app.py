@@ -14,7 +14,7 @@ Parent/child task nesting arrives in the next increment.
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from flask import (
@@ -160,6 +160,7 @@ def init_db():
     _ensure_column(db, "sections", "uid", "uid TEXT")
     _ensure_column(db, "tasks", "uid", "uid TEXT")
     _ensure_column(db, "projects", "stages", "stages TEXT")  # CSV of enabled stage indices; NULL = all
+    _ensure_column(db, "events", "task_id", "task_id INTEGER")  # link an event to its task (dedup + .md export)
     for tbl in ("projects", "sections", "tasks"):
         db.execute("UPDATE %s SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL OR uid = ''" % tbl)
     db.executescript(
@@ -253,26 +254,47 @@ def format_event(e):
     return {"text": " ".join(parts), "when": when, "iso": e["created_at"]}
 
 
-def log_event(db, project_id, verb, target=None, detail=None):
+def log_event(db, project_id, verb, target=None, detail=None, task_id=None):
     """Record one activity event (person → action → task/section) and return it
     rendered, so the endpoint can hand it straight to the narrative drawer."""
     ts = now_iso()
     db.execute(
-        "INSERT INTO events (project_id, actor, verb, target, detail, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (project_id, ACTOR, verb, target, detail, ts),
+        "INSERT INTO events (project_id, actor, verb, target, detail, created_at, task_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (project_id, ACTOR, verb, target, detail, ts, task_id),
     )
     return format_event({"actor": ACTOR, "verb": verb, "target": target,
                          "detail": detail, "created_at": ts})
 
 
+def log_status(db, row, new_status):
+    """Log a status change as 'set "X" to "Status"'. If a task is moved out of
+    Done within 10 minutes of being set to Done, omit BOTH entries (noise).
+    Returns (event_or_None, omitted_bool)."""
+    old = row["status"]
+    if new_status == old:
+        return None, False
+    if old == "done" and new_status != "done":
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(timespec="seconds")
+        prev = db.execute(
+            "SELECT id FROM events WHERE task_id=? AND verb='set' AND detail=? AND created_at>=? "
+            "ORDER BY id DESC LIMIT 1",
+            (row["id"], 'to “Done”', cutoff),
+        ).fetchone()
+        if prev:
+            db.execute("DELETE FROM events WHERE id=?", (prev["id"],))
+            return None, True
+    ev = log_event(db, row["project_id"], "set", row["title"],
+                   'to “%s”' % STATUS_LABELS[new_status], task_id=row["id"])
+    return ev, False
+
+
 def task_update_event(db, row, data):
-    """Pick the single most meaningful event for a task update (or None)."""
-    pid, title = row["project_id"], row["title"]
+    """Pick the single most meaningful event for a task update.
+    Returns (event_or_None, omitted_bool)."""
+    pid, title, tid = row["project_id"], row["title"], row["id"]
     if "status" in data and data["status"] != row["status"]:
-        if data["status"] == "done":
-            return log_event(db, pid, "completed", title)
-        return log_event(db, pid, "moved", title, "to " + STATUS_LABELS[data["status"]])
+        return log_status(db, row, data["status"])
     if "section_id" in data:
         sid = data["section_id"] or None
         try:
@@ -281,15 +303,16 @@ def task_update_event(db, row, data):
             sid = None
         if sid != row["section_id"]:
             if sid is None:
-                return log_event(db, pid, "moved", title, "out to General")
+                return log_event(db, pid, "moved", title, "out to General", task_id=tid), False
             nm = db.execute("SELECT title FROM sections WHERE id=?", (sid,)).fetchone()
-            return log_event(db, pid, "moved", title, "into “%s”" % (nm["title"] if nm else "section"))
+            return log_event(db, pid, "moved", title, "into “%s”" % (nm["title"] if nm else "section"), task_id=tid), False
     if "urgent" in data and bool(data["urgent"]) != bool(row["urgent"]):
-        return (log_event(db, pid, "flagged", title, "as urgent") if data["urgent"]
-                else log_event(db, pid, "unflagged", title))
+        ev = (log_event(db, pid, "flagged", title, "as urgent", task_id=tid) if data["urgent"]
+              else log_event(db, pid, "unflagged", title, task_id=tid))
+        return ev, False
     if "type" in data and data["type"] != row["type"]:
-        return log_event(db, pid, "retagged", title, "as " + TYPE_LABELS[data["type"]])
-    return None
+        return log_event(db, pid, "retagged", title, "as " + TYPE_LABELS[data["type"]], task_id=tid), False
+    return None, False
 
 
 def next_position(db, project_id, stage, status, section_id, parent_id=None):
@@ -675,7 +698,7 @@ def api_add_task(project_id):
         "VALUES (?, ?, ?, 'todo', ?, ?, ?)",
         (project_id, stage, title, ttype, pos, section_id),
     )
-    ev = log_event(db, project_id, "added", title, "to To Do")
+    ev = log_event(db, project_id, "added", title, "to To Do", task_id=cur.lastrowid)
     db.commit()
     row = db.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone()
     html = render_template("_card.html", t=task_to_dict(row),
@@ -715,7 +738,7 @@ def api_restore_task(project_id):
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (project_id, stage, title, status, ttype, urgent, awaiting_on, pos, section_id),
     )
-    ev = log_event(db, project_id, "restored", title)
+    ev = log_event(db, project_id, "restored", title, task_id=cur.lastrowid)
     db.commit()
     row = db.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone()
     return jsonify(ok=True, task=task_to_dict(row), event=ev)
@@ -779,10 +802,10 @@ def api_update_task(task_id):
 
     values.append(task_id)
     db.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id=?", values)
-    ev = task_update_event(db, row, data)
+    ev, omit = task_update_event(db, row, data)
     db.commit()
     new_row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-    return jsonify(ok=True, task=task_to_dict(new_row), event=ev)
+    return jsonify(ok=True, task=task_to_dict(new_row), event=ev, omit_last=omit)
 
 
 @app.route("/api/tasks/<int:task_id>/move", methods=["POST"])
@@ -820,19 +843,18 @@ def api_move_task(task_id):
     siblings.insert(index, task_id)
     for i, tid in enumerate(siblings):
         db.execute("UPDATE tasks SET position=? WHERE id=?", (i, tid))
-    ev = None
+    ev, omit = None, False
     if status != row["status"]:
-        ev = log_event(db, row["project_id"], "completed" if status == "done" else "moved",
-                       row["title"], None if status == "done" else "to " + STATUS_LABELS[status])
+        ev, omit = log_status(db, row, status)
     elif section_id != row["section_id"]:
         if section_id is None:
-            ev = log_event(db, row["project_id"], "moved", row["title"], "out to General")
+            ev = log_event(db, row["project_id"], "moved", row["title"], "out to General", task_id=task_id)
         else:
             nm = db.execute("SELECT title FROM sections WHERE id=?", (section_id,)).fetchone()
-            ev = log_event(db, row["project_id"], "moved", row["title"], "into “%s”" % (nm["title"] if nm else "section"))
+            ev = log_event(db, row["project_id"], "moved", row["title"], "into “%s”" % (nm["title"] if nm else "section"), task_id=task_id)
     db.commit()
     new_row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-    return jsonify(ok=True, task=task_to_dict(new_row), event=ev)
+    return jsonify(ok=True, task=task_to_dict(new_row), event=ev, omit_last=omit)
 
 
 @app.route("/api/projects/<int:project_id>/sections", methods=["POST"])
@@ -933,7 +955,7 @@ def api_delete_task(task_id):
         return jsonify(ok=False, error="No such task."), 404
     deleted = task_to_dict(row)
     deleted["awaiting_on"] = row["awaiting_on"] or ""
-    ev = log_event(db, row["project_id"], "deleted", row["title"])
+    ev = log_event(db, row["project_id"], "deleted", row["title"], task_id=task_id)
     # Nesting arrives next increment; for now a task has no children.
     db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
     db.commit()

@@ -40,6 +40,7 @@
     try { json = await res.json(); } catch (e) {}
     if (!res.ok || !json.ok) { alert((json && json.error) || "Something went wrong."); return null; }
     if (json.event) prependLogEvent(json.event);
+    else if (json.omit_last) removeTopLogEvent();
     return json;
   }
 
@@ -52,6 +53,10 @@
     var w = document.createElement("time"); w.className = "log-when"; w.textContent = ev.when;
     li.appendChild(t); li.appendChild(w);
     list.insertBefore(li, list.firstChild);
+  }
+  function removeTopLogEvent() {
+    var list = document.getElementById("log-list"); if (!list) return;
+    var first = list.querySelector(".log-item"); if (first) first.remove();
   }
   var undoStack = [];
   function pushUndo(label, run) { undoStack.push({ label: label, run: run }); }

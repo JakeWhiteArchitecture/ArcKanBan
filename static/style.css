@@ -56,19 +56,43 @@ body {
   font-size: 15px;
   line-height: 1.45;
   color: var(--ink);
-  background: var(--bg);
+  background: linear-gradient(180deg, var(--bg-2), var(--bg));
   overflow: hidden;            /* board manages its own scroll */
 }
 body.page-home { overflow: auto; }
 
-/* Ambient glow behind the glass */
+/* Ambient glow behind the glass — two slowly drifting/pulsing layers that
+   morph past each other for a gentle "living" background. */
+body::before, body::after { content: ""; position: fixed; inset: -25%; z-index: -2; pointer-events: none; }
 body::before {
-  content: ""; position: fixed; inset: 0; z-index: -1;
   background:
-    radial-gradient(60% 50% at 18% 0%, rgba(58, 92, 196, 0.40), transparent 60%),
-    radial-gradient(50% 45% at 100% 10%, rgba(110, 90, 220, 0.22), transparent 55%),
-    radial-gradient(70% 60% at 50% 110%, rgba(34, 60, 140, 0.28), transparent 60%),
-    linear-gradient(180deg, var(--bg-2), var(--bg));
+    radial-gradient(38% 38% at 22% 28%, rgba(58, 92, 196, 0.42), transparent 62%),
+    radial-gradient(34% 34% at 80% 22%, rgba(120, 80, 220, 0.32), transparent 62%),
+    radial-gradient(44% 44% at 62% 86%, rgba(34, 120, 150, 0.30), transparent 62%),
+    radial-gradient(40% 40% at 14% 80%, rgba(40, 70, 170, 0.30), transparent 62%);
+  filter: blur(20px);
+  animation: bg-drift 42s ease-in-out infinite alternate;
+  will-change: transform;
+}
+body::after {
+  background:
+    radial-gradient(30% 30% at 68% 58%, rgba(90, 140, 239, 0.26), transparent 62%),
+    radial-gradient(26% 26% at 36% 52%, rgba(150, 70, 200, 0.20), transparent 62%);
+  filter: blur(30px);
+  animation: bg-pulse 30s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+@keyframes bg-drift {
+  0%   { transform: translate3d(-2%, -1%, 0) scale(1); }
+  50%  { transform: translate3d(2%, 2%, 0) scale(1.08); }
+  100% { transform: translate3d(-1%, 1%, 0) scale(1.04); }
+}
+@keyframes bg-pulse {
+  0%   { transform: translate3d(2%, 1%, 0) scale(1.04); opacity: 0.8; }
+  100% { transform: translate3d(-2%, -2%, 0) scale(1.14); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before, body::after { animation: none; }
 }
 
 h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }

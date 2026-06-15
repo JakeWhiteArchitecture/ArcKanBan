@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.8 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.9 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.9):** status changes now log uniformly as *"JW set "X" to "Status""*; a Done→undone **round‑trip within 10 minutes auto‑omits both** log entries (events gained a `task_id`); and the background is now a gentle **animated** drifting/pulsing glow. Still queued: the **email generator** (compose box + task table + `.eml` + JSON) and **redo**. Full deltas in §11.
 
 > **Revision note (v0.8):** the board is now **Status‑only** (the Sections/Status toggle is removed; the swimlane layout is retired from the UI). The **RIBA spine is centred on the page** with the **focused stage's name beneath it**, and a **star** to its right marks and sets the current stage (filled = current; click to set) — replacing the "you are here" tag and "Current stage" badge. **Hide‑done** now hides done *cards* but keeps the Done **column** as a drop target. Full deltas in §11.
 
@@ -414,6 +416,11 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 35. **Status-only** — the Sections/Status toggle is removed; the server always renders the Status (grouped) layout (swimlane code dormant).
 36. **Centred RIBA spine** on the page, with the **focused stage's name** beneath it and a **star** to its right: filled when the focused stage is the current stage, click to set it. Replaces the "you are here" tag, the "Current stage" badge, and the per-slide "Set as current stage" button.
 37. **Hide-done fix** — hides done cards/bubbles but keeps the Done column as a drop target so tasks can still be completed.
+
+### v0.8 → v0.9 (log phrasing, auto-omit, living background)
+38. **Log phrasing** — status changes read **"JW set "X" to "Status""** (uniform; replaces "completed" / "moved to").
+39. **Auto-omit round-trips** — setting a task to Done then back out within 10 minutes removes **both** log entries (events carry a `task_id`; the drawer drops the line live via `omit_last`).
+40. **Living background** — two gentle, slow drifting/pulsing glow layers (vibrant on dark); `prefers-reduced-motion` honoured.
 
 ---
 
