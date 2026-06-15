@@ -421,6 +421,36 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 38. **Log phrasing** — status changes read **"JW set "X" to "Status""** (uniform; replaces "completed" / "moved to").
 39. **Auto-omit round-trips** — setting a task to Done then back out within 10 minutes removes **both** log entries (events carry a `task_id`; the drawer drops the line live via `omit_last`).
 40. **Living background** — two gentle, slow drifting/pulsing glow layers (vibrant on dark); `prefers-reduced-motion` honoured.
+41. **Backlog recorded** (§12) and the **redo expiry** decision captured.
+
+---
+
+## 12. Backlog (outstanding to implement)
+
+Tracked so nothing is lost; ordered roughly by priority.
+
+### Core interactions
+- **Parent/child nesting** (the original §3.7, still unbuilt): drag a card onto another to nest (single level); children render as an indented checklist with a done toggle + promote (↥); the drop-onto-vs-between gesture; deleting a parent prompts (delete children vs explode out); counts exclude children. *The last structural piece of Stage → Section → Task → child.*
+- **Redo + undo rework**: rework undo to apply **in place** (no page reload) so a **Redo** appears after an undo. **Redo stays available until either a new edit / navigation, or the task(s) involved are otherwise changed — whichever comes first.** (Foundation for multi-level undo/redo later.)
+
+### Sharing & collaboration (Phase 7)
+- **`tasks.assignee`** field + a small card control — who a task is assigned to (a consultant). Feeds the email table and the consultant viewer.
+- **Email generator** — an **Email** action opens a **compose textbox** (cover note), then produces a downloadable **`.eml`** containing: the cover note, an **embedded task table** (task · status · assigned / waiting-on), the **project JSON attached**, and a **viewer link**. *(Open choice when built: ship with a placeholder link first, or build the viewer alongside so the link is live.)*
+- **Role-scoped offline viewer** — a self-contained HTML (JSON embedded): **client** = Awaiting→Done only; **consultant** = any status on tasks assigned to them. Emits a changeset back as an `.eml`.
+- **Import + merge** — import a returned changeset, match by **`uid`**, idempotent, behind a **review list** (Apply all / Cancel); log each accepted change as an event.
+
+### Design & polish
+- **Vendor the fonts** (Hanken Grotesk + IBM Plex Mono woff2; currently a system stack).
+- **Background** — further morphing/contouring "orb" work (user-led; the animated glow base lives in `body::before/::after`).
+- Optionally **remove the dormant swimlane** layout code (retired from the UI in v0.8).
+
+### Templates (Phase 5)
+- Author more templates (New Build, Loft Conversion, Garage Conversion, Listed/Conservation); optional in-app **"save current project as template."**
+
+### Smaller / later
+- **Multi-level** undo/redo (current undo reverts only the single most-recent action).
+- **Touch drag** (native DnD is desktop; steppers cover status on touch) and **keyboard** reorder/nest paths.
+- Appendix C extras: **home grouping by stage**, **print-as-drawing-sheet**, density toggle.
 
 ---
 
