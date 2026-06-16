@@ -837,7 +837,9 @@
   function dockHideSoon() {
     if (!dockEnabled()) return;
     clearTimeout(dockTimer);
-    dockTimer = setTimeout(function () { if (!dockHover && !anyPopOpen()) document.body.classList.remove("dock-open"); }, 300);
+    // Long pause before retracting, so the header doesn't jump when the pointer
+    // briefly leaves the bar/rail.
+    dockTimer = setTimeout(function () { if (!dockHover && !anyPopOpen()) document.body.classList.remove("dock-open"); }, 800);
   }
   function dockEnter() { dockHover = true; dockReveal(); }
   function dockLeave() { dockHover = false; dockHideSoon(); }
