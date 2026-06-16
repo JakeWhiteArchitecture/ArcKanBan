@@ -1,6 +1,9 @@
 # ArcKanban
 arckanban.db
 arckanban.db-journal
+*.db
+*.db-journal
+backups/
 __pycache__/
 *.pyc
 .venv/
