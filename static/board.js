@@ -1084,6 +1084,8 @@
     tbEl.addEventListener("focusout", dockHideSoon);
   }
   if (dhEl) { dhEl.addEventListener("mouseenter", dockEnter); dhEl.addEventListener("mouseleave", dockLeave); }
+  var drEl = document.querySelector(".dock-rail");
+  if (drEl) { drEl.addEventListener("mouseenter", dockEnter); drEl.addEventListener("mouseleave", dockLeave); }
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
   var startN = (saved != null && saved !== "" && isEnabled(Number(saved))) ? Number(saved) : currentStage;
   gotoStage(startN, true);

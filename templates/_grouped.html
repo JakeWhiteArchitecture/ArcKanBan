@@ -34,16 +34,6 @@
             {% for t in s.grouped[st].loose %}{% include "_card.html" %}{% endfor %}
           </div>
         </div>
-        {% if st == 'todo' %}
-        <form class="add-task" data-action="add-task" data-stage="{{ s.idx }}">
-          <input type="text" name="title" placeholder="Add a task…" autocomplete="off">
-          <select name="section" aria-label="Section">
-            <option value="">General</option>
-            {% for sec in s.sections %}<option value="{{ sec.id }}">{{ sec.title }}</option>{% endfor %}
-          </select>
-          <button type="submit" class="btn-quiet btn-sm">Add</button>
-        </form>
-        {% endif %}
       </section>
     {% endfor %}
   </div>

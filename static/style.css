@@ -342,9 +342,25 @@ a { color: var(--blue); text-decoration: none; }
 .titleblock.is-collapsed .chevron { transform: rotate(-90deg); }
 
 /* ---- Auto-hide dock — the titleblock tucks up off-screen for maximum board
-   real estate; a small handle at the top-centre is the visual indicator, and
-   hovering it (or the bar) slides the whole titleblock back down. ---------- */
-.dock-handle { display: none; }
+   real estate. A fine full-width rail at the very top is the hover zone; it
+   runs into a centred tab so the indicator reads as one continuous piece.
+   Hover the rail (or the tab) and the whole header slides down. ----------- */
+.dock-rail, .dock-handle { display: none; }
+
+body.dock-mode .dock-rail {
+  display: block; position: fixed; top: 0; left: 0; right: 0; height: 9px; z-index: 30;
+  cursor: pointer; transition: opacity 200ms ease;
+}
+body.dock-mode .dock-rail::after {            /* the fine line, brighter toward the tab */
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1.5px;
+  background: linear-gradient(90deg, transparent, var(--glass-border) 16%, var(--glass-bright) 50%, var(--glass-border) 84%, transparent);
+  transition: height 140ms ease, background 140ms ease;
+}
+body.dock-mode .dock-rail:hover::after {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--glass-bright) 16%, var(--blue) 50%, var(--glass-bright) 84%, transparent);
+}
+
 body.dock-mode .dock-handle {
   position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 31;
   display: inline-flex; align-items: center; gap: 10px;
@@ -358,6 +374,9 @@ body.dock-mode .dock-handle:hover { color: var(--ink); background: var(--glass-r
 body.dock-mode .dock-handle .dock-no { color: var(--blue); font-family: var(--font-mono); }
 body.dock-mode .dock-handle .dock-stage { font-family: var(--font-mono); }
 body.dock-mode .dock-handle .chevron { color: var(--ink-dim); }
+/* hovering the rail also lifts the tab, reinforcing that they're one element */
+body.dock-mode .dock-rail:hover ~ .dock-handle { color: var(--ink); background: var(--glass-raised); }
+body.dock-mode.dock-open .dock-rail,
 body.dock-mode.dock-open .dock-handle { opacity: 0; pointer-events: none; }
 
 body.dock-mode .titleblock {
