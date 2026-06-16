@@ -423,6 +423,7 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 40. **Living background** — two gentle, slow drifting/pulsing glow layers (vibrant on dark); `prefers-reduced-motion` honoured.
 41. **Backlog recorded** (§12) and the **redo expiry** decision captured.
 42. **Collapsible section bubbles** (grouped) — fold a section (across its columns) via the bubble chevron, persisted per project; and **fixed column scrolling** (`grid-template-rows: minmax(0,1fr)`) so each status column scrolls independently as it fills.
+43. **Activity log reads oldest→newest** (latest entries at the bottom); the drawer auto-scrolls to the newest on update and on open.
 
 ---
 

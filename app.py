@@ -581,7 +581,7 @@ def board(project_id):
         type_labels=TYPE_LABELS,
         statuses=STATUSES,
         layout=layout,
-        events=[format_event(e) for e in ev_rows],
+        events=[format_event(e) for e in reversed(ev_rows)],  # oldest→newest (latest at bottom)
         enabled=sorted(en),
         riba=RIBA_STAGES,
     ))

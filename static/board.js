@@ -39,24 +39,26 @@
     var json = {};
     try { json = await res.json(); } catch (e) {}
     if (!res.ok || !json.ok) { alert((json && json.error) || "Something went wrong."); return null; }
-    if (json.event) prependLogEvent(json.event);
-    else if (json.omit_last) removeTopLogEvent();
+    if (json.event) addLogEvent(json.event);
+    else if (json.omit_last) removeLastLogEvent();
     return json;
   }
 
   // ---- activity log + undo helpers --------------------------------------
-  function prependLogEvent(ev) {
+  function addLogEvent(ev) {
     var list = document.getElementById("log-list"); if (!list || !ev) return;
     var empty = list.querySelector(".log-empty"); if (empty) empty.remove();
     var li = document.createElement("li"); li.className = "log-item";
     var t = document.createElement("span"); t.className = "log-text"; t.textContent = ev.text;
     var w = document.createElement("time"); w.className = "log-when"; w.textContent = ev.when;
     li.appendChild(t); li.appendChild(w);
-    list.insertBefore(li, list.firstChild);
+    list.appendChild(li);                  // latest entries at the bottom
+    list.scrollTop = list.scrollHeight;    // keep the newest in view
   }
-  function removeTopLogEvent() {
+  function removeLastLogEvent() {
     var list = document.getElementById("log-list"); if (!list) return;
-    var first = list.querySelector(".log-item"); if (first) first.remove();
+    var items = list.querySelectorAll(".log-item");
+    if (items.length) items[items.length - 1].remove();
   }
   var undoStack = [];
   function pushUndo(label, run) { undoStack.push({ label: label, run: run }); }
@@ -777,7 +779,10 @@
         }
         case "toggle-log": {
           var d = document.getElementById("log-drawer");
-          d.setAttribute("aria-hidden", d.classList.toggle("open") ? "false" : "true"); break;
+          var lopen = d.classList.toggle("open");
+          d.setAttribute("aria-hidden", lopen ? "false" : "true");
+          if (lopen) { var ll = document.getElementById("log-list"); if (ll) ll.scrollTop = ll.scrollHeight; }
+          break;
         }
         case "nudge-set": setCurrentStage(document.getElementById("nudge").dataset.stage); break;
         case "nudge-dismiss": { var s = Number(document.getElementById("nudge").dataset.stage); dismissed[s] = true; document.getElementById("nudge").hidden = true; break; }
