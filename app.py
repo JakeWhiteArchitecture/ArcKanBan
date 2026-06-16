@@ -146,7 +146,8 @@ def init_db():
             verb       TEXT NOT NULL,
             target     TEXT,
             detail     TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            important  INTEGER NOT NULL DEFAULT 1
         );
         """
     )
@@ -163,6 +164,10 @@ def init_db():
     _ensure_column(db, "tasks", "uid", "uid TEXT")
     _ensure_column(db, "projects", "stages", "stages TEXT")  # CSV of enabled stage indices; NULL = all
     _ensure_column(db, "events", "task_id", "task_id INTEGER")  # link an event to its task (dedup + .md export)
+    # Two-tier log: the table is the full audit trail; important=1 marks the
+    # curated milestones shown in the drawer (created / completed / deleted),
+    # while minor moves (backlog→upcoming, section/type tweaks) stay important=0.
+    _ensure_column(db, "events", "important", "important INTEGER NOT NULL DEFAULT 1")
     for tbl in ("projects", "sections", "tasks"):
         db.execute("UPDATE %s SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL OR uid = ''" % tbl)
     db.executescript(
@@ -262,22 +267,29 @@ def format_event(e):
     return {"text": " ".join(parts), "when": when, "iso": e["created_at"]}
 
 
-def log_event(db, project_id, verb, target=None, detail=None, task_id=None):
-    """Record one activity event (person → action → task/section) and return it
-    rendered, so the endpoint can hand it straight to the narrative drawer."""
+def log_event(db, project_id, verb, target=None, detail=None, task_id=None, important=True):
+    """Record one activity event (person → action → task/section). The events
+    table is the FULL audit trail (every change, for later agent use); the
+    `important` flag marks the curated milestones surfaced in the drawer.
+    Returns the rendered event when important (so the endpoint can hand it to
+    the drawer), or None when it's full-log-only."""
     ts = now_iso()
     db.execute(
-        "INSERT INTO events (project_id, actor, verb, target, detail, created_at, task_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (project_id, ACTOR, verb, target, detail, ts, task_id),
+        "INSERT INTO events (project_id, actor, verb, target, detail, created_at, task_id, important) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, ACTOR, verb, target, detail, ts, task_id, 1 if important else 0),
     )
+    if not important:
+        return None
     return format_event({"actor": ACTOR, "verb": verb, "target": target,
                          "detail": detail, "created_at": ts})
 
 
 def log_status(db, row, new_status):
-    """Log a status change as 'set "X" to "Status"'. If a task is moved out of
-    Done within 10 minutes of being set to Done, omit BOTH entries (noise).
+    """Log a status change. Reaching Done is a curated milestone ('completed');
+    every other move (backlog→upcoming, etc.) is full-log-only. If a task leaves
+    Done within 10 minutes of being completed, retract the 'completed' line from
+    the visible log (it stays in the full audit trail).
     Returns (event_or_None, omitted_bool)."""
     old = row["status"]
     if new_status == old:
@@ -285,15 +297,20 @@ def log_status(db, row, new_status):
     if old == "done" and new_status != "done":
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(timespec="seconds")
         prev = db.execute(
-            "SELECT id FROM events WHERE task_id=? AND verb='set' AND detail=? AND created_at>=? "
-            "ORDER BY id DESC LIMIT 1",
-            (row["id"], 'to “Done”', cutoff),
+            "SELECT id FROM events WHERE task_id=? AND verb='completed' AND important=1 "
+            "AND created_at>=? ORDER BY id DESC LIMIT 1",
+            (row["id"], cutoff),
         ).fetchone()
         if prev:
-            db.execute("DELETE FROM events WHERE id=?", (prev["id"],))
+            db.execute("UPDATE events SET important=0 WHERE id=?", (prev["id"],))   # keep in full log, hide from drawer
+            log_event(db, row["project_id"], "set", row["title"],
+                      'to “%s”' % STATUS_LABELS[new_status], task_id=row["id"], important=False)
             return None, True
-    ev = log_event(db, row["project_id"], "set", row["title"],
-                   'to “%s”' % STATUS_LABELS[new_status], task_id=row["id"])
+    if new_status == "done":
+        ev = log_event(db, row["project_id"], "completed", row["title"], task_id=row["id"])
+    else:
+        ev = log_event(db, row["project_id"], "set", row["title"],
+                       'to “%s”' % STATUS_LABELS[new_status], task_id=row["id"], important=False)
     return ev, False
 
 
@@ -311,15 +328,15 @@ def task_update_event(db, row, data):
             sid = None
         if sid != row["section_id"]:
             if sid is None:
-                return log_event(db, pid, "moved", title, "out to General", task_id=tid), False
+                return log_event(db, pid, "moved", title, "out to General", task_id=tid, important=False), False
             nm = db.execute("SELECT title FROM sections WHERE id=?", (sid,)).fetchone()
-            return log_event(db, pid, "moved", title, "into “%s”" % (nm["title"] if nm else "section"), task_id=tid), False
+            return log_event(db, pid, "moved", title, "into “%s”" % (nm["title"] if nm else "section"), task_id=tid, important=False), False
     if "urgent" in data and bool(data["urgent"]) != bool(row["urgent"]):
-        ev = (log_event(db, pid, "flagged", title, "as urgent", task_id=tid) if data["urgent"]
-              else log_event(db, pid, "unflagged", title, task_id=tid))
+        ev = (log_event(db, pid, "flagged", title, "as urgent", task_id=tid, important=False) if data["urgent"]
+              else log_event(db, pid, "unflagged", title, task_id=tid, important=False))
         return ev, False
     if "type" in data and data["type"] != row["type"]:
-        return log_event(db, pid, "retagged", title, "as " + TYPE_LABELS[data["type"]], task_id=tid), False
+        return log_event(db, pid, "retagged", title, "as " + TYPE_LABELS[data["type"]], task_id=tid, important=False), False
     return None, False
 
 
@@ -593,7 +610,7 @@ def board(project_id):
     for s in stages:
         s["enabled"] = s["idx"] in en
     ev_rows = db.execute(
-        "SELECT * FROM events WHERE project_id=? ORDER BY id DESC LIMIT 200", (project_id,)
+        "SELECT * FROM events WHERE project_id=? AND important=1 ORDER BY id DESC LIMIT 200", (project_id,)
     ).fetchall()
     resp = make_response(render_template(
         "board.html",
@@ -624,6 +641,32 @@ def export_template(project_id):
     resp = make_response(json.dumps(data, indent=2, ensure_ascii=False))
     resp.headers["Content-Type"] = "application/json"
     resp.headers["Content-Disposition"] = 'attachment; filename="arckanban-template.json"'
+    return resp
+
+
+@app.route("/projects/<int:project_id>/activity.json")
+def export_activity(project_id):
+    """Download the FULL activity log — every event, including the minor moves
+    (backlog→upcoming, section/type tweaks) hidden from the drawer. This is the
+    audit trail meant to be handed to an agent later for practice automation."""
+    db = get_db()
+    get_project_or_404(db, project_id)
+    rows = db.execute(
+        "SELECT * FROM events WHERE project_id=? ORDER BY id ASC", (project_id,)
+    ).fetchall()
+    data = {
+        "project_id": project_id,
+        "exported_at": now_iso(),
+        "count": len(rows),
+        "events": [{
+            "actor": r["actor"], "verb": r["verb"], "target": r["target"],
+            "detail": r["detail"], "at": r["created_at"], "task_id": r["task_id"],
+            "important": bool(r["important"]), "text": format_event(r)["text"],
+        } for r in rows],
+    }
+    resp = make_response(json.dumps(data, indent=2, ensure_ascii=False))
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Content-Disposition"] = 'attachment; filename="arckanban-activity.json"'
     return resp
 
 
@@ -704,7 +747,7 @@ def api_set_stages(project_id):
         db.execute("UPDATE projects SET current_stage=? WHERE id=?", (new_current, project_id))
     db.execute("UPDATE projects SET stages=? WHERE id=?",
                (",".join(str(s) for s in stages), project_id))
-    ev = log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages))
+    ev = log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages), important=False)
     db.commit()
     return jsonify(ok=True, stages=stages, current_stage=new_current, event=ev)
 
@@ -726,6 +769,9 @@ def api_add_task(project_id):
     ttype = data.get("type", "recommended")
     if ttype not in TYPES:
         ttype = "recommended"
+    status = data.get("status", "todo")
+    if status not in STATUSES:
+        status = "todo"
     section_id = data.get("section_id") or None
     if section_id is not None:
         try:
@@ -734,13 +780,13 @@ def api_add_task(project_id):
             return jsonify(ok=False, error="Invalid section."), 400
         if not section_in_stage(db, section_id, project_id, stage):
             return jsonify(ok=False, error="Section not in this stage."), 400
-    pos = next_position(db, project_id, stage, "todo", section_id)
+    pos = next_position(db, project_id, stage, status, section_id)
     cur = db.execute(
         "INSERT INTO tasks (project_id, stage, title, status, type, position, section_id) "
-        "VALUES (?, ?, ?, 'todo', ?, ?, ?)",
-        (project_id, stage, title, ttype, pos, section_id),
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (project_id, stage, title, status, ttype, pos, section_id),
     )
-    ev = log_event(db, project_id, "added", title, "to To Do", task_id=cur.lastrowid)
+    ev = log_event(db, project_id, "added", title, "to " + STATUS_LABELS[status], task_id=cur.lastrowid)
     db.commit()
     row = db.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone()
     html = render_template("_card.html", t=task_to_dict(row),
@@ -890,10 +936,10 @@ def api_move_task(task_id):
         ev, omit = log_status(db, row, status)
     elif section_id != row["section_id"]:
         if section_id is None:
-            ev = log_event(db, row["project_id"], "moved", row["title"], "out to General", task_id=task_id)
+            ev = log_event(db, row["project_id"], "moved", row["title"], "out to General", task_id=task_id, important=False)
         else:
             nm = db.execute("SELECT title FROM sections WHERE id=?", (section_id,)).fetchone()
-            ev = log_event(db, row["project_id"], "moved", row["title"], "into “%s”" % (nm["title"] if nm else "section"), task_id=task_id)
+            ev = log_event(db, row["project_id"], "moved", row["title"], "into “%s”" % (nm["title"] if nm else "section"), task_id=task_id, important=False)
     db.commit()
     new_row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     return jsonify(ok=True, task=task_to_dict(new_row), event=ev, omit_last=omit)
@@ -921,7 +967,7 @@ def api_add_section(project_id):
         "INSERT INTO sections (project_id, stage, title, position) VALUES (?, ?, ?, ?)",
         (project_id, stage, title, p),
     )
-    ev = log_event(db, project_id, "created section", title)
+    ev = log_event(db, project_id, "created section", title, important=False)
     db.commit()
     lane = build_lane(cur.lastrowid, title, [])
     return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "title": title},
@@ -938,7 +984,7 @@ def api_update_section(section_id):
     title = (data.get("title") or "").strip()
     if not title:
         return jsonify(ok=False, error="Title cannot be empty."), 400
-    ev = log_event(db, row["project_id"], "renamed section", title, "(was “%s”)" % row["title"])
+    ev = log_event(db, row["project_id"], "renamed section", title, "(was “%s”)" % row["title"], important=False)
     db.execute("UPDATE sections SET title=? WHERE id=?", (title, section_id))
     db.commit()
     return jsonify(ok=True, title=title, event=ev)
@@ -951,7 +997,7 @@ def api_delete_section(section_id):
     if row is None:
         return jsonify(ok=False, error="No such section."), 404
     # Orphan the section's tasks to the loose 'General' lane, then delete the section.
-    ev = log_event(db, row["project_id"], "deleted section", row["title"])
+    ev = log_event(db, row["project_id"], "deleted section", row["title"], important=False)
     db.execute("UPDATE tasks SET section_id=NULL WHERE section_id=?", (section_id,))
     db.execute("DELETE FROM sections WHERE id=?", (section_id,))
     db.commit()
@@ -984,7 +1030,7 @@ def api_move_section(section_id):
     for i, tid in enumerate(existing + moved):     # glue: existing first, arrivals after
         db.execute("UPDATE tasks SET position=? WHERE id=?", (i, tid))
     ev = log_event(db, row["project_id"], "moved section", row["title"],
-                   "to %s (%d tasks)" % (STATUS_LABELS[to], len(moved)))
+                   "to %s (%d tasks)" % (STATUS_LABELS[to], len(moved)), important=False)
     db.commit()
     return jsonify(ok=True, moved=moved, to_status=to, event=ev)
 
