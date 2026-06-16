@@ -42,6 +42,8 @@
       <button type="button" class="filter-btn" data-filter="done" aria-pressed="false">Hide done</button>
     </div>
     <button type="button" class="log-toggle" data-action="toggle-log" title="Activity log">Log</button>
+    <a class="log-toggle" href="{{ url_for('export_template', project_id=project.id) }}" download
+       title="Save tasks, sections & statuses as a template (no project/client names)">Template</a>
     <form class="tb-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
           onsubmit="return confirm('Delete this project and all its tasks?');">
       <button type="submit" class="btn-quiet btn-danger btn-sm">Delete</button>

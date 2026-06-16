@@ -181,6 +181,7 @@ a { color: var(--blue); text-decoration: none; }
 .stage-label { font-size: 0.85rem; color: var(--ink-soft); }
 .stage-label .stage-num { color: var(--blue); font-weight: 600; }
 .project-foot form { margin: 0; }
+.project-actions { display: flex; align-items: center; gap: 8px; }
 .empty { color: var(--ink-soft); font-style: italic; padding: calc(var(--u) * 4) 0; }
 
 /* ---- Spine (shared) — RIBA colour per cell ---------------------------- */
