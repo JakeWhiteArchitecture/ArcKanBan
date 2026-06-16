@@ -2,22 +2,16 @@
    section "bubbles" + a loose area. Click a card to link its section across
    columns; drag changes status and auto-regroups into the section bubble. #}
 <div class="grouped" data-stage="{{ s.idx }}">
-  <div class="section-bar" data-stage="{{ s.idx }}">
-    <span class="section-bar-label">Sections</span>
-    <span class="sec-chip sec-chip-general" data-section="" data-pos="-1" title="Loose tasks">
-      <span class="sec-chip-name">General</span>
-    </span>
+  {# Hidden registry — data source for bubbles, the create-task widget and the
+     right-click menu. Sections are managed in the Sections popup (titleblock). #}
+  <div class="section-reg" data-stage="{{ s.idx }}" hidden aria-hidden="true">
+    <span class="sec-chip sec-chip-general" data-section="" data-pos="-1"><span class="sec-chip-name">General</span></span>
     {% for sec in s.sections %}
       <span class="sec-chip" data-section="{{ sec.id }}" data-pos="{{ sec.pos }}">
-        <span class="sec-chip-name editable" data-action="rename-section" role="button" tabindex="0">{{ sec.title }}</span>
+        <span class="sec-chip-name">{{ sec.title }}</span>
         <span class="sec-chip-roll">{{ sec.done }}/{{ sec.total }}</span>
-        <button type="button" class="sec-chip-del" data-action="delete-section" data-section="{{ sec.id }}"
-                aria-label="Delete section" title="Delete section (tasks → General)">×</button>
       </span>
     {% endfor %}
-    <form class="add-section-chip" data-action="add-section" data-stage="{{ s.idx }}">
-      <input type="text" name="title" placeholder="+ section" autocomplete="off" aria-label="New section">
-    </form>
   </div>
 
   <div class="columns gcolumns">

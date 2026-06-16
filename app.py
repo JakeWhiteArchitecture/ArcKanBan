@@ -149,6 +149,13 @@ def init_db():
             created_at TEXT NOT NULL,
             important  INTEGER NOT NULL DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS decision_options (
+            id         INTEGER PRIMARY KEY,
+            task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            text       TEXT NOT NULL,
+            position   INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
         """
     )
     # Additive migrations for an existing v0.1-shaped database (see REQUIREMENTS §6).
@@ -168,6 +175,9 @@ def init_db():
     # curated milestones shown in the drawer (created / completed / deleted),
     # while minor moves (backlog→upcoming, section/type tweaks) stay important=0.
     _ensure_column(db, "events", "important", "important INTEGER NOT NULL DEFAULT 1")
+    # Decision tasks carry a confirmed outcome (the decision register's source of
+    # truth); their candidate options live in the decision_options table.
+    _ensure_column(db, "tasks", "outcome", "outcome TEXT")
     for tbl in ("projects", "sections", "tasks"):
         db.execute("UPDATE %s SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL OR uid = ''" % tbl)
     db.executescript(
@@ -243,6 +253,41 @@ def load_template(filename):
         status = status if status in STATUSES else "todo"
         tasks.append({"stage": stage, "title": title, "type": ttype, "section": section, "status": status})
     return {"name": data.get("name", filename), "tasks": tasks}
+
+
+def _slugify(s):
+    """Filesystem-safe slug (alnum + underscores only — no path traversal)."""
+    out = "".join(ch if ch.isalnum() else "_" for ch in (s or "").lower())
+    while "__" in out:
+        out = out.replace("__", "_")
+    return out.strip("_")[:60]
+
+
+def sanitize_template(raw, name):
+    """Validate an uploaded template dict into the stored shape, or None."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("tasks"), list):
+        return None
+    tasks = []
+    for t in raw.get("tasks", []):
+        if not isinstance(t, dict):
+            continue
+        try:
+            stage = int(t["stage"])
+            title = str(t["title"]).strip()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not title or not (0 <= stage <= 7):
+            continue
+        ttype = t.get("type") if t.get("type") in TYPES else "recommended"
+        status = t.get("status") if t.get("status") in STATUSES else "todo"
+        section = t.get("section")
+        clean = {"stage": stage, "title": title, "type": ttype, "status": status}
+        if section:
+            clean["section"] = str(section).strip()
+        tasks.append(clean)
+    if not tasks:
+        return None
+    return {"name": name, "tasks": tasks}
 
 
 # --------------------------------------------------------------------------- #
@@ -351,7 +396,8 @@ def next_position(db, project_id, stage, status, section_id, parent_id=None):
 
 
 def task_to_dict(row):
-    return {
+    keys = row.keys()
+    d = {
         "id": row["id"],
         "uid": row["uid"],
         "stage": row["stage"],
@@ -363,7 +409,14 @@ def task_to_dict(row):
         "position": row["position"],
         "section_id": row["section_id"],
         "parent_id": row["parent_id"],
+        "outcome": (row["outcome"] if "outcome" in keys else None) or "",
+        "options": [],
     }
+    # Decision tasks carry their candidate options (small list) for the card.
+    if d["type"] == "decision":
+        d["options"] = [{"id": o["id"], "text": o["text"]} for o in get_db().execute(
+            "SELECT id, text FROM decision_options WHERE task_id=? ORDER BY position, id", (row["id"],))]
+    return d
 
 
 def section_in_stage(db, section_id, project_id, stage):
@@ -542,9 +595,11 @@ def index():
                 "current_stage": r["current_stage"],
                 "current_stage_name": RIBA_STAGES[r["current_stage"]],
                 "spine": mini_spine(r["current_stage"]),
+                "enabled": sorted(enabled_stages(r)),
             }
         )
-    return render_template("index.html", projects=projects, templates=list_templates())
+    return render_template("index.html", projects=projects, templates=list_templates(),
+                           riba=RIBA_STAGES, selected_template=request.args.get("tpl", ""))
 
 
 @app.route("/projects", methods=["POST"])
@@ -670,6 +725,85 @@ def export_activity(project_id):
     return resp
 
 
+@app.route("/projects/<int:project_id>/decisions.json")
+def export_decisions(project_id):
+    """Download the decision register — every decision task with its options and
+    confirmed outcome. The source of truth for the practice's decision log."""
+    db = get_db()
+    get_project_or_404(db, project_id)
+    rows = db.execute(
+        "SELECT * FROM tasks WHERE project_id=? AND type='decision' ORDER BY stage, position, id",
+        (project_id,),
+    ).fetchall()
+    decisions = []
+    for r in rows:
+        opts = [o["text"] for o in db.execute(
+            "SELECT text FROM decision_options WHERE task_id=? ORDER BY position, id", (r["id"],))]
+        decisions.append({
+            "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
+            "title": r["title"], "status": r["status"],
+            "decision_by": r["awaiting_on"] or "",
+            "options": opts,
+            "outcome": r["outcome"] or "",
+            "confirmed": bool(r["outcome"]),
+        })
+    data = {"project_id": project_id, "exported_at": now_iso(),
+            "count": len(decisions), "confirmed": sum(1 for d in decisions if d["confirmed"]),
+            "decisions": decisions}
+    resp = make_response(json.dumps(data, indent=2, ensure_ascii=False))
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Content-Disposition"] = 'attachment; filename="arckanban-decisions.json"'
+    return resp
+
+
+@app.route("/projects/<int:project_id>/scope", methods=["POST"])
+def set_scope(project_id):
+    """Set a project's RIBA-stage appointment scope from the register page
+    (form POST). The board's ⋯ menu no longer carries this — it lives here, with
+    project-level management, on the exploration page."""
+    db = get_db()
+    p = get_project_or_404(db, project_id)
+    try:
+        stages = sorted({int(x) for x in request.form.getlist("stage") if 0 <= int(x) <= 7})
+    except (TypeError, ValueError):
+        stages = []
+    if not stages:
+        flash("At least one stage must stay in scope.")
+        return redirect(url_for("index"))
+    new_current = p["current_stage"]
+    if new_current not in stages:
+        new_current = stages[0]
+        db.execute("UPDATE projects SET current_stage=? WHERE id=?", (new_current, project_id))
+    db.execute("UPDATE projects SET stages=? WHERE id=?",
+               (",".join(str(s) for s in stages), project_id))
+    log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages), important=False)
+    db.commit()
+    flash("Appointment scope updated.")
+    return redirect(url_for("index"))
+
+
+@app.route("/templates/upload", methods=["POST"])
+def upload_template():
+    """Store an uploaded template JSON (one the user saved earlier) into the
+    library under a chosen name, so it's offered on the new-project picker."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="A template needs a name."), 400
+    tpl = sanitize_template(data.get("template"), name)
+    if tpl is None:
+        return jsonify(ok=False, error="That doesn't look like an ArcKanban template (no valid tasks)."), 400
+    os.makedirs(TEMPLATES_LIB, exist_ok=True)
+    base = _slugify(name) or "template"
+    fn, i = base + ".json", 2
+    while os.path.exists(os.path.join(TEMPLATES_LIB, fn)):
+        fn = "%s-%d.json" % (base, i); i += 1
+    with open(os.path.join(TEMPLATES_LIB, fn), "w", encoding="utf-8") as fh:
+        json.dump(tpl, fh, indent=2, ensure_ascii=False)
+    flash("Template “%s” added." % name)
+    return jsonify(ok=True, file=fn, name=name)
+
+
 @app.route("/projects/<int:project_id>/delete", methods=["POST"])
 def delete_project(project_id):
     db = get_db()
@@ -793,6 +927,87 @@ def api_add_task(project_id):
                            status_labels=STATUS_LABELS, type_labels=TYPE_LABELS,
                            statuses=STATUSES)
     return jsonify(ok=True, task=task_to_dict(row), html=html, event=ev)
+
+
+# --------------------------------------------------------------------------- #
+# Decisions: candidate options + a confirmed outcome (the decision register).
+# A 'decision' task gathers options as it's discussed; confirming one (or an
+# "other") records the outcome — the source of truth for the decision register.
+# --------------------------------------------------------------------------- #
+
+def _decision_or_error(db, task_id):
+    row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        return None, (jsonify(ok=False, error="No such task."), 404)
+    if row["type"] != "decision":
+        return None, (jsonify(ok=False, error="Not a decision task."), 400)
+    return row, None
+
+
+def _add_option(db, task_id, text):
+    pos = db.execute("SELECT COALESCE(MAX(position)+1,0) p FROM decision_options WHERE task_id=?",
+                     (task_id,)).fetchone()["p"]
+    cur = db.execute("INSERT INTO decision_options (task_id, text, position, created_at) VALUES (?,?,?,?)",
+                     (task_id, text, pos, now_iso()))
+    return {"id": cur.lastrowid, "text": text}
+
+
+@app.route("/api/tasks/<int:task_id>/options", methods=["POST"])
+def api_add_option(task_id):
+    db = get_db()
+    row, err = _decision_or_error(db, task_id)
+    if err:
+        return err
+    text = ((request.get_json(silent=True) or {}).get("text") or "").strip()
+    if not text:
+        return jsonify(ok=False, error="An option needs some text."), 400
+    option = _add_option(db, task_id, text)
+    db.commit()
+    return jsonify(ok=True, option=option)
+
+
+@app.route("/api/options/<int:option_id>/delete", methods=["POST"])
+def api_delete_option(option_id):
+    db = get_db()
+    db.execute("DELETE FROM decision_options WHERE id=?", (option_id,))
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/tasks/<int:task_id>/confirm", methods=["POST"])
+def api_confirm_decision(task_id):
+    """Confirm a decision's outcome (from an option or a typed 'other'). With
+    add_option set, the 'other' text is also recorded as an option so the
+    register shows the chosen item. Logged as a curated milestone ('decided')."""
+    db = get_db()
+    row, err = _decision_or_error(db, task_id)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify(ok=False, error="Choose or type an outcome."), 400
+    option = None
+    if data.get("add_option"):
+        existing = db.execute("SELECT id, text FROM decision_options WHERE task_id=? AND text=?",
+                              (task_id, text)).fetchone()
+        option = {"id": existing["id"], "text": text} if existing else _add_option(db, task_id, text)
+    db.execute("UPDATE tasks SET outcome=? WHERE id=?", (text, task_id))
+    ev = log_event(db, row["project_id"], "decided", row["title"], "→ " + text, task_id=task_id)
+    db.commit()
+    return jsonify(ok=True, outcome=text, option=option, event=ev)
+
+
+@app.route("/api/tasks/<int:task_id>/unconfirm", methods=["POST"])
+def api_clear_decision(task_id):
+    db = get_db()
+    row, err = _decision_or_error(db, task_id)
+    if err:
+        return err
+    db.execute("UPDATE tasks SET outcome=NULL WHERE id=?", (task_id,))
+    ev = log_event(db, row["project_id"], "reopened decision", row["title"], task_id=task_id, important=False)
+    db.commit()
+    return jsonify(ok=True, event=ev)
 
 
 @app.route("/api/projects/<int:project_id>/tasks/restore", methods=["POST"])

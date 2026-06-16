@@ -262,17 +262,20 @@
       cell.textContent = r ? (val || (field === "number" ? "—" : raw)) : raw;
     });
   }
+  // rename/delete are driven from the Sections popup (rows keyed by section id);
+  // the popup always reflects the stage in view, so updates target that stage.
   function renameSection(titleEl) {
-    var holder = titleEl.closest("[data-section]"); var id = holder.dataset.section;
+    var id = titleEl.closest("[data-section]").dataset.section;
     var text = titleEl.textContent.trim();
     editInline(titleEl, text, async function (val, changed) {
       if (val === null || !changed || !val) { titleEl.textContent = text; return; }
       var r = await api("/api/sections/" + id, { title: val });
       if (!r) { titleEl.textContent = text; return; }
       titleEl.textContent = val;
-      if (LAYOUT === "grouped") {
-        var stageEl = stageOf(titleEl);
+      var stageEl = document.getElementById("stage-" + activeStage());
+      if (stageEl) {
         stageEl.querySelectorAll('.bubble[data-section="' + id + '"] .bubble-name').forEach(function (n) { n.textContent = val; });
+        stageEl.querySelectorAll('.sec-chip[data-section="' + id + '"] .sec-chip-name').forEach(function (n) { n.textContent = val; });
         stageEl.querySelectorAll('.add-task select[name="section"] option[value="' + id + '"]').forEach(function (o) { o.textContent = val; });
       }
     });
@@ -384,10 +387,112 @@
     recountStageFull(stageEl);
     pushUndo("move of “" + title + "”", function () { return undoUpdate(id, { section_id: prev || null }); });
   }
+  // ---- decisions: options + confirmed outcome (decision register) -------
+  function decBlock(card) { return card.querySelector(".dec-block"); }
+  function decOutcome(card) { var o = card.querySelector(".dec-outcome-text"); return o ? o.textContent.trim() : ""; }
+  function renderOption(id, text) {
+    var li = document.createElement("li"); li.className = "dec-option"; li.dataset.optionId = id;
+    var c = document.createElement("button"); c.type = "button"; c.className = "dec-confirm";
+    c.dataset.action = "confirm-option"; c.title = "Confirm this choice"; c.setAttribute("aria-label", "Confirm this choice"); c.textContent = "✓";
+    var t = document.createElement("span"); t.className = "dec-option-text"; t.textContent = text;
+    var d = document.createElement("button"); d.type = "button"; d.className = "dec-option-del";
+    d.dataset.action = "delete-option"; d.setAttribute("aria-label", "Remove option"); d.textContent = "×";
+    li.appendChild(c); li.appendChild(t); li.appendChild(d); return li;
+  }
+  function ensureDecOptionsUl(card) {
+    var block = decBlock(card); var ul = block.querySelector(".dec-options");
+    if (!ul) { ul = document.createElement("ul"); ul.className = "dec-options"; block.insertBefore(ul, block.querySelector(".dec-actions")); }
+    return ul;
+  }
+  async function addOption(card, text) {
+    var r = await api("/api/tasks/" + card.dataset.taskId + "/options", { text: text });
+    if (!r) return;
+    ensureDecOptionsUl(card).appendChild(renderOption(r.option.id, r.option.text));
+  }
+  async function deleteOption(btn) {
+    var li = btn.closest(".dec-option"); if (!li) return;
+    var r = await api("/api/options/" + li.dataset.optionId + "/delete", {});
+    if (r) li.remove();
+  }
+  async function confirmDecision(card, text, addOpt) {
+    var r = await api("/api/tasks/" + card.dataset.taskId + "/confirm", { text: text, add_option: !!addOpt });
+    if (!r) return;
+    if (r.option) {
+      var ul = ensureDecOptionsUl(card);
+      if (!ul.querySelector('[data-option-id="' + r.option.id + '"]')) ul.appendChild(renderOption(r.option.id, r.option.text));
+    }
+    setDecisionOutcome(card, r.outcome);
+  }
+  async function clearDecision(card) {
+    var r = await api("/api/tasks/" + card.dataset.taskId + "/unconfirm", {});
+    if (r) setDecisionOutcome(card, "");
+  }
+  function setDecisionOutcome(card, outcome) {
+    var block = decBlock(card); if (!block) return;
+    var banner = block.querySelector(".dec-outcome");
+    if (outcome) {
+      if (!banner) {
+        banner = document.createElement("div"); banner.className = "dec-outcome";
+        banner.innerHTML = '<span class="dec-check">✓</span> <span class="dec-outcome-text"></span>' +
+          '<button type="button" class="dec-clear" data-action="clear-decision" aria-label="Reopen decision" title="Reopen decision">×</button>';
+        block.insertBefore(banner, block.firstChild);
+      }
+      banner.querySelector(".dec-outcome-text").textContent = outcome;
+    } else if (banner) { banner.remove(); }
+    block.querySelectorAll(".dec-option").forEach(function (li) {
+      li.classList.toggle("is-chosen", !!outcome && li.querySelector(".dec-option-text").textContent.trim() === outcome);
+    });
+  }
+  // Inline "add an option" (and the "Other…" variant, which also confirms it).
+  function startAddOption(card, confirmAfter) {
+    var block = decBlock(card); if (!block) return;
+    var existing = block.querySelector(".dec-option-input"); if (existing) { existing.focus(); return; }
+    var input = document.createElement("input"); input.type = "text"; input.className = "dec-option-input";
+    input.placeholder = confirmAfter ? "Type the decision…" : "Add an option…";
+    block.insertBefore(input, block.querySelector(".dec-actions")); input.focus();
+    var done = false;
+    function finish(commit) {
+      if (done) return; done = true;
+      var val = input.value.trim(); input.remove();
+      if (commit && val) { if (confirmAfter) confirmDecision(card, val, true); else addOption(card, val); }
+    }
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var val = input.value.trim();
+        if (!confirmAfter && val) { addOption(card, val); input.value = ""; return; }   // keep adding
+        finish(true);
+      } else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", function () { finish(true); });
+  }
+
   function openSectionMenu(card, x, y) {
     closeMenu();
     var stageEl = stageOf(card), cur = card.dataset.section || "";
     var menu = document.createElement("div"); menu.className = "ctx-menu";
+    if (card.dataset.type === "decision") {       // confirm-choice section first
+      var dh = document.createElement("div"); dh.className = "ctx-head"; dh.textContent = "Confirm decision"; menu.appendChild(dh);
+      var outcome = decOutcome(card);
+      card.querySelectorAll(".dec-option .dec-option-text").forEach(function (span) {
+        var text = span.textContent.trim();
+        var it = document.createElement("div"); it.className = "ctx-item" + (text === outcome ? " is-current" : "");
+        var s = document.createElement("span"); s.textContent = text; it.appendChild(s);
+        if (text !== outcome) it.addEventListener("click", function () { confirmDecision(card, text, false); closeMenu(); });
+        menu.appendChild(it);
+      });
+      var other = document.createElement("div"); other.className = "ctx-item";
+      var os = document.createElement("span"); os.textContent = "Other…"; other.appendChild(os);
+      other.addEventListener("click", function () { closeMenu(); startAddOption(card, true); });
+      menu.appendChild(other);
+      if (outcome) {
+        var clr = document.createElement("div"); clr.className = "ctx-item";
+        var cs = document.createElement("span"); cs.textContent = "Clear decision"; clr.appendChild(cs);
+        clr.addEventListener("click", function () { clearDecision(card); closeMenu(); });
+        menu.appendChild(clr);
+      }
+      var sep = document.createElement("div"); sep.className = "ctx-sep"; menu.appendChild(sep);
+    }
     var head = document.createElement("div"); head.className = "ctx-head"; head.textContent = "Move to section"; menu.appendChild(head);
     [{ id: "", title: "General (no section)" }].concat(stageSections(stageEl)).forEach(function (it) {
       var el = document.createElement("div");
@@ -543,13 +648,12 @@
     }
   }
   async function deleteSection(el) {
-    var id = el.dataset.section || (laneOf(el) && laneOf(el).dataset.section);
-    if (!id) return;
+    var id = el.dataset.section; if (!id) return;
     if (!confirm("Delete this section? Its tasks move to General.")) return;
     var r = await api("/api/sections/" + id + "/delete", {});
     if (!r) return;
-    var stageEl = stageOf(el);
-    if (LAYOUT === "grouped") {
+    var stageEl = document.getElementById("stage-" + activeStage());
+    if (stageEl) {
       stageEl.querySelectorAll(".col-body").forEach(function (colBody) {
         var bubble = colBody.querySelector('.bubble[data-section="' + id + '"]');
         if (!bubble) return;
@@ -559,16 +663,66 @@
       });
       var chip = stageEl.querySelector('.sec-chip[data-section="' + id + '"]'); if (chip) chip.remove();
       stageEl.querySelectorAll('.add-task select[name="section"] option[value="' + id + '"]').forEach(function (o) { o.remove(); });
-    } else {
-      var lane = laneOf(el), general = stageEl.querySelector(".section-lane.is-general");
-      STATUSES.forEach(function (st) {
-        var srcc = lane.querySelector('.col-cards[data-status="' + st + '"]');
-        var dstc = general.querySelector('.col-cards[data-status="' + st + '"]');
-        while (srcc && srcc.firstElementChild) { var c = srcc.firstElementChild; c.dataset.section = ""; dstc.appendChild(c); }
-      });
-      lane.remove();
+      recountStageFull(stageEl);
     }
-    recountStageFull(stageEl);
+    var row = document.querySelector('#sections-pop .sec-row[data-section="' + id + '"]'); if (row) row.remove();
+    var list = document.querySelector("#sections-pop .sections-list");
+    if (list && !list.querySelector(".sec-row")) renderSectionsList(stageEl);   // show the empty hint
+  }
+
+  // ---- Sections popup (add / rename / delete for the stage in view) ------
+  function renderSectionsList(stageEl) {
+    var pop = document.getElementById("sections-pop"); if (!pop) return;
+    var list = pop.querySelector(".sections-list"); list.innerHTML = "";
+    var chips = stageEl ? stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)") : [];
+    if (!chips.length) {
+      var e = document.createElement("div"); e.className = "sections-empty";
+      e.textContent = "No sections yet — add one below."; list.appendChild(e); return;
+    }
+    chips.forEach(function (ch) {
+      var id = ch.dataset.section, name = ch.querySelector(".sec-chip-name").textContent.trim();
+      var rollEl = ch.querySelector(".sec-chip-roll");
+      var row = document.createElement("div"); row.className = "sec-row"; row.dataset.section = id;
+      var nm = document.createElement("span"); nm.className = "sec-row-name"; nm.dataset.action = "rename-section";
+      nm.setAttribute("role", "button"); nm.tabIndex = 0; nm.title = "Rename"; nm.textContent = name;
+      var rl = document.createElement("span"); rl.className = "sec-row-roll"; rl.textContent = rollEl ? rollEl.textContent.trim() : "";
+      var del = document.createElement("button"); del.type = "button"; del.className = "sec-row-del";
+      del.dataset.action = "delete-section"; del.dataset.section = id;
+      del.setAttribute("aria-label", "Delete section"); del.title = "Delete section (tasks → General)"; del.textContent = "×";
+      row.appendChild(nm); row.appendChild(rl); row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  function openSections() {
+    var pop = document.getElementById("sections-pop"); if (!pop) return;
+    var n = activeStage(), stageEl = document.getElementById("stage-" + n);
+    var lbl = pop.querySelector(".sections-stage"); if (lbl) lbl.textContent = "Stage " + n + " · " + RIBA[n];
+    renderSectionsList(stageEl);
+    closePops("sections-pop"); pop.hidden = false;
+    var ti = pop.querySelector(".sections-add input"); if (ti) ti.value = "";
+  }
+  async function addSectionPop(form) {
+    var stage = activeStage();
+    var input = form.querySelector('input[name="title"]');
+    var title = input.value.trim(); if (!title) { input.focus(); return; }
+    var r = await api("/api/projects/" + projectId + "/sections", { stage: stage, title: title });
+    if (!r) return;
+    var stageEl = document.getElementById("stage-" + stage);
+    if (stageEl) {
+      var reg = stageEl.querySelector(".section-reg");
+      var pos = stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").length;
+      var chip = document.createElement("span");
+      chip.className = "sec-chip"; chip.dataset.section = r.section.id; chip.dataset.pos = pos;
+      var nm = document.createElement("span"); nm.className = "sec-chip-name"; nm.textContent = r.section.title;
+      var roll = document.createElement("span"); roll.className = "sec-chip-roll"; roll.textContent = "0/0";
+      chip.appendChild(nm); chip.appendChild(roll);
+      if (reg) reg.appendChild(chip);
+      stageEl.querySelectorAll('.add-task select[name="section"]').forEach(function (sel) {
+        var o = document.createElement("option"); o.value = r.section.id; o.textContent = r.section.title; sel.appendChild(o);
+      });
+      renderSectionsList(stageEl);
+    }
+    input.value = ""; input.focus();
   }
 
   // ---- filters & collapse (persisted) -----------------------------------
@@ -584,7 +738,7 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   // ---- titleblock popovers (filters / more / scope / create) ------------
-  var POP_IDS = ["filter-pop", "more-pop", "scope-pop", "create-pop"];
+  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop"];
   function closePops(except) {
     POP_IDS.forEach(function (id) { if (id === except) return; var el = document.getElementById(id); if (el) el.hidden = true; });
   }
@@ -655,12 +809,9 @@
   function dockEnter() { dockHover = true; dockReveal(); }
   function dockLeave() { dockHover = false; dockHideSoon(); }
 
+  // Appointment scope is managed on the register page now; the board keeps only
+  // the in-context "Add to scope" affordance on a disabled-stage placeholder.
   function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
-  function applyScope() {
-    var set = [];
-    document.querySelectorAll('#scope-pop input[type="checkbox"]').forEach(function (b) { if (b.checked) set.push(Number(b.value)); });
-    saveScope(set);
-  }
   function laneKey(l) { return l.dataset.section ? "s" + l.dataset.section : "g" + l.dataset.stage; }
   function loadLanes() { try { return JSON.parse(localStorage.getItem(LS_LANES)) || {}; } catch (e) { return {}; } }
   function persistLanes() { var s = {}; document.querySelectorAll(".section-lane.is-collapsed").forEach(function (l) { s[laneKey(l)] = 1; }); localStorage.setItem(LS_LANES, JSON.stringify(s)); }
@@ -837,6 +988,11 @@
         case "status-next": stepStatus(cardOf(el), +1); break;
         case "toggle-urgent": toggleUrgent(el); break;
         case "delete-task": deleteTask(el); break;
+        case "add-option": startAddOption(cardOf(el), false); break;
+        case "confirm-other": startAddOption(cardOf(el), true); break;
+        case "confirm-option": { var dli = el.closest(".dec-option"); if (dli) confirmDecision(cardOf(el), dli.querySelector(".dec-option-text").textContent.trim(), false); break; }
+        case "delete-option": deleteOption(el); break;
+        case "clear-decision": clearDecision(cardOf(el)); break;
         case "edit-title": editTitle(el); break;
         case "edit-awaiting": editAwaiting(el); break;
         case "edit-project-number": editProjectField(el, "number"); break;
@@ -855,9 +1011,8 @@
         case "create-close": createSave(true); break;
         case "toggle-filters": togglePop("filter-pop"); break;
         case "toggle-more": togglePop("more-pop"); break;
-        case "toggle-scope": togglePop("scope-pop"); break;
+        case "toggle-sections": { var secp = document.getElementById("sections-pop"); if (secp.hidden) openSections(); else secp.hidden = true; break; }
         case "dock-peek": if (document.body.classList.contains("dock-open")) document.body.classList.remove("dock-open"); else dockReveal(); break;
-        case "apply-scope": applyScope(); break;
         case "enable-stage": { var set = enabledStages.slice(); var es = Number(el.dataset.stage); if (set.indexOf(es) < 0) set.push(es); saveScope(set); break; }
         case "toggle-titleblock": setDockMode(!dockEnabled()); break;
         case "toggle-log": {
@@ -887,20 +1042,21 @@
   });
   document.addEventListener("click", function (e) {
     if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu();
-    var inPop = e.target.closest(".tb-pop, .scope-pop");
-    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="toggle-scope"], [data-action="create-open"]');
+    var inPop = e.target.closest(".tb-pop");
+    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="create-open"], [data-action="toggle-sections"]');
     if (!inPop && !onTrigger) closePops();
-    if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop, .scope-pop")) dockHideSoon();
+    if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop")) dockHideSoon();
   });
   track.addEventListener("scroll", closeMenu);
   document.addEventListener("submit", function (e) {
     var add = e.target.closest('[data-action="add-task"]'); if (add) { e.preventDefault(); addTask(add); return; }
+    var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); return; }
     var sec = e.target.closest('[data-action="add-section"]'); if (sec) { e.preventDefault(); addSection(sec); }
   });
   document.addEventListener("keydown", function (e) {
     var t = e.target;
     if (e.key === "Enter" || e.key === " ") {
-      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .lane-title, .sec-chip-name")) { e.preventDefault(); t.click(); }
+      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .lane-title, .sec-row-name")) { e.preventDefault(); t.click(); }
       return;
     }
     if (e.key === "Escape") { closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }

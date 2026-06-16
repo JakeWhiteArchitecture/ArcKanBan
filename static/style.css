@@ -178,11 +178,52 @@ a { color: var(--blue); text-decoration: none; }
 .project-open { display: flex; align-items: baseline; gap: var(--u); margin-bottom: calc(var(--u) * 1.5); }
 .project-open .job-no { color: var(--blue); font-size: 0.95rem; }
 .project-open .project-name { color: var(--ink); font-weight: 600; }
-.project-foot { display: flex; justify-content: space-between; align-items: center; margin-top: calc(var(--u) * 1.5); }
+.project-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: calc(var(--u) * 1.5); }
 .stage-label { font-size: 0.85rem; color: var(--ink-soft); }
 .stage-label .stage-num { color: var(--blue); font-weight: 600; }
 .project-foot form { margin: 0; }
 .project-actions { display: flex; align-items: center; gap: 8px; }
+
+/* Per-project management — a Config popover off each card (the board's ⋯ menu
+   no longer carries scope or delete). Launch opens the board; Config holds the
+   appointment scope, the exports, and a tucked-away Delete. Native <details>. */
+.card-config { position: relative; }
+.card-config > summary { list-style: none; cursor: pointer; }
+.card-config > summary::-webkit-details-marker { display: none; }
+.card-config[open] > summary { color: var(--ink); border-color: var(--blue); background: var(--blue-tint); }
+.config-menu { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20; width: 252px; padding: 10px;
+  background: var(--glass-deep); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-bright); border-radius: var(--radius); box-shadow: var(--shadow-lift);
+  display: flex; flex-direction: column; gap: 8px; }
+.config-head { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); }
+.scope-form { display: flex; flex-direction: column; gap: 1px; }
+.scope-grid { display: flex; flex-direction: column; gap: 1px; }
+.scope-chip { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 0.84rem; }
+.scope-chip:hover { background: var(--glass); }
+.scope-chip input { accent-color: var(--c, var(--blue)); }
+.scope-chip .scope-num { font-family: var(--font-mono); color: var(--c, var(--ink-soft)); width: 1.1em; text-align: center; font-weight: 700; }
+.scope-chip .scope-nm { color: var(--ink); }
+.scope-form .btn { margin-top: 7px; }
+.config-links { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--hairline); padding-top: 7px; }
+.config-item { display: block; padding: 6px 8px; border-radius: 6px; color: var(--ink); font-size: 0.84rem; text-decoration: none; }
+.config-item:hover { background: var(--glass); }
+.config-danger { margin: 0; border-top: 1px solid var(--hairline); padding-top: 7px; }
+.config-del { width: 100%; text-align: left; padding: 6px 8px; border: none; background: transparent; color: var(--ink-dim); border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+.config-del:hover { color: var(--redline); background: var(--redline-tint); }
+
+/* Modal (template uploader name prompt) */
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+  background: rgba(4, 7, 16, 0.6); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.modal-backdrop[hidden] { display: none; }
+.modal { width: 380px; max-width: 92vw; padding: 18px; background: var(--glass-deep);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-bright); border-radius: var(--radius); box-shadow: var(--shadow-lift);
+  display: flex; flex-direction: column; gap: 10px; }
+.modal h3 { font-size: 1.05rem; }
+.modal-sub { margin: 0; font-size: 0.8rem; color: var(--ink-soft); font-family: var(--font-mono); }
+.modal input { font-family: var(--font-ui); font-size: 0.95rem; padding: 9px 11px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--glass-deep); color: var(--ink); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
 .empty { color: var(--ink-soft); font-style: italic; padding: calc(var(--u) * 4) 0; }
 
 /* ---- Spine (shared) — RIBA colour per cell ---------------------------- */
@@ -215,7 +256,7 @@ a { color: var(--blue); text-decoration: none; }
 /*  BOARD — titleblock                                                      */
 /* ====================================================================== */
 .titleblock {
-  position: sticky; top: 0; z-index: 30;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 30;
   display: flex; align-items: center; gap: var(--u);
   height: var(--tb-h); padding: var(--u) calc(var(--u) * 2);
   background: var(--glass-deep);
@@ -320,13 +361,14 @@ body.dock-mode .dock-handle .chevron { color: var(--ink-dim); }
 body.dock-mode.dock-open .dock-handle { opacity: 0; pointer-events: none; }
 
 body.dock-mode .titleblock {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 32;
+  z-index: 32; box-shadow: var(--shadow-lift);
   transform: translateY(-100%); transition: transform 240ms cubic-bezier(.2, .7, .3, 1);
-  box-shadow: var(--shadow-lift);
 }
 body.dock-mode.dock-open .titleblock { transform: translateY(0); }
-body.dock-mode .board { height: 100dvh; }
+body.dock-mode .board { padding-top: 0; }                          /* tucked: Kanban fills up */
+body.dock-mode.dock-open .board { padding-top: var(--tb-h); }      /* revealed: squeeze down, no overlap */
 body.dock-mode .nudge { top: 16px; }
+body.dock-mode.dock-open .nudge { top: calc(var(--tb-h) + 10px); }
 body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { body.dock-mode .titleblock { transition: none; } }
 
@@ -347,8 +389,10 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 /* ====================================================================== */
 /*  BOARD — horizontal stage paging                                        */
 /* ====================================================================== */
-.board { position: relative; height: calc(100dvh - var(--tb-h)); }
-.titleblock.is-collapsed ~ .board { height: calc(100dvh - 34px); }
+/* Board fills the viewport; padding-top reserves the (fixed) header's height so
+   the Kanban never sits under it. The padding animates, so the board squeezes
+   down when the header is shown and expands up when it tucks away. */
+.board { position: relative; height: 100dvh; padding-top: var(--tb-h); transition: padding-top 240ms cubic-bezier(.2, .7, .3, 1); }
 
 .stage-track {
   display: flex; height: 100%; overflow-x: auto; overflow-y: hidden;
@@ -410,9 +454,12 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 .col-backlog .col-head { opacity: 0.55; }
 .col-upcoming { background: rgba(255, 255, 255, 0.012); }
 .col-upcoming .col-head { opacity: 0.75; }
-.col-awaiting { border-color: color-mix(in srgb, var(--ochre) 28%, var(--glass-border)); background: var(--ochre-tint); }
+/* Awaiting / Done: differentiate with a coloured OUTLINE + header only — the
+   fill stays the same near-transparent white as the other columns so it doesn't
+   tint the whole board (no green/orange mud over the background swirls). */
+.col-awaiting { border-color: color-mix(in srgb, var(--ochre) 60%, var(--glass-border)); }
 .col-awaiting .col-head { color: var(--ochre); }
-.col-done { border-color: color-mix(in srgb, var(--sage) 24%, var(--glass-border)); background: var(--sage-tint); }
+.col-done { border-color: color-mix(in srgb, var(--sage) 55%, var(--glass-border)); }
 .col-done .col-head { color: var(--sage); }
 
 .col-cards { display: flex; flex-direction: column; gap: 6px; min-height: 40px; padding: 2px; border-radius: 6px; transition: background 120ms ease, box-shadow 120ms ease; }
@@ -475,6 +522,31 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 .card.status-awaiting .awaiting-on, .card.type-decision .awaiting-on { display: flex; }
 .awaiting-text.is-empty { color: color-mix(in srgb, var(--ochre) 60%, transparent); font-style: italic; }
 
+/* ---- Decision card: options + confirmed outcome (decision register) ---- */
+.dec-block { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--hairline); display: flex; flex-direction: column; gap: 4px; }
+.dec-outcome { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; padding: 3px 7px; border-radius: 6px;
+  color: var(--ink); background: var(--sage-tint); border: 1px solid color-mix(in srgb, var(--sage) 40%, transparent); }
+.dec-check { color: var(--sage); font-weight: 800; }
+.dec-outcome-text { flex: 1; font-weight: 600; }
+.dec-clear { border: none; background: transparent; color: var(--ink-dim); cursor: pointer; width: 18px; height: 18px; border-radius: 50%; font-size: 0.95rem; line-height: 1; }
+.dec-clear:hover { color: var(--redline); background: var(--redline-tint); }
+.dec-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dec-option { display: flex; align-items: center; gap: 5px; font-size: 0.8rem; color: var(--ink-soft); padding: 1px 2px; border-radius: 5px; }
+.dec-option:hover { background: var(--glass); }
+.dec-option-text { flex: 1; }
+.dec-option.is-chosen .dec-option-text { color: var(--ink); font-weight: 600; }
+.dec-option.is-chosen .dec-confirm { color: var(--sage); border-color: var(--sage); }
+.dec-confirm { border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-dim); cursor: pointer; width: 18px; height: 18px; border-radius: 5px; font-size: 0.7rem; line-height: 1; padding: 0; }
+.dec-confirm:hover { color: var(--sage); border-color: var(--sage); }
+.dec-option-del { border: none; background: transparent; color: var(--ink-dim); cursor: pointer; width: 16px; height: 16px; border-radius: 50%; font-size: 0.85rem; line-height: 1; opacity: 0; }
+.dec-option:hover .dec-option-del { opacity: 1; }
+.dec-option-del:hover { color: var(--redline); background: var(--redline-tint); }
+.dec-actions { display: flex; gap: 6px; }
+.dec-add, .dec-other { border: 1px dashed var(--glass-border); background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; }
+.dec-add:hover, .dec-other:hover { color: var(--ink); border-color: var(--glass-bright); }
+.dec-option-input { font: inherit; font-size: 0.8rem; width: 100%; border: 1px solid var(--blue); border-radius: 5px; padding: 2px 6px; background: var(--glass-deep); color: var(--ink); }
+.ctx-sep { height: 1px; background: var(--hairline); margin: 4px 6px; }
+
 .step { width: 22px; height: 20px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
 .step:disabled { opacity: 0.3; cursor: default; }
 .step:not(:disabled):hover { border-color: var(--blue); color: var(--blue); }
@@ -515,22 +587,25 @@ body.hide-done .col-done .bubble { display: none; }
 .titleblock.is-collapsed .layout-toggle { display: none; }
 
 .grouped { flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 8px; }
-.section-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 2px; }
-.section-bar-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); }
-.sec-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 5px 2px 9px; border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass); font-size: 0.76rem; }
-.sec-chip-general { color: var(--ink-soft); }
-.sec-chip-name { padding: 0 2px; border-radius: 4px; }
-.sec-chip-name.editable { cursor: text; }
-.sec-chip-name.editable:hover { background: var(--glass-raised); }
-.sec-chip-roll { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); }
-.sec-chip-del { width: 18px; height: 18px; border: none; background: transparent; color: var(--ink-dim); cursor: pointer; border-radius: 50%; font-size: 0.95rem; line-height: 1; }
-.sec-chip-del:hover { color: var(--redline); background: var(--redline-tint); }
-.add-section-chip { display: inline-flex; }
-.add-section-chip input { width: 110px; font-size: 0.78rem; padding: 4px 10px; border: 1px dashed var(--glass-border); border-radius: 999px; background: transparent; color: var(--ink); }
 
-/* while a card is selected, chips invite "move here" */
-.grouped.linking .sec-chip { cursor: pointer; border-color: var(--blue); }
-.grouped.linking .sec-chip:hover { background: var(--blue-tint); }
+/* Sections live in a hidden per-stage registry (the data source for bubbles,
+   the create-task widget and the right-click menu). Add / rename / delete now
+   happen in the Sections popup, so the board reclaims that strip of space. */
+.section-reg { display: none; }
+
+.sections-pop { width: 300px; gap: 6px; }
+.sections-list { display: flex; flex-direction: column; gap: 3px; max-height: 50vh; overflow-y: auto; scrollbar-width: thin; }
+.sections-list::-webkit-scrollbar { width: 6px; } .sections-list::-webkit-scrollbar-thumb { background: var(--glass-bright); border-radius: 3px; }
+.sec-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 7px; }
+.sec-row:hover { background: var(--glass); }
+.sec-row-name { flex: 1; min-width: 0; padding: 2px 4px; border-radius: 5px; cursor: text; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-row-name:hover { background: var(--glass-raised); }
+.sec-row-roll { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); }
+.sec-row-del { width: 20px; height: 20px; border: none; background: transparent; color: var(--ink-dim); cursor: pointer; border-radius: 50%; font-size: 1rem; line-height: 1; }
+.sec-row-del:hover { color: var(--redline); background: var(--redline-tint); }
+.sections-empty { color: var(--ink-dim); font-style: italic; font-size: 0.82rem; padding: 4px 6px; }
+.sections-add { display: flex; gap: 6px; margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--hairline); }
+.sections-add input { flex: 1; font-family: var(--font-ui); font-size: 0.88rem; padding: 6px 9px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--glass-deep); color: var(--ink); }
 
 .gcolumns { flex: 1; min-height: 0; align-items: stretch; grid-template-rows: minmax(0, 1fr); }
 .gcolumns .column { min-height: 0; }
@@ -584,12 +659,16 @@ body.hide-done .col-done .bubble { display: none; }
 .log-toggle:hover { color: var(--ink); border-color: var(--glass-bright); }
 .titleblock.is-collapsed .log-toggle { display: none; }
 
-.log-drawer { position: fixed; top: 0; right: 0; height: 100dvh; width: 360px; max-width: 88vw; z-index: 60;
+/* Activity log: a floating, rounded panel that slides out from the right and
+   tucks back — it sits below the header (never over it) with a margin all round. */
+.log-drawer { position: fixed; top: calc(var(--tb-h) + 12px); right: 12px; bottom: 12px; width: 360px; max-width: 88vw; z-index: 60;
   background: var(--glass-deep); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
-  border-left: 1px solid var(--glass-bright); box-shadow: -20px 0 50px rgba(0, 0, 0, 0.45);
-  transform: translateX(100%); transition: transform 200ms cubic-bezier(.2, .7, .3, 1);
-  display: flex; flex-direction: column; }
-.log-drawer.open { transform: translateX(0); }
+  border: 1px solid var(--glass-bright); border-radius: var(--radius); box-shadow: var(--shadow-lift);
+  transform: translateX(calc(100% + 24px)); opacity: 0; pointer-events: none;
+  transition: transform 240ms cubic-bezier(.2, .7, .3, 1), opacity 200ms ease;
+  display: flex; flex-direction: column; overflow: hidden; }
+.log-drawer.open { transform: translateX(0); opacity: 1; pointer-events: auto; }
+body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked away → float higher */
 .log-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--hairline); font-weight: 650; }
 .log-close { width: 26px; height: 26px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-soft); border-radius: 6px; cursor: pointer; font-size: 1.1rem; line-height: 1; }
 .log-list { list-style: none; margin: 0; padding: 8px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
@@ -635,6 +714,10 @@ body.hide-done .col-done .bubble { display: none; }
   .tb-left { margin-right: 0; }
   .nav-arrow { display: none; }     /* swipe / spine on touch */
   .field-name, .field-template { flex-basis: 100%; width: auto; }
+  /* On small screens keep the header in flow (no fixed overlap) and disable the dock. */
+  .titleblock, body.dock-mode .titleblock { position: sticky; transform: none; }
+  body.dock-mode .dock-handle { display: none; }
+  .board, body.dock-mode .board, body.dock-mode.dock-open .board { padding-top: 0; height: calc(100dvh - var(--tb-h)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
