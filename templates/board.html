@@ -60,8 +60,7 @@
   <div class="scope-head">Appointment scope — RIBA stages</div>
   {% for i in range(8) %}
     <label class="scope-row">
-      <input type="checkbox" value="{{ i }}" {% if i in enabled %}checked{% endif %}
-             {% if i == project.current_stage %}disabled title="The current stage stays in scope"{% endif %}>
+      <input type="checkbox" value="{{ i }}" {% if i in enabled %}checked{% endif %}>
       <span class="scope-num">{{ i }}</span> {{ riba[i] }}
     </label>
   {% endfor %}

@@ -50,8 +50,9 @@ RIBA_STAGES = [
 ]
 
 # Status columns, left to right. Order matters: the ‹ › steppers walk this list.
-STATUSES = ["upcoming", "todo", "awaiting", "done"]
+STATUSES = ["backlog", "upcoming", "todo", "awaiting", "done"]
 STATUS_LABELS = {
+    "backlog": "Backlog",
     "upcoming": "Upcoming",
     "todo": "To Do",
     "awaiting": "Awaiting",
@@ -663,13 +664,16 @@ def api_set_stages(project_id):
         return jsonify(ok=False, error="Invalid scope."), 400
     if not stages:
         return jsonify(ok=False, error="At least one stage must stay in scope."), 400
-    if p["current_stage"] not in stages:
-        return jsonify(ok=False, error="The current stage must stay in scope."), 400
+    # If the current stage falls out of scope, move it to the lowest in-scope stage.
+    new_current = p["current_stage"]
+    if new_current not in stages:
+        new_current = stages[0]
+        db.execute("UPDATE projects SET current_stage=? WHERE id=?", (new_current, project_id))
     db.execute("UPDATE projects SET stages=? WHERE id=?",
                (",".join(str(s) for s in stages), project_id))
     ev = log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages))
     db.commit()
-    return jsonify(ok=True, stages=stages, event=ev)
+    return jsonify(ok=True, stages=stages, current_stage=new_current, event=ev)
 
 
 @app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])

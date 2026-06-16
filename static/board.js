@@ -9,8 +9,8 @@
 (function () {
   "use strict";
 
-  var STATUSES = ["upcoming", "todo", "awaiting", "done"];
-  var STATUS_LABELS = { upcoming: "Upcoming", todo: "To Do", awaiting: "Awaiting", done: "Done" };
+  var STATUSES = ["backlog", "upcoming", "todo", "awaiting", "done"];
+  var STATUS_LABELS = { backlog: "Backlog", upcoming: "Upcoming", todo: "To Do", awaiting: "Awaiting", done: "Done" };
   var RIBA = [
     "Strategic Definition", "Preparation and Briefing", "Concept Design",
     "Spatial Coordination", "Technical Design", "Manufacturing and Construction",
@@ -419,7 +419,7 @@
   // ---- task mutations ----------------------------------------------------
   function applyCardStatus(card, status) {
     card.dataset.status = status;
-    card.classList.remove("status-upcoming", "status-todo", "status-awaiting", "status-done");
+    card.classList.remove("status-backlog", "status-upcoming", "status-todo", "status-awaiting", "status-done");
     card.classList.add("status-" + status);
     var lbl = card.querySelector(".status-label"); if (lbl) lbl.textContent = STATUS_LABELS[status];
     var i = STATUSES.indexOf(status);
