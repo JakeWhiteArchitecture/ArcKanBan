@@ -10,8 +10,8 @@
   <div class="tb-left">
     <div class="tb-id">
       <a class="tb-home" href="{{ url_for('index') }}" title="Register" aria-label="Back to register">⌂</a>
-      <span class="tb-cell tb-job-no editable" data-action="edit-project-number" role="button"
-            tabindex="0" title="Edit job number">{{ project.number or '—' }}</span>
+      <span class="tb-cell tb-job-no editable{% if not project.number %} is-empty{% endif %}" data-action="edit-project-number" role="button"
+            tabindex="0" title="Edit job number">{{ project.number or 'no.' }}</span>
       <span class="tb-cell tb-name editable" data-action="edit-project-name" role="button"
             tabindex="0" title="Edit project name">{{ project.name }}</span>
     </div>
@@ -34,29 +34,26 @@
     </div>
   </div>
 
-  <div class="tb-right">
-    <button type="button" class="scope-btn" data-action="toggle-scope" title="Appointment scope (RIBA stages)">Scope</button>
-    <div class="tb-filters" role="group" aria-label="Triage filters">
-      <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
-      <button type="button" class="filter-btn" data-filter="statutory" aria-pressed="false">Statutory</button>
-      <button type="button" class="filter-btn" data-filter="done" aria-pressed="false">Hide done</button>
-    </div>
-    <button type="button" class="log-toggle" data-action="toggle-log" title="Activity log">Log</button>
-    <a class="log-toggle" href="{{ url_for('export_template', project_id=project.id) }}" download
-       title="Save tasks, sections & statuses as a template (no project/client names)">Template</a>
-    <form class="tb-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
-          onsubmit="return confirm('Delete this project and all its tasks?');">
-      <button type="submit" class="btn-quiet btn-danger btn-sm">Delete</button>
-    </form>
-  </div>
-
   <span class="tb-urgent" id="tb-urgent" hidden></span>
+
+  <div class="tb-right">
+    <button type="button" class="tb-btn tb-btn-accent" data-action="create-open" title="New task">＋ Task</button>
+    <button type="button" class="tb-btn" id="filter-btn" data-action="toggle-filters" title="Filters">Filter ▾</button>
+    <button type="button" class="tb-btn" data-action="toggle-log" title="Activity log">Log</button>
+    <button type="button" class="tb-btn" data-action="toggle-more" aria-label="More actions" title="More">⋯</button>
+  </div>
 
   <div class="tb-compact" aria-hidden="true">
     <span class="tb-compact-no">{{ project.number or '—' }}</span>
     <span class="tb-compact-stage">Stage <span class="compact-stage-num">{{ project.current_stage }}</span></span>
   </div>
 </header>
+
+<button type="button" class="dock-handle" data-action="dock-peek" aria-label="Show the top bar" title="Top bar — hover to reveal">
+  <span class="dock-no">{{ project.number or 'ArcKanban' }}</span>
+  <span class="dock-stage">Stage {{ project.current_stage }}</span>
+  <span class="chevron">▾</span>
+</button>
 
 <div class="scope-pop" id="scope-pop" hidden aria-label="Appointment scope">
   <div class="scope-head">Appointment scope — RIBA stages</div>
@@ -67,6 +64,55 @@
     </label>
   {% endfor %}
   <button type="button" class="btn btn-primary btn-sm" data-action="apply-scope">Apply scope</button>
+</div>
+
+<div class="tb-pop filter-pop" id="filter-pop" hidden aria-label="Filters">
+  <div class="pop-head">Filters</div>
+  <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
+  <button type="button" class="filter-btn" data-filter="statutory" aria-pressed="false">Statutory</button>
+  <button type="button" class="filter-btn" data-filter="done" aria-pressed="false">Hide done</button>
+</div>
+
+<div class="tb-pop more-pop" id="more-pop" hidden aria-label="More actions">
+  <button type="button" class="more-item" data-action="toggle-scope">Appointment scope…</button>
+  <a class="more-item" href="{{ url_for('export_template', project_id=project.id) }}" download>Save as template</a>
+  <a class="more-item" href="{{ url_for('export_activity', project_id=project.id) }}" download
+     title="Every event, including the minor moves hidden from the drawer">Export full log</a>
+  <form class="more-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
+        onsubmit="return confirm('Delete this project and all its tasks?');">
+    <button type="submit" class="more-item more-danger">Delete project</button>
+  </form>
+</div>
+
+<div class="tb-pop create-pop" id="create-pop" hidden aria-label="Create a task">
+  <div class="pop-head">New task — <span class="create-stage">Stage</span></div>
+  <input type="text" class="create-title" name="title" placeholder="Task name…" autocomplete="off">
+  <div class="create-row">
+    <label class="create-field">
+      <span>Type</span>
+      <select class="create-type" name="type">
+        {% for ty, lbl in type_labels.items() %}
+          <option value="{{ ty }}"{% if ty == 'recommended' %} selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="create-field">
+      <span>Status</span>
+      <select class="create-status" name="status">
+        {% for st in statuses %}
+          <option value="{{ st }}"{% if st == 'todo' %} selected{% endif %}>{{ status_labels[st] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <label class="create-field">
+    <span>Section</span>
+    <select class="create-section" name="section"><option value="">General</option></select>
+  </label>
+  <div class="create-actions">
+    <button type="button" class="btn-quiet btn-sm" data-action="create-close">Save &amp; close</button>
+    <button type="button" class="btn btn-primary btn-sm" data-action="create-save">Save</button>
+  </div>
 </div>
 
 <div class="nudge" id="nudge" hidden role="status">

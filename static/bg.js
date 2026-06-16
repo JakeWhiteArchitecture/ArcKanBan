@@ -1,8 +1,10 @@
 /* ArcKanban — animated "Neat"-style gradient background.
    A self-contained WebGL fragment shader (domain-warped fbm) — no library,
-   no npm, no CDN, nothing fetched. Dark, blobby Prussian glow kept well within
-   the dark theme. Falls back to the CSS gradient if WebGL/shader fails;
-   honours prefers-reduced-motion; pauses when the tab is hidden. */
+   no npm, no CDN, nothing fetched. Dark, blobby multi-hue glow — violet,
+   green, warm orange and blue amorphous forms over a dark base, with the
+   lighter areas allowed to lift for variety (still dark mode). Falls back to
+   the CSS gradient if WebGL/shader fails; honours prefers-reduced-motion;
+   pauses when the tab is hidden. */
 (function () {
   "use strict";
   var canvas = document.getElementById("neat-bg");
@@ -14,11 +16,11 @@
   var fsrc = [
     "precision highp float;",
     "uniform vec2 u_res; uniform float u_time;",
-    "const vec3 c0=vec3(0.006,0.016,0.038);",   // near-black navy base
-    "const vec3 c1=vec3(0.024,0.063,0.140);",   // dark Prussian blue
-    "const vec3 c2=vec3(0.020,0.110,0.140);",   // dark teal
-    "const vec3 c3=vec3(0.090,0.060,0.190);",   // dark indigo
-    "const vec3 c4=vec3(0.035,0.100,0.235);",   // muted blue accent
+    "const vec3 c0=vec3(0.018,0.020,0.045);",   // deep indigo base (dark)
+    "const vec3 c1=vec3(0.165,0.085,0.245);",   // violet
+    "const vec3 c2=vec3(0.030,0.155,0.120);",   // green / teal
+    "const vec3 c3=vec3(0.300,0.140,0.055);",   // warm orange
+    "const vec3 c4=vec3(0.055,0.120,0.265);",   // blue
     "float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}",
     "float noise(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash(i),b=hash(i+vec2(1.,0.)),c=hash(i+vec2(0.,1.)),d=hash(i+vec2(1.,1.));vec2 u=f*f*(3.-2.*f);return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}",
     "float fbm(vec2 p){float v=0.,a=0.5;for(int i=0;i<3;i++){v+=a*noise(p);p*=2.0;a*=0.5;}return v;}",  // few octaves = blobby
@@ -29,12 +31,12 @@
     "  vec2 q=vec2(fbm(p+vec2(0.0,t)), fbm(p+vec2(3.4,-t)));",
     "  float f=fbm(p+1.6*q);",                   // gentle single-level warp
     "  vec3 col=c0;",
-    "  col=mix(col,c1,smoothstep(0.1,0.9,f));",
-    "  col=mix(col,c2,clamp(length(q)*0.8,0.0,1.0));",
-    "  col=mix(col,c4,clamp(q.x*q.x*1.2,0.0,1.0));",
-    "  col=mix(col,c3,clamp(q.y*0.6,0.0,1.0));",
-    "  col*=0.40+0.45*f;",                       // overall dark
-    "  float vig=smoothstep(1.35,0.15,length(uv-0.5)); col*=mix(0.5,1.0,vig);",
+    "  col=mix(col,c1,smoothstep(0.05,0.85,f));",          // violet wash
+    "  col=mix(col,c2,clamp(length(q)*0.95,0.0,1.0));",    // green where the warp piles up
+    "  col=mix(col,c4,clamp(q.x*q.x*1.5,0.0,1.0));",       // blue pockets
+    "  col=mix(col,c3,clamp(q.y*0.85,0.0,1.0));",          // warm orange pockets
+    "  col*=0.50+0.72*f;",                                 // lighter highlights, base still dark
+    "  float vig=smoothstep(1.42,0.10,length(uv-0.5)); col*=mix(0.62,1.0,vig);",
     "  gl_FragColor=vec4(col,1.0);",
     "}"
   ].join("\n");

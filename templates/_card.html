@@ -16,7 +16,7 @@
     <button type="button" class="step step-next" data-action="status-next"
             {% if si == statuses|length - 1 %}disabled{% endif %} aria-label="Move right" title="Move right">›</button>
     <button type="button" class="flag" data-action="toggle-urgent"
-            aria-pressed="{{ 'true' if t.urgent else 'false' }}" aria-label="Mark urgent" title="Urgent">!</button>
+            aria-pressed="{{ 'true' if t.urgent else 'false' }}" aria-label="Mark urgent" title="Urgent">!<span class="flag-word">Urgent</span></button>
     <button type="button" class="card-del" data-action="delete-task" aria-label="Delete task" title="Delete">×</button>
   </div>
 

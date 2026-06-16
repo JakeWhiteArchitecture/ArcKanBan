@@ -158,7 +158,12 @@ An optional grouping between a stage and its tasks: **Stage → Section → Task
 **Layout — Status (status-primary).** *(v0.8: this is now the single layout; the earlier "Sections" swimlane was retired from the UI, code dormant.)* Four full-height columns, cards grouped into section **bubbles** (+ a loose area). **Clicking a card links its section across columns** (highlights its bubbles, dims the rest); **dragging a card to another column changes status and auto-regroups it into its section's bubble** (never loose); a task's **section** is reassigned via the chip bar or right-click — a status-drag never changes section. **Drag a section by its bubble header** to bulk-move all its tasks to another status (they glue onto that section's tasks already there). **Hide-done** hides done cards but keeps the Done column as a drop target.
 
 ### 3.12 Activity log & undo
-- Every meaningful change is recorded as an **event** (person → action → task/section) in an `events` table and shown in a **narrative drawer** — a right-hand pop-out ("Log" in the titleblock): *"JW completed “Measured survey” · 15 Jun 2026 · 14:32"*. Logged on add / move / complete / urgent / type / section-assign / section create-rename-delete / bulk section move / set-current-stage / delete / restore. Events are **structured** (actor, verb, target, detail, timestamp) so they can feed local `.md` files later. Actor is single-user for now (`ARCKANBAN_ACTOR`, default "JW").
+- Every change is recorded as an **event** (person → action → task/section) in an `events` table — the **full audit trail**, *nothing is dropped*. Each event carries an `important` flag splitting the log in two:
+  - **Visible drawer (curated):** only milestones — **task added · completed · deleted · restored**, plus **project created** and **stage advanced**. The right-hand pop-out ("Log" in the titleblock) shows just these, newest at the bottom: *"JW completed “Measured survey” · 15 Jun 2026 · 14:32"*. Minor moves (e.g. *Backlog → Upcoming*), section/type tweaks, urgent flips and scope edits are **not** shown here.
+  - **Full log (audit):** every event including the minor moves, exported as JSON via **More → Export full log** (`/projects/<id>/activity.json`). This is the trail intended to be handed to an agent later for practice automation.
+  - **Done-then-undone within 10 min:** the "completed" line is **retracted from the visible drawer** (kept in the full log), so a quick mis-tick leaves no false milestone.
+- Events are **structured** (actor, verb, target, detail, timestamp, important) so they can feed local `.md` / JSON files later. Actor is single-user for now (`ARCKANBAN_ACTOR`, default "JW").
+- **Create-task widget:** a **＋ Task** popover in the titleblock controls — name, type, section, and **status (defaults to To Do, but settable on creation)** — so a task can be born straight into Awaiting/Backlog/etc. **Save** keeps the popover open for rapid multi-add; **Save & close** files the last one and dismisses it.
 - **Right-click** a card → assign it to a section / break it out to General. **Right-click empty space** → Actions → **Undo {last action}** (covers move, urgent, type, add, delete-via-restore, section reassignment, bulk section move). Single most-recent action for now; more actions / multi-level later.
 
 ---
@@ -205,7 +210,7 @@ Four floating glass columns; restrained tint so the board reads calmly and the e
 ### Card anatomy
 - A **left margin rule** (3px) encodes type — redline (statutory), blue (client), graphite (admin) — like the margin of a drawing. Type label in small mono caps.
 - **Statutory emphasis:** beyond the redline margin, statutory cards carry a small redline mono tag (e.g. `STATUTORY`) so the legal-duty cards are unmistakable at a glance.
-- **Urgent flag:** a redline marker distinct in *form* from the statutory margin — a folded-corner "flag" (top-right) or a bold redline `!` badge — so a card that is *both* statutory and urgent reads as red margin **and** red flag (correctly, the hottest card on the board). Toggled by a control on the card.
+- **Urgent flag:** the card's `!` button **is** the marker — grey `!` when off; when toggled on it **expands to a red outline + red "Urgent" label** (the button itself, no whole-card red ring). A card that is *both* statutory and urgent reads as a red type-margin **and** a red flag. Clicking again returns it to the grey `!`. (Earlier the whole card carried a red outline + corner triangle; that was removed in v0.10 so the signal lives on the control.)
 - **Awaiting note:** on an Awaiting card, a quiet ochre `⧖ <who/what>` line names who it's blocked on (§3.4), editable inline — the chase-list at a glance.
 - Title in body; a quiet drag handle (drafting-dot grip, visible on hover); **‹ ›** status steppers.
 - Nested children indented beneath, connected by a thin hairline **leader line** (like a dimension leader), each with a done checkbox, type badge, and promote (↥). Parent roll-up shown as a mono fraction (*2/3*) with a thin sage progress underline.
@@ -439,6 +444,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 
 Tracked so nothing is lost; ordered roughly by priority.
 
+> **Recently shipped (v0.10):** two-tier activity log (curated drawer + full-log JSON export, §3.12); **＋ Task** create-widget with on-creation status (§3.12); **auto-hide dock** — the titleblock tucks up for maximum board real-estate, revealed by hovering a top-centre handle (default on; the chevron pins it open); **top-bar declutter** — controls collapsed into **＋ Task / Filter ▾ / Log / ⋯ More** with the filter/scope/template/delete/export items behind popovers; **bigger, more-spaced spine** cells; **more compact sections** (tighter chips, bubbles, cards); **urgent-flag restyle** (red signal now on the button, not a whole-card ring, §3.4); **background** returned to a richer multi-hue palette (violet / green / warm orange / blue) with the lighter areas allowed to lift, still dark mode.
+
 ### Core interactions
 - **Parent/child nesting** (the original §3.7, still unbuilt): drag a card onto another to nest (single level); children render as an indented checklist with a done toggle + promote (↥); the drop-onto-vs-between gesture; deleting a parent prompts (delete children vs explode out); counts exclude children. *The last structural piece of Stage → Section → Task → child.*
 - **Redo + undo rework**: rework undo to apply **in place** (no page reload) so a **Redo** appears after an undo. **Redo stays available until either a new edit / navigation, or the task(s) involved are otherwise changed — whichever comes first.** (Foundation for multi-level undo/redo later.)
@@ -451,7 +458,7 @@ Tracked so nothing is lost; ordered roughly by priority.
 
 ### Design & polish
 - **Vendor the fonts** (Hanken Grotesk + IBM Plex Mono woff2; currently a system stack).
-- **Background** — further morphing/contouring "orb" work (user-led; the animated glow base lives in `body::before/::after`).
+- **Background** — further morphing/contouring "orb" work (user-led). Live base is the WebGL shader in `static/bg.js` (multi-hue, domain-warped fbm) with the `body::before/::after` CSS glow as the no-WebGL fallback.
 - Optionally **remove the dormant swimlane** layout code (retired from the UI in v0.8).
 
 ### Templates (Phase 5)

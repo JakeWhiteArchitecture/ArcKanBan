@@ -87,6 +87,7 @@
     if (prev) prev.disabled = nextEnabled(n, -1) === null;
     if (next) next.disabled = nextEnabled(n, +1) === null;
     var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[n];
+    var ds = document.querySelector(".dock-stage"); if (ds) ds.textContent = "Stage " + n;
     var star = document.querySelector(".tb-star");
     if (star) { var cur = n === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
   }
@@ -571,16 +572,89 @@
   }
 
   // ---- filters & collapse (persisted) -----------------------------------
-  var LS_FILTERS = "arckanban-filters", LS_COLLAPSE = "arckanban-tb-collapsed", LS_LANES = "arckanban-lanes-" + projectId;
+  var LS_FILTERS = "arckanban-filters", LS_LANES = "arckanban-lanes-" + projectId;
   function applyFilters(state) {
     document.body.classList.toggle("filter-urgent", !!state.urgent);
     document.body.classList.toggle("filter-statutory", !!state.statutory);
     document.body.classList.toggle("hide-done", !!state.done);
     document.querySelectorAll(".filter-btn").forEach(function (b) { b.setAttribute("aria-pressed", state[b.dataset.filter] ? "true" : "false"); });
+    var fb = document.getElementById("filter-btn");
+    if (fb) fb.classList.toggle("has-active", !!(state.urgent || state.statutory || state.done));
   }
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
-  function applyCollapse(on) { document.getElementById("titleblock").classList.toggle("is-collapsed", on); }
+  // ---- titleblock popovers (filters / more / scope / create) ------------
+  var POP_IDS = ["filter-pop", "more-pop", "scope-pop", "create-pop"];
+  function closePops(except) {
+    POP_IDS.forEach(function (id) { if (id === except) return; var el = document.getElementById(id); if (el) el.hidden = true; });
+  }
+  function togglePop(id) {
+    var el = document.getElementById(id); if (!el) return;
+    var willOpen = el.hidden; closePops(id); el.hidden = !willOpen;
+  }
+  function anyPopOpen() { return POP_IDS.some(function (id) { var el = document.getElementById(id); return el && !el.hidden; }); }
+
+  // ---- create-task widget -----------------------------------------------
+  function openCreate() {
+    var pop = document.getElementById("create-pop"); if (!pop) return;
+    var n = activeStage(), stageEl = document.getElementById("stage-" + n);
+    pop.dataset.stage = n;
+    var lbl = pop.querySelector(".create-stage"); if (lbl) lbl.textContent = "Stage " + n + " · " + RIBA[n];
+    var secSel = pop.querySelector(".create-section");
+    secSel.innerHTML = '<option value="">General</option>';
+    if (stageEl) stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").forEach(function (ch) {
+      var o = document.createElement("option");
+      o.value = ch.dataset.section; o.textContent = ch.querySelector(".sec-chip-name").textContent.trim();
+      secSel.appendChild(o);
+    });
+    closePops("create-pop"); pop.hidden = false;
+    var ti = pop.querySelector(".create-title"); ti.value = ""; ti.focus();
+  }
+  async function createSave(closeAfter) {
+    var pop = document.getElementById("create-pop"); if (!pop) return;
+    var ti = pop.querySelector(".create-title"), title = ti.value.trim();
+    if (!title) { if (closeAfter) pop.hidden = true; else ti.focus(); return; }
+    var stage = Number(pop.dataset.stage);
+    var type = pop.querySelector(".create-type").value;
+    var status = pop.querySelector(".create-status").value;
+    var section = pop.querySelector(".create-section").value;
+    var r = await api("/api/projects/" + projectId + "/tasks",
+      { stage: stage, title: title, type: type, status: status, section_id: section });
+    if (!r) return;
+    var stageEl = document.getElementById("stage-" + stage);
+    if (stageEl) {
+      var destCol = stageEl.querySelector('.col-body[data-status="' + status + '"]');
+      if (destCol) {
+        var cont = ensureContainer(destCol, section);
+        cont.insertAdjacentHTML("beforeend", r.html);
+        recountStageFull(stageEl);
+      }
+    }
+    var newId = r.task.id;
+    pushUndo("add of “" + title + "”", async function () { var rr = await api("/api/tasks/" + newId + "/delete", {}); if (rr) location.reload(); });
+    registerActivity(stage, newId);
+    if (closeAfter) { pop.hidden = true; dockHideSoon(); }
+    else { ti.value = ""; ti.focus(); }   // keep open for rapid multi-add
+  }
+
+  // ---- auto-hide dock ----------------------------------------------------
+  var LS_DOCK = "arckanban-dock", dockTimer = null, dockHover = false;
+  function dockEnabled() { return document.body.classList.contains("dock-mode"); }
+  function setDockMode(on) {
+    document.body.classList.toggle("dock-mode", on);
+    if (!on) document.body.classList.remove("dock-open");
+    var cb = document.querySelector(".tb-collapse"); if (cb) cb.title = on ? "Pin the top bar open" : "Auto-hide the top bar";
+    try { localStorage.setItem(LS_DOCK, on ? "1" : "0"); } catch (e) {}
+  }
+  function dockReveal() { if (dockEnabled()) { clearTimeout(dockTimer); document.body.classList.add("dock-open"); } }
+  function dockHideSoon() {
+    if (!dockEnabled()) return;
+    clearTimeout(dockTimer);
+    dockTimer = setTimeout(function () { if (!dockHover && !anyPopOpen()) document.body.classList.remove("dock-open"); }, 300);
+  }
+  function dockEnter() { dockHover = true; dockReveal(); }
+  function dockLeave() { dockHover = false; dockHideSoon(); }
+
   function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
   function applyScope() {
     var set = [];
@@ -776,13 +850,16 @@
         case "goto-stage": { var gs = Number(el.dataset.stage); if (isEnabled(gs)) { lastActive = gs; gotoStage(gs); } break; }
         case "nav-prev": { var pe = nextEnabled(activeStage(), -1); if (pe != null) { lastActive = pe; gotoStage(pe); } break; }
         case "nav-next": { var ne = nextEnabled(activeStage(), +1); if (ne != null) { lastActive = ne; gotoStage(ne); } break; }
-        case "toggle-scope": { var sp = document.getElementById("scope-pop"); sp.hidden = !sp.hidden; break; }
+        case "create-open": openCreate(); break;
+        case "create-save": createSave(false); break;
+        case "create-close": createSave(true); break;
+        case "toggle-filters": togglePop("filter-pop"); break;
+        case "toggle-more": togglePop("more-pop"); break;
+        case "toggle-scope": togglePop("scope-pop"); break;
+        case "dock-peek": if (document.body.classList.contains("dock-open")) document.body.classList.remove("dock-open"); else dockReveal(); break;
         case "apply-scope": applyScope(); break;
         case "enable-stage": { var set = enabledStages.slice(); var es = Number(el.dataset.stage); if (set.indexOf(es) < 0) set.push(es); saveScope(set); break; }
-        case "toggle-titleblock": {
-          var on = !document.getElementById("titleblock").classList.contains("is-collapsed");
-          applyCollapse(on); localStorage.setItem(LS_COLLAPSE, on ? "1" : "0"); break;
-        }
+        case "toggle-titleblock": setDockMode(!dockEnabled()); break;
         case "toggle-log": {
           var d = document.getElementById("log-drawer");
           var lopen = d.classList.toggle("open");
@@ -810,8 +887,10 @@
   });
   document.addEventListener("click", function (e) {
     if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu();
-    var sp = document.getElementById("scope-pop");
-    if (sp && !sp.hidden && !e.target.closest("#scope-pop") && !e.target.closest('[data-action="toggle-scope"]')) sp.hidden = true;
+    var inPop = e.target.closest(".tb-pop, .scope-pop");
+    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="toggle-scope"], [data-action="create-open"]');
+    if (!inPop && !onTrigger) closePops();
+    if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop, .scope-pop")) dockHideSoon();
   });
   track.addEventListener("scroll", closeMenu);
   document.addEventListener("submit", function (e) {
@@ -824,7 +903,7 @@
       if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .lane-title, .sec-chip-name")) { e.preventDefault(); t.click(); }
       return;
     }
-    if (e.key === "Escape") { closeMenu(); clearSelection(); return; }
+    if (e.key === "Escape") { closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
       var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);
@@ -834,10 +913,21 @@
 
   // ---- init --------------------------------------------------------------
   applyFilters(loadFilters());
-  applyCollapse(localStorage.getItem(LS_COLLAPSE) === "1");
   applyLanes();
   applyBubbles();
   updateUrgentTally();
+  // Auto-hide dock: default ON (conceal the bar for maximum board real estate)
+  // unless the user has pinned it open before. Hover the handle / bar to reveal.
+  var savedDock = null; try { savedDock = localStorage.getItem(LS_DOCK); } catch (e) {}
+  setDockMode(savedDock === null ? true : savedDock === "1");
+  var tbEl = document.getElementById("titleblock"), dhEl = document.querySelector(".dock-handle");
+  if (tbEl) {
+    tbEl.addEventListener("mouseenter", dockEnter);
+    tbEl.addEventListener("mouseleave", dockLeave);
+    tbEl.addEventListener("focusin", dockReveal);
+    tbEl.addEventListener("focusout", dockHideSoon);
+  }
+  if (dhEl) { dhEl.addEventListener("mouseenter", dockEnter); dhEl.addEventListener("mouseleave", dockLeave); }
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
   var startN = (saved != null && saved !== "" && isEnabled(Number(saved))) ? Number(saved) : currentStage;
   gotoStage(startN, true);
