@@ -65,6 +65,8 @@
 
 <div class="tb-pop more-pop" id="more-pop" hidden aria-label="More actions">
   <a class="more-item" href="{{ url_for('export_template', project_id=project.id) }}" download>Save as template</a>
+  <a class="more-item" href="{{ url_for('export_decisions', project_id=project.id) }}" download
+     title="Every decision with its options and confirmed outcome">Decision register</a>
   <a class="more-item" href="{{ url_for('export_activity', project_id=project.id) }}" download
      title="Every event, including the minor moves hidden from the drawer">Export full log</a>
 </div>

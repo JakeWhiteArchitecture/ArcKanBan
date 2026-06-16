@@ -387,10 +387,112 @@
     recountStageFull(stageEl);
     pushUndo("move of “" + title + "”", function () { return undoUpdate(id, { section_id: prev || null }); });
   }
+  // ---- decisions: options + confirmed outcome (decision register) -------
+  function decBlock(card) { return card.querySelector(".dec-block"); }
+  function decOutcome(card) { var o = card.querySelector(".dec-outcome-text"); return o ? o.textContent.trim() : ""; }
+  function renderOption(id, text) {
+    var li = document.createElement("li"); li.className = "dec-option"; li.dataset.optionId = id;
+    var c = document.createElement("button"); c.type = "button"; c.className = "dec-confirm";
+    c.dataset.action = "confirm-option"; c.title = "Confirm this choice"; c.setAttribute("aria-label", "Confirm this choice"); c.textContent = "✓";
+    var t = document.createElement("span"); t.className = "dec-option-text"; t.textContent = text;
+    var d = document.createElement("button"); d.type = "button"; d.className = "dec-option-del";
+    d.dataset.action = "delete-option"; d.setAttribute("aria-label", "Remove option"); d.textContent = "×";
+    li.appendChild(c); li.appendChild(t); li.appendChild(d); return li;
+  }
+  function ensureDecOptionsUl(card) {
+    var block = decBlock(card); var ul = block.querySelector(".dec-options");
+    if (!ul) { ul = document.createElement("ul"); ul.className = "dec-options"; block.insertBefore(ul, block.querySelector(".dec-actions")); }
+    return ul;
+  }
+  async function addOption(card, text) {
+    var r = await api("/api/tasks/" + card.dataset.taskId + "/options", { text: text });
+    if (!r) return;
+    ensureDecOptionsUl(card).appendChild(renderOption(r.option.id, r.option.text));
+  }
+  async function deleteOption(btn) {
+    var li = btn.closest(".dec-option"); if (!li) return;
+    var r = await api("/api/options/" + li.dataset.optionId + "/delete", {});
+    if (r) li.remove();
+  }
+  async function confirmDecision(card, text, addOpt) {
+    var r = await api("/api/tasks/" + card.dataset.taskId + "/confirm", { text: text, add_option: !!addOpt });
+    if (!r) return;
+    if (r.option) {
+      var ul = ensureDecOptionsUl(card);
+      if (!ul.querySelector('[data-option-id="' + r.option.id + '"]')) ul.appendChild(renderOption(r.option.id, r.option.text));
+    }
+    setDecisionOutcome(card, r.outcome);
+  }
+  async function clearDecision(card) {
+    var r = await api("/api/tasks/" + card.dataset.taskId + "/unconfirm", {});
+    if (r) setDecisionOutcome(card, "");
+  }
+  function setDecisionOutcome(card, outcome) {
+    var block = decBlock(card); if (!block) return;
+    var banner = block.querySelector(".dec-outcome");
+    if (outcome) {
+      if (!banner) {
+        banner = document.createElement("div"); banner.className = "dec-outcome";
+        banner.innerHTML = '<span class="dec-check">✓</span> <span class="dec-outcome-text"></span>' +
+          '<button type="button" class="dec-clear" data-action="clear-decision" aria-label="Reopen decision" title="Reopen decision">×</button>';
+        block.insertBefore(banner, block.firstChild);
+      }
+      banner.querySelector(".dec-outcome-text").textContent = outcome;
+    } else if (banner) { banner.remove(); }
+    block.querySelectorAll(".dec-option").forEach(function (li) {
+      li.classList.toggle("is-chosen", !!outcome && li.querySelector(".dec-option-text").textContent.trim() === outcome);
+    });
+  }
+  // Inline "add an option" (and the "Other…" variant, which also confirms it).
+  function startAddOption(card, confirmAfter) {
+    var block = decBlock(card); if (!block) return;
+    var existing = block.querySelector(".dec-option-input"); if (existing) { existing.focus(); return; }
+    var input = document.createElement("input"); input.type = "text"; input.className = "dec-option-input";
+    input.placeholder = confirmAfter ? "Type the decision…" : "Add an option…";
+    block.insertBefore(input, block.querySelector(".dec-actions")); input.focus();
+    var done = false;
+    function finish(commit) {
+      if (done) return; done = true;
+      var val = input.value.trim(); input.remove();
+      if (commit && val) { if (confirmAfter) confirmDecision(card, val, true); else addOption(card, val); }
+    }
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var val = input.value.trim();
+        if (!confirmAfter && val) { addOption(card, val); input.value = ""; return; }   // keep adding
+        finish(true);
+      } else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", function () { finish(true); });
+  }
+
   function openSectionMenu(card, x, y) {
     closeMenu();
     var stageEl = stageOf(card), cur = card.dataset.section || "";
     var menu = document.createElement("div"); menu.className = "ctx-menu";
+    if (card.dataset.type === "decision") {       // confirm-choice section first
+      var dh = document.createElement("div"); dh.className = "ctx-head"; dh.textContent = "Confirm decision"; menu.appendChild(dh);
+      var outcome = decOutcome(card);
+      card.querySelectorAll(".dec-option .dec-option-text").forEach(function (span) {
+        var text = span.textContent.trim();
+        var it = document.createElement("div"); it.className = "ctx-item" + (text === outcome ? " is-current" : "");
+        var s = document.createElement("span"); s.textContent = text; it.appendChild(s);
+        if (text !== outcome) it.addEventListener("click", function () { confirmDecision(card, text, false); closeMenu(); });
+        menu.appendChild(it);
+      });
+      var other = document.createElement("div"); other.className = "ctx-item";
+      var os = document.createElement("span"); os.textContent = "Other…"; other.appendChild(os);
+      other.addEventListener("click", function () { closeMenu(); startAddOption(card, true); });
+      menu.appendChild(other);
+      if (outcome) {
+        var clr = document.createElement("div"); clr.className = "ctx-item";
+        var cs = document.createElement("span"); cs.textContent = "Clear decision"; clr.appendChild(cs);
+        clr.addEventListener("click", function () { clearDecision(card); closeMenu(); });
+        menu.appendChild(clr);
+      }
+      var sep = document.createElement("div"); sep.className = "ctx-sep"; menu.appendChild(sep);
+    }
     var head = document.createElement("div"); head.className = "ctx-head"; head.textContent = "Move to section"; menu.appendChild(head);
     [{ id: "", title: "General (no section)" }].concat(stageSections(stageEl)).forEach(function (it) {
       var el = document.createElement("div");
@@ -886,6 +988,11 @@
         case "status-next": stepStatus(cardOf(el), +1); break;
         case "toggle-urgent": toggleUrgent(el); break;
         case "delete-task": deleteTask(el); break;
+        case "add-option": startAddOption(cardOf(el), false); break;
+        case "confirm-other": startAddOption(cardOf(el), true); break;
+        case "confirm-option": { var dli = el.closest(".dec-option"); if (dli) confirmDecision(cardOf(el), dli.querySelector(".dec-option-text").textContent.trim(), false); break; }
+        case "delete-option": deleteOption(el); break;
+        case "clear-decision": clearDecision(cardOf(el)); break;
         case "edit-title": editTitle(el); break;
         case "edit-awaiting": editAwaiting(el); break;
         case "edit-project-number": editProjectField(el, "number"); break;

@@ -27,4 +27,31 @@
     <span class="awaiting-mark">⧖</span>
     <span class="awaiting-text {% if not t.awaiting_on %}is-empty{% endif %}">{{ t.awaiting_on or ph }}</span>
   </div>
+
+  {% if t.type == 'decision' %}
+  <div class="dec-block">
+    {% if t.outcome %}
+    <div class="dec-outcome">
+      <span class="dec-check">✓</span>
+      <span class="dec-outcome-text">{{ t.outcome }}</span>
+      <button type="button" class="dec-clear" data-action="clear-decision" aria-label="Reopen decision" title="Reopen decision">×</button>
+    </div>
+    {% endif %}
+    {% if t.options %}
+    <ul class="dec-options">
+      {% for o in t.options %}
+      <li class="dec-option{% if t.outcome and o.text == t.outcome %} is-chosen{% endif %}" data-option-id="{{ o.id }}">
+        <button type="button" class="dec-confirm" data-action="confirm-option" aria-label="Confirm this choice" title="Confirm this choice">✓</button>
+        <span class="dec-option-text">{{ o.text }}</span>
+        <button type="button" class="dec-option-del" data-action="delete-option" aria-label="Remove option" title="Remove">×</button>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <div class="dec-actions">
+      <button type="button" class="dec-add" data-action="add-option">+ option</button>
+      <button type="button" class="dec-other" data-action="confirm-other">Other…</button>
+    </div>
+  </div>
+  {% endif %}
 </article>

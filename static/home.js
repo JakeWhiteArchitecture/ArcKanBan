@@ -5,6 +5,17 @@
    POSTs {name, template} to the server which sanitizes and writes the file. */
 (function () {
   "use strict";
+
+  // Close any open project Config popover when clicking away / pressing Escape.
+  document.addEventListener("click", function (e) {
+    document.querySelectorAll("details.card-config[open]").forEach(function (d) {
+      if (!d.contains(e.target)) d.removeAttribute("open");
+    });
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") document.querySelectorAll("details.card-config[open]").forEach(function (d) { d.removeAttribute("open"); });
+  });
+
   var select = document.getElementById("template-select");
   var fileInput = document.getElementById("tpl-file");
   var modal = document.getElementById("upload-modal");

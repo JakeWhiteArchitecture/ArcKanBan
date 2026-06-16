@@ -52,28 +52,33 @@
             <div class="project-foot">
               <span class="stage-label"><span class="stage-num">{{ p.current_stage }}</span> {{ p.current_stage_name }}</span>
               <span class="project-actions">
-                <details class="card-scope">
-                  <summary class="btn-quiet btn-sm" title="RIBA stages in this appointment">Scope</summary>
-                  <form class="scope-form" method="post" action="{{ url_for('set_scope', project_id=p.id) }}">
-                    <div class="scope-head">Appointment scope — RIBA stages</div>
-                    <div class="scope-grid">
-                      {% for i in range(8) %}
-                        <label class="scope-chip" style="--c: var(--riba-{{ i }})">
-                          <input type="checkbox" name="stage" value="{{ i }}" {% if i in p.enabled %}checked{% endif %}>
-                          <span class="scope-num">{{ i }}</span>
-                          <span class="scope-nm">{{ riba[i] }}</span>
-                        </label>
-                      {% endfor %}
+                <a class="btn btn-primary btn-sm" href="{{ url_for('board', project_id=p.id) }}">Launch</a>
+                <details class="card-config">
+                  <summary class="btn-quiet btn-sm" title="Project settings">⚙ Config</summary>
+                  <div class="config-menu">
+                    <div class="config-head">Appointment scope</div>
+                    <form class="scope-form" method="post" action="{{ url_for('set_scope', project_id=p.id) }}">
+                      <div class="scope-grid">
+                        {% for i in range(8) %}
+                          <label class="scope-chip" style="--c: var(--riba-{{ i }})">
+                            <input type="checkbox" name="stage" value="{{ i }}" {% if i in p.enabled %}checked{% endif %}>
+                            <span class="scope-num">{{ i }}</span>
+                            <span class="scope-nm">{{ riba[i] }}</span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                      <button type="submit" class="btn btn-primary btn-sm">Apply scope</button>
+                    </form>
+                    <div class="config-links">
+                      <a class="config-item" href="{{ url_for('export_template', project_id=p.id) }}" download>Save as template</a>
+                      <a class="config-item" href="{{ url_for('export_decisions', project_id=p.id) }}" download>Decision register</a>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-sm">Apply scope</button>
-                  </form>
+                    <form class="config-danger" method="post" action="{{ url_for('delete_project', project_id=p.id) }}"
+                          onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks? This cannot be undone.');">
+                      <button type="submit" class="config-del">Delete project</button>
+                    </form>
+                  </div>
                 </details>
-                <a class="btn-quiet btn-sm" href="{{ url_for('export_template', project_id=p.id) }}" download
-                   title="Save as template (no names)">Template</a>
-                <form method="post" action="{{ url_for('delete_project', project_id=p.id) }}"
-                      onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks?');">
-                  <button type="submit" class="btn-quiet btn-danger" aria-label="Delete project">Delete</button>
-                </form>
               </span>
             </div>
           </li>

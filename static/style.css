@@ -184,25 +184,32 @@ a { color: var(--blue); text-decoration: none; }
 .project-foot form { margin: 0; }
 .project-actions { display: flex; align-items: center; gap: 8px; }
 
-/* Per-project appointment scope — a popover off the card's Scope button (the
-   board's ⋯ menu no longer carries scope or delete; project-level management
-   lives here on the register). Native <details>, no JS needed. */
-.card-scope { position: relative; }
-.card-scope > summary { list-style: none; cursor: pointer; }
-.card-scope > summary::-webkit-details-marker { display: none; }
-.card-scope[open] > summary { color: var(--ink); border-color: var(--blue); background: var(--blue-tint); }
-.scope-form { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20; width: 250px; padding: 10px;
+/* Per-project management — a Config popover off each card (the board's ⋯ menu
+   no longer carries scope or delete). Launch opens the board; Config holds the
+   appointment scope, the exports, and a tucked-away Delete. Native <details>. */
+.card-config { position: relative; }
+.card-config > summary { list-style: none; cursor: pointer; }
+.card-config > summary::-webkit-details-marker { display: none; }
+.card-config[open] > summary { color: var(--ink); border-color: var(--blue); background: var(--blue-tint); }
+.config-menu { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20; width: 252px; padding: 10px;
   background: var(--glass-deep); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border: 1px solid var(--glass-bright); border-radius: var(--radius); box-shadow: var(--shadow-lift);
-  display: flex; flex-direction: column; gap: 2px; }
-.scope-head { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); margin-bottom: 4px; }
+  display: flex; flex-direction: column; gap: 8px; }
+.config-head { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); }
+.scope-form { display: flex; flex-direction: column; gap: 1px; }
 .scope-grid { display: flex; flex-direction: column; gap: 1px; }
 .scope-chip { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 0.84rem; }
 .scope-chip:hover { background: var(--glass); }
 .scope-chip input { accent-color: var(--c, var(--blue)); }
 .scope-chip .scope-num { font-family: var(--font-mono); color: var(--c, var(--ink-soft)); width: 1.1em; text-align: center; font-weight: 700; }
 .scope-chip .scope-nm { color: var(--ink); }
-.scope-form .btn { margin-top: 8px; }
+.scope-form .btn { margin-top: 7px; }
+.config-links { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--hairline); padding-top: 7px; }
+.config-item { display: block; padding: 6px 8px; border-radius: 6px; color: var(--ink); font-size: 0.84rem; text-decoration: none; }
+.config-item:hover { background: var(--glass); }
+.config-danger { margin: 0; border-top: 1px solid var(--hairline); padding-top: 7px; }
+.config-del { width: 100%; text-align: left; padding: 6px 8px; border: none; background: transparent; color: var(--ink-dim); border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+.config-del:hover { color: var(--redline); background: var(--redline-tint); }
 
 /* Modal (template uploader name prompt) */
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
@@ -514,6 +521,31 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 .awaiting-on { display: none; margin-top: 6px; font-size: 0.78rem; color: var(--ochre); cursor: text; align-items: baseline; gap: 4px; }
 .card.status-awaiting .awaiting-on, .card.type-decision .awaiting-on { display: flex; }
 .awaiting-text.is-empty { color: color-mix(in srgb, var(--ochre) 60%, transparent); font-style: italic; }
+
+/* ---- Decision card: options + confirmed outcome (decision register) ---- */
+.dec-block { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--hairline); display: flex; flex-direction: column; gap: 4px; }
+.dec-outcome { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; padding: 3px 7px; border-radius: 6px;
+  color: var(--ink); background: var(--sage-tint); border: 1px solid color-mix(in srgb, var(--sage) 40%, transparent); }
+.dec-check { color: var(--sage); font-weight: 800; }
+.dec-outcome-text { flex: 1; font-weight: 600; }
+.dec-clear { border: none; background: transparent; color: var(--ink-dim); cursor: pointer; width: 18px; height: 18px; border-radius: 50%; font-size: 0.95rem; line-height: 1; }
+.dec-clear:hover { color: var(--redline); background: var(--redline-tint); }
+.dec-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dec-option { display: flex; align-items: center; gap: 5px; font-size: 0.8rem; color: var(--ink-soft); padding: 1px 2px; border-radius: 5px; }
+.dec-option:hover { background: var(--glass); }
+.dec-option-text { flex: 1; }
+.dec-option.is-chosen .dec-option-text { color: var(--ink); font-weight: 600; }
+.dec-option.is-chosen .dec-confirm { color: var(--sage); border-color: var(--sage); }
+.dec-confirm { border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-dim); cursor: pointer; width: 18px; height: 18px; border-radius: 5px; font-size: 0.7rem; line-height: 1; padding: 0; }
+.dec-confirm:hover { color: var(--sage); border-color: var(--sage); }
+.dec-option-del { border: none; background: transparent; color: var(--ink-dim); cursor: pointer; width: 16px; height: 16px; border-radius: 50%; font-size: 0.85rem; line-height: 1; opacity: 0; }
+.dec-option:hover .dec-option-del { opacity: 1; }
+.dec-option-del:hover { color: var(--redline); background: var(--redline-tint); }
+.dec-actions { display: flex; gap: 6px; }
+.dec-add, .dec-other { border: 1px dashed var(--glass-border); background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; }
+.dec-add:hover, .dec-other:hover { color: var(--ink); border-color: var(--glass-bright); }
+.dec-option-input { font: inherit; font-size: 0.8rem; width: 100%; border: 1px solid var(--blue); border-radius: 5px; padding: 2px 6px; background: var(--glass-deep); color: var(--ink); }
+.ctx-sep { height: 1px; background: var(--hairline); margin: 4px 6px; }
 
 .step { width: 22px; height: 20px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
 .step:disabled { opacity: 0.3; cursor: default; }

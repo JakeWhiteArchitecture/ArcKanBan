@@ -167,6 +167,13 @@ An optional grouping between a stage and its tasks: **Stage → Section → Task
 - **Create-task widget:** a **＋ Task** popover in the titleblock controls — name, type, section, and **status (defaults to To Do, but settable on creation)** — so a task can be born straight into Awaiting/Backlog/etc. **Save** keeps the popover open for rapid multi-add; **Save & close** files the last one and dismisses it.
 - **Right-click** a card → assign it to a section / break it out to General. **Right-click empty space** → Actions → **Undo {last action}** (covers move, urgent, type, add, delete-via-restore, section reassignment, bulk section move). Single most-recent action for now; more actions / multi-level later.
 
+### 3.13 Decisions & the decision register
+- A **Decision** task (one of the four types) carries, under its **decision-by** assignee: a list of candidate **options** and a single confirmed **outcome**.
+- **Add options** inline on the card ("+ option", keep typing to add several). Options persist in a `decision_options` table.
+- **Confirm a choice** by the ✓ on an option, or via **right-click → Confirm decision** (lists the options + **Other…**). Decisions rarely land on a listed option, so **Other…** lets you type the real outcome — which is also recorded as an option, so the register shows the chosen item. The confirmed outcome shows as a green **✓ Decided** banner; it can be **reopened** (cleared).
+- Confirming logs a **curated milestone** (*"JW decided “Choose feature wall colour” → RAL 9010"*). Confirming is decoupled from status (you can confirm without moving to Done).
+- The **decision register** is the source of truth for the practice's decisions: **More → Decision register** (and the card Config) exports `/projects/<id>/decisions.json` — every decision with its stage, decision-by, options, status and confirmed outcome.
+
 ---
 
 ## 4. Screens
@@ -445,6 +452,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 
 Tracked so nothing is lost; ordered roughly by priority.
 
+> **Recently shipped (v0.12):** **Decisions & the decision register** (§3.13) — decision tasks gather **options** and a confirmed **outcome** (✓ on an option or right-click → Confirm → Other…), logged as a curated "decided" milestone, exported via **Decision register** (`/projects/<id>/decisions.json`); and the register cards now lead with a **Launch** button + a **⚙ Config** popover (appointment scope, exports, and a tucked-away Delete) — the bare Delete button is gone.
+>
 > **Recently shipped (v0.11):** Awaiting/Done columns differentiate by coloured **outline + header only** (neutral fill, so the background reads through); **sections moved off the board** into a **Sections** popover (add/rename/delete for the stage in view) with a hidden per-stage data registry behind it; the **board reclaims header space** — fixed header + animated board padding so the Kanban fills up when the dock tucks away and squeezes down (no overlap) when shown/pinned; the **activity log floats** as a rounded panel clear of the header; **project Delete + Scope moved to the register** (board ⋯ menu now export-only); and **template upload** — add a saved template JSON to the library via the picker, named in a popup.
 >
 > **Recently shipped (v0.10):** two-tier activity log (curated drawer + full-log JSON export, §3.12); **＋ Task** create-widget with on-creation status (§3.12); **auto-hide dock** — the titleblock tucks up for maximum board real-estate, revealed by hovering a top-centre handle (default on; the chevron pins it open); **top-bar declutter** — controls collapsed into **＋ Task / Filter ▾ / Log / ⋯ More** with the filter/scope/template/delete/export items behind popovers; **bigger, more-spaced spine** cells; **more compact sections** (tighter chips, bubbles, cards); **urgent-flag restyle** (red signal now on the button, not a whole-card ring, §3.4); **background** returned to a richer multi-hue palette (violet / green / warm orange / blue) with the lighter areas allowed to lift, still dark mode.
@@ -454,6 +463,7 @@ Tracked so nothing is lost; ordered roughly by priority.
 - **Redo + undo rework**: rework undo to apply **in place** (no page reload) so a **Redo** appears after an undo. **Redo stays available until either a new edit / navigation, or the task(s) involved are otherwise changed — whichever comes first.** (Foundation for multi-level undo/redo later.)
 
 ### Sharing & collaboration (Phase 7)
+- **Public client/consultant build (parallel, not yet started).** A website-hosted variant that **shares this codebase** — ideally only the **landing page differs**, gated by a config flag / distinct entry route (so it's one app run in two modes, not a fork). The public landing shows **no saved projects**: only **(a) start a new temporary project** (held in-browser, downloadable as JSON) or **(b) a drop-zone to import a provided JSON** which generates the board. The shared person can move things freely; on **re-export the JSON comes back to the practice**, and a **`uid`-keyed merge** brings in *new tasks added* and, crucially, **decision confirmations** (the §3.13 outcomes) — making the decision register the round-trip payload. *(Decided foundations are now in place: stable `uid`s, the template/JSON import path, and the decision options/outcome model.)*
 - **`tasks.assignee`** field + a small card control — who a task is assigned to (a consultant). Feeds the email table and the consultant viewer.
 - **Email generator** — an **Email** action opens a **compose textbox** (cover note), then produces a downloadable **`.eml`** containing: the cover note, an **embedded task table** (task · status · assigned / waiting-on), the **project JSON attached**, and a **viewer link**. *(Open choice when built: ship with a placeholder link first, or build the viewer alongside so the link is live.)*
 - **Role-scoped offline viewer** — a self-contained HTML (JSON embedded): **client** = Awaiting→Done only; **consultant** = any status on tasks assigned to them. Emits a changeset back as an `.eml`.
