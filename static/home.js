@@ -16,6 +16,20 @@
     if (e.key === "Escape") document.querySelectorAll("details.card-config[open]").forEach(function (d) { d.removeAttribute("open"); });
   });
 
+  // Edge-aware Config popover: open downward; flip up only when there's no room
+  // below and more above (bottom-row cards). max-height keeps it inside the view.
+  document.querySelectorAll("details.card-config").forEach(function (d) {
+    d.addEventListener("toggle", function () {
+      d.classList.remove("flip-up");
+      if (!d.open) return;
+      var menu = d.querySelector(".config-menu"), sum = d.querySelector("summary");
+      if (!menu || !sum) return;
+      var rect = sum.getBoundingClientRect();
+      var below = window.innerHeight - rect.bottom - 12, above = rect.top - 12;
+      if (menu.offsetHeight > below && above > below) d.classList.add("flip-up");
+    });
+  });
+
   var select = document.getElementById("template-select");
   var fileInput = document.getElementById("tpl-file");
   var modal = document.getElementById("upload-modal");
