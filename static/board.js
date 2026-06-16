@@ -397,11 +397,21 @@
     var block = document.createElement("div"); block.className = "dec-block";
     var actions = document.createElement("div"); actions.className = "dec-actions";
     var add = document.createElement("button"); add.type = "button"; add.className = "dec-add"; add.dataset.action = "add-option"; add.textContent = "+ option";
-    var other = document.createElement("button"); other.type = "button"; other.className = "dec-other"; other.dataset.action = "confirm-other"; other.textContent = "Other…";
-    actions.appendChild(add); actions.appendChild(other); block.appendChild(actions);
+    actions.appendChild(add); block.appendChild(actions);   // "Other…" appears once >1 option exists
     card.appendChild(block);
   }
   function removeDecBlock(card) { var b = card.querySelector(".dec-block"); if (b) b.remove(); }
+  // "Other…" is only offered once there's more than one option to choose between.
+  function updateDecOther(card) {
+    var block = decBlock(card); if (!block) return;
+    var actions = block.querySelector(".dec-actions"); if (!actions) return;
+    var count = block.querySelectorAll(".dec-option").length, other = actions.querySelector(".dec-other");
+    if (count > 1 && !other) {
+      other = document.createElement("button"); other.type = "button"; other.className = "dec-other";
+      other.dataset.action = "confirm-other"; other.textContent = "Other…";
+      actions.appendChild(other);
+    } else if (count <= 1 && other) { other.remove(); }
+  }
   function renderOption(id, text) {
     var li = document.createElement("li"); li.className = "dec-option"; li.dataset.optionId = id;
     var c = document.createElement("button"); c.type = "button"; c.className = "dec-confirm";
@@ -420,11 +430,12 @@
     var r = await api("/api/tasks/" + card.dataset.taskId + "/options", { text: text });
     if (!r) return;
     ensureDecOptionsUl(card).appendChild(renderOption(r.option.id, r.option.text));
+    updateDecOther(card);
   }
   async function deleteOption(btn) {
-    var li = btn.closest(".dec-option"); if (!li) return;
+    var card = cardOf(btn), li = btn.closest(".dec-option"); if (!li) return;
     var r = await api("/api/options/" + li.dataset.optionId + "/delete", {});
-    if (r) li.remove();
+    if (r) { li.remove(); updateDecOther(card); }
   }
   async function confirmDecision(card, text, addOpt) {
     var r = await api("/api/tasks/" + card.dataset.taskId + "/confirm", { text: text, add_option: !!addOpt });
@@ -432,6 +443,7 @@
     if (r.option) {
       var ul = ensureDecOptionsUl(card);
       if (!ul.querySelector('[data-option-id="' + r.option.id + '"]')) ul.appendChild(renderOption(r.option.id, r.option.text));
+      updateDecOther(card);
     }
     setDecisionOutcome(card, r.outcome);
   }
