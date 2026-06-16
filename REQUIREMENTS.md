@@ -84,13 +84,14 @@ The eight stages of the RIBA Plan of Work 2020, fixed:
 ### 3.4 Tasks, statuses, and the urgent flag
 - A task belongs to one project and one stage, and carries a **title**, a **type**, a **status**, an **urgent flag**, an optional **awaiting-on** note, a **position** (sort order), and an optional **parent** (see §3.7).
 - **Title** is editable inline.
-- **Type** in {client, statutory, admin}. Type is structural, not cosmetic: it encodes whose duty the task is, and statutory tasks (the ones with legal teeth — planning, Building Regs, party wall, CDM) must be visually unmistakable. It drives the card's left margin rule (see §5).
+- **Category** in {**statutory · recommended · process · decision**}. It encodes the nature of the task and drives the card's left‑margin colour (§5): **statutory** = legal teeth (planning, Building Regs, party wall, CDM — redline, unmistakable), **recommended** (blue), **process** (violet), **decision** (ochre). A **decision** task carries a **responsible person** (who must decide) — shown on the card in **any** column (the same field/mechanism as the Awaiting "who/what", reused), and a decision can sit in any status. *(Replaces the old client/statutory/admin; migration maps client→recommended, admin→process.)*
   - Type is **editable**, but changing a task **away from `statutory`** (statutory → client/admin) requires a **confirmation warning** — you are removing a legal-duty marker. Promoting *to* statutory is silent (it only adds rigour).
 - **Status** is one of **four** columns, left to right:
 
   | Status | Meaning |
   |--------|---------|
-  | **Upcoming** | Not yet live — queued for later in this stage |
+  | **Backlog** | The long tail — not soon; keeps "Upcoming" from scrolling forever |
+  | **Upcoming** | Coming up — queued for soon in this stage |
   | **To Do** | Actionable now, on the list |
   | **Awaiting** | Blocked on a third party (client sign-off, planning officer, Building Control, consultant) |
   | **Done** | Complete |
@@ -103,7 +104,7 @@ The eight stages of the RIBA Plan of Work 2020, fixed:
 - Delete a task.
 
 ### 3.5 Per-stage Kanban
-- Each expanded stage shows the four columns: **Upcoming · To Do · Awaiting · Done**.
+- Each stage shows the five columns: **Backlog · Upcoming · To Do · Awaiting · Done**.
 - The collapsed summary shows live counts per status (e.g. *2 upcoming · 3 to do · 2 awaiting · 4 done*) plus a separate **redline urgent tally** (e.g. *· 1 urgent*) when any top-level card is flagged — urgency is orthogonal, so it is counted separately, not inside a status. All counts are **top-level cards only** (children excluded). Zero-count pips may be hidden to keep the summary clean.
 - The board **pages horizontally** — one stage at a time fills the screen; on load it opens on the **current stage**. Navigate by the floating ‹ › arrows, the spine, swipe, or ←/→ keys.
 
@@ -270,8 +271,8 @@ tasks(
   project_id  INTEGER NOT NULL  -> projects.id (cascade delete),
   stage       INTEGER NOT NULL,                -- 0..7
   title       TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'todo',    -- upcoming | todo | awaiting | done
-  type        TEXT NOT NULL DEFAULT 'admin',   -- client | statutory | admin
+  status      TEXT NOT NULL DEFAULT 'todo',    -- backlog | upcoming | todo | awaiting | done
+  type        TEXT NOT NULL DEFAULT 'recommended',  -- statutory | recommended | process | decision
   urgent      INTEGER NOT NULL DEFAULT 0,      -- 0/1 flag, orthogonal to status
   awaiting_on TEXT NULL,                       -- optional: who/what an Awaiting task is blocked on
   position    INTEGER NOT NULL DEFAULT 0,      -- sort order WITHIN one list (see below)
@@ -422,6 +423,13 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 39. **Auto-omit round-trips** — setting a task to Done then back out within 10 minutes removes **both** log entries (events carry a `task_id`; the drawer drops the line live via `omit_last`).
 40. **Living background** — two gentle, slow drifting/pulsing glow layers (vibrant on dark); `prefers-reduced-motion` honoured.
 41. **Backlog recorded** (§12) and the **redo expiry** decision captured.
+42. **Collapsible section bubbles** (grouped) — fold a section (across its columns) via the bubble chevron, persisted per project; and **fixed column scrolling** (`grid-template-rows: minmax(0,1fr)`) so each status column scrolls independently as it fills.
+43. **Activity log reads oldest→newest** (latest entries at the bottom); the drawer auto-scrolls to the newest on update and on open.
+44. **Bubble cropping fixed** — section bubbles no longer flex-shrink/clip in a scrolling column (always full height, or collapsed).
+45. **Four task categories** — **Statutory · Recommended · Process · Decision** (replacing client/statutory/admin; migration maps client→recommended, admin→process). **Decision** carries a responsible person shown in any column (reuses the awaiting-on field) and is movable anywhere. Distinct margin colours (red / blue / violet / ochre).
+46. **Animated WebGL background** — a self-contained "Neat"-style domain-warped gradient shader (no npm/library/CDN), rich Prussian palette; reduced-motion + WebGL-absent fallbacks.
+47. **Five status columns** — **Backlog · Upcoming · To Do · Awaiting · Done** (split the endless Upcoming into Backlog + Upcoming; existing Upcoming tasks unchanged; Backlog is new).
+48. **Scope: current stage can now be disabled** — disabling the in-scope current stage auto-advances `current_stage` to the lowest remaining in-scope stage (was: blocked, so Stage 0 couldn't be turned off).
 
 ---
 

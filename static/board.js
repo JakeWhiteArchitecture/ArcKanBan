@@ -9,8 +9,8 @@
 (function () {
   "use strict";
 
-  var STATUSES = ["upcoming", "todo", "awaiting", "done"];
-  var STATUS_LABELS = { upcoming: "Upcoming", todo: "To Do", awaiting: "Awaiting", done: "Done" };
+  var STATUSES = ["backlog", "upcoming", "todo", "awaiting", "done"];
+  var STATUS_LABELS = { backlog: "Backlog", upcoming: "Upcoming", todo: "To Do", awaiting: "Awaiting", done: "Done" };
   var RIBA = [
     "Strategic Definition", "Preparation and Briefing", "Concept Design",
     "Spatial Coordination", "Technical Design", "Manufacturing and Construction",
@@ -39,24 +39,26 @@
     var json = {};
     try { json = await res.json(); } catch (e) {}
     if (!res.ok || !json.ok) { alert((json && json.error) || "Something went wrong."); return null; }
-    if (json.event) prependLogEvent(json.event);
-    else if (json.omit_last) removeTopLogEvent();
+    if (json.event) addLogEvent(json.event);
+    else if (json.omit_last) removeLastLogEvent();
     return json;
   }
 
   // ---- activity log + undo helpers --------------------------------------
-  function prependLogEvent(ev) {
+  function addLogEvent(ev) {
     var list = document.getElementById("log-list"); if (!list || !ev) return;
     var empty = list.querySelector(".log-empty"); if (empty) empty.remove();
     var li = document.createElement("li"); li.className = "log-item";
     var t = document.createElement("span"); t.className = "log-text"; t.textContent = ev.text;
     var w = document.createElement("time"); w.className = "log-when"; w.textContent = ev.when;
     li.appendChild(t); li.appendChild(w);
-    list.insertBefore(li, list.firstChild);
+    list.appendChild(li);                  // latest entries at the bottom
+    list.scrollTop = list.scrollHeight;    // keep the newest in view
   }
-  function removeTopLogEvent() {
+  function removeLastLogEvent() {
     var list = document.getElementById("log-list"); if (!list) return;
-    var first = list.querySelector(".log-item"); if (first) first.remove();
+    var items = list.querySelectorAll(".log-item");
+    if (items.length) items[items.length - 1].remove();
   }
   var undoStack = [];
   function pushUndo(label, run) { undoStack.push({ label: label, run: run }); }
@@ -244,7 +246,11 @@
   }
   function renderAwaiting(textEl, val) {
     if (val) { textEl.textContent = val; textEl.classList.remove("is-empty"); }
-    else { textEl.textContent = "who / what?"; textEl.classList.add("is-empty"); }
+    else {
+      var card = textEl.closest(".card");
+      textEl.textContent = (card && card.dataset.type === "decision") ? "decision by?" : "who / what?";
+      textEl.classList.add("is-empty");
+    }
   }
   function editProjectField(cell, field) {
     var raw = cell.textContent.trim(), current = raw === "—" ? "" : raw;
@@ -293,13 +299,17 @@
     bubble.className = "bubble"; bubble.dataset.section = sec; bubble.dataset.pos = pos;
     var head = document.createElement("div"); head.className = "bubble-head";
     head.draggable = true; head.title = "Drag this section to another status";
+    var chev = document.createElement("button"); chev.type = "button"; chev.className = "bubble-collapse";
+    chev.dataset.action = "toggle-bubble"; chev.setAttribute("aria-label", "Collapse section");
+    chev.innerHTML = '<span class="chevron">▾</span>';
     var nm = document.createElement("span"); nm.className = "bubble-name"; nm.textContent = sectionTitle(stageEl, sec);
     var ct = document.createElement("span"); ct.className = "bubble-count"; ct.textContent = "0";
-    head.appendChild(nm); head.appendChild(ct);
+    head.appendChild(chev); head.appendChild(nm); head.appendChild(ct);
     var cards = document.createElement("div");
     cards.className = "col-cards bubble-cards";
     cards.dataset.stage = colBody.dataset.stage; cards.dataset.status = colBody.dataset.status; cards.dataset.section = sec;
     bubble.appendChild(head); bubble.appendChild(cards);
+    if (loadBubbles().has(sec)) bubble.classList.add("is-collapsed");
     var loose = colBody.querySelector(".loose-cards"), ref = null;
     var bubbles = colBody.querySelectorAll(".bubble");
     for (var i = 0; i < bubbles.length; i++) { if (Number(bubbles[i].dataset.pos) > pos) { ref = bubbles[i]; break; } }
@@ -409,7 +419,7 @@
   // ---- task mutations ----------------------------------------------------
   function applyCardStatus(card, status) {
     card.dataset.status = status;
-    card.classList.remove("status-upcoming", "status-todo", "status-awaiting", "status-done");
+    card.classList.remove("status-backlog", "status-upcoming", "status-todo", "status-awaiting", "status-done");
     card.classList.add("status-" + status);
     var lbl = card.querySelector(".status-label"); if (lbl) lbl.textContent = STATUS_LABELS[status];
     var i = STATUSES.indexOf(status);
@@ -456,7 +466,9 @@
     var r = await api("/api/tasks/" + id, { type: newType });
     if (!r) { select.value = oldType; return; }
     card.dataset.type = newType;
-    card.classList.remove("type-client", "type-statutory", "type-admin"); card.classList.add("type-" + newType);
+    card.classList.remove("type-statutory", "type-recommended", "type-process", "type-decision");
+    card.classList.add("type-" + newType);
+    var at = card.querySelector(".awaiting-text"); if (at && at.classList.contains("is-empty")) renderAwaiting(at, "");
     pushUndo("type change on “" + title + "”", function () { return undoUpdate(id, { type: oldType }); });
     registerActivity(card.dataset.stage, card.dataset.taskId);
   }
@@ -581,6 +593,19 @@
   function applyLanes() { var s = loadLanes(); document.querySelectorAll(".section-lane").forEach(function (l) { l.classList.toggle("is-collapsed", !!s[laneKey(l)]); }); }
   function toggleLane(btn) { laneOf(btn).classList.toggle("is-collapsed"); persistLanes(); }
 
+  // collapse section bubbles (grouped) — folds a whole section across columns, persisted
+  var LS_BUBBLES = "arckanban-bubbles-" + projectId;
+  function loadBubbles() { try { return new Set(JSON.parse(localStorage.getItem(LS_BUBBLES)) || []); } catch (e) { return new Set(); } }
+  function applyBubbles() { var s = loadBubbles(); document.querySelectorAll(".bubble").forEach(function (b) { if (s.has(b.dataset.section)) b.classList.add("is-collapsed"); }); }
+  function toggleBubble(btn) {
+    var bubble = btn.closest(".bubble"); if (!bubble) return;
+    var sec = bubble.dataset.section; if (!sec) return;
+    var collapsed = !bubble.classList.contains("is-collapsed");
+    stageOf(btn).querySelectorAll('.bubble[data-section="' + sec + '"]').forEach(function (b) { b.classList.toggle("is-collapsed", collapsed); });
+    var s = loadBubbles(); if (collapsed) s.add(sec); else s.delete(sec);
+    localStorage.setItem(LS_BUBBLES, JSON.stringify(Array.from(s)));
+  }
+
   // ---- native drag -------------------------------------------------------
   var draggingCard = null, draggingBubble = null, lastOver = null, lastOverCol = null, dragFrom = null;
   function getDragAfterElement(container, y) {
@@ -635,7 +660,7 @@
       return;
     }
     var head = LAYOUT === "grouped" ? e.target.closest(".bubble-head") : null;
-    if (head) {
+    if (head && !e.target.closest(".bubble-collapse")) {
       draggingBubble = head.closest(".bubble"); draggingBubble.classList.add("dragging-bubble");
       e.dataTransfer.effectAllowed = "move";
       try { e.dataTransfer.setData("text/plain", "bubble"); } catch (_) {}
@@ -745,6 +770,7 @@
         case "rename-section": renameSection(el); break;
         case "delete-section": deleteSection(el); break;
         case "toggle-lane": toggleLane(el); break;
+        case "toggle-bubble": toggleBubble(el); break;
         case "set-current": setCurrentStage(el.dataset.stage); break;
         case "star-current": setCurrentStage(activeStage()); break;
         case "goto-stage": { var gs = Number(el.dataset.stage); if (isEnabled(gs)) { lastActive = gs; gotoStage(gs); } break; }
@@ -759,7 +785,10 @@
         }
         case "toggle-log": {
           var d = document.getElementById("log-drawer");
-          d.setAttribute("aria-hidden", d.classList.toggle("open") ? "false" : "true"); break;
+          var lopen = d.classList.toggle("open");
+          d.setAttribute("aria-hidden", lopen ? "false" : "true");
+          if (lopen) { var ll = document.getElementById("log-list"); if (ll) ll.scrollTop = ll.scrollHeight; }
+          break;
         }
         case "nudge-set": setCurrentStage(document.getElementById("nudge").dataset.stage); break;
         case "nudge-dismiss": { var s = Number(document.getElementById("nudge").dataset.stage); dismissed[s] = true; document.getElementById("nudge").hidden = true; break; }
@@ -807,6 +836,7 @@
   applyFilters(loadFilters());
   applyCollapse(localStorage.getItem(LS_COLLAPSE) === "1");
   applyLanes();
+  applyBubbles();
   updateUrgentTally();
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
   var startN = (saved != null && saved !== "" && isEnabled(Number(saved))) ? Number(saved) : currentStage;

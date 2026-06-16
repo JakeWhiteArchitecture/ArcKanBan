@@ -50,17 +50,19 @@ RIBA_STAGES = [
 ]
 
 # Status columns, left to right. Order matters: the ‹ › steppers walk this list.
-STATUSES = ["upcoming", "todo", "awaiting", "done"]
+STATUSES = ["backlog", "upcoming", "todo", "awaiting", "done"]
 STATUS_LABELS = {
+    "backlog": "Backlog",
     "upcoming": "Upcoming",
     "todo": "To Do",
     "awaiting": "Awaiting",
     "done": "Done",
 }
 
-# Task types. Order is also the "rigour" order — statutory is the strongest.
-TYPES = ["client", "statutory", "admin"]
-TYPE_LABELS = {"client": "Client", "statutory": "Statutory", "admin": "Admin"}
+# Task categories. 'decision' carries a responsible person (like Awaiting's
+# who/what) shown in any column; 'statutory' is the legal-teeth one (redline).
+TYPES = ["statutory", "recommended", "process", "decision"]
+TYPE_LABELS = {"statutory": "Statutory", "recommended": "Recommended", "process": "Process", "decision": "Decision"}
 
 # The person credited in the activity log. Single-user for now; override with
 # ARCKANBAN_ACTOR. (Will become per-user when the .md-file linking lands.)
@@ -130,7 +132,7 @@ def init_db():
             stage       INTEGER NOT NULL,
             title       TEXT NOT NULL,
             status      TEXT NOT NULL DEFAULT 'todo',
-            type        TEXT NOT NULL DEFAULT 'admin',
+            type        TEXT NOT NULL DEFAULT 'recommended',
             urgent      INTEGER NOT NULL DEFAULT 0,
             awaiting_on TEXT,
             position    INTEGER NOT NULL DEFAULT 0,
@@ -178,6 +180,10 @@ def init_db():
     )
     # Old 'urgent' status rows (if any) become To Do + the urgent flag.
     db.execute("UPDATE tasks SET status='todo', urgent=1 WHERE status='urgent'")
+    # Map old categories to the new set (client→recommended, admin→process); unknown → recommended.
+    db.execute("UPDATE tasks SET type='recommended' WHERE type='client'")
+    db.execute("UPDATE tasks SET type='process' WHERE type='admin'")
+    db.execute("UPDATE tasks SET type='recommended' WHERE type NOT IN ('statutory','recommended','process','decision')")
     db.commit()
     db.close()
 
@@ -223,9 +229,9 @@ def load_template(filename):
             continue
         if not title or not (0 <= stage <= 7):
             continue
-        ttype = t.get("type", "admin")
+        ttype = t.get("type", "recommended")
         if ttype not in TYPES:
-            ttype = "admin"
+            ttype = "recommended"
         section = t.get("section")
         section = str(section).strip() if section else None
         tasks.append({"stage": stage, "title": title, "type": ttype, "section": section})
@@ -581,7 +587,7 @@ def board(project_id):
         type_labels=TYPE_LABELS,
         statuses=STATUSES,
         layout=layout,
-        events=[format_event(e) for e in ev_rows],
+        events=[format_event(e) for e in reversed(ev_rows)],  # oldest→newest (latest at bottom)
         enabled=sorted(en),
         riba=RIBA_STAGES,
     ))
@@ -658,13 +664,16 @@ def api_set_stages(project_id):
         return jsonify(ok=False, error="Invalid scope."), 400
     if not stages:
         return jsonify(ok=False, error="At least one stage must stay in scope."), 400
-    if p["current_stage"] not in stages:
-        return jsonify(ok=False, error="The current stage must stay in scope."), 400
+    # If the current stage falls out of scope, move it to the lowest in-scope stage.
+    new_current = p["current_stage"]
+    if new_current not in stages:
+        new_current = stages[0]
+        db.execute("UPDATE projects SET current_stage=? WHERE id=?", (new_current, project_id))
     db.execute("UPDATE projects SET stages=? WHERE id=?",
                (",".join(str(s) for s in stages), project_id))
     ev = log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages))
     db.commit()
-    return jsonify(ok=True, stages=stages, event=ev)
+    return jsonify(ok=True, stages=stages, current_stage=new_current, event=ev)
 
 
 @app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])
@@ -681,9 +690,9 @@ def api_add_task(project_id):
         return jsonify(ok=False, error="Invalid stage."), 400
     if not 0 <= stage <= 7:
         return jsonify(ok=False, error="Stage out of range."), 400
-    ttype = data.get("type", "admin")
+    ttype = data.get("type", "recommended")
     if ttype not in TYPES:
-        ttype = "admin"
+        ttype = "recommended"
     section_id = data.get("section_id") or None
     if section_id is not None:
         try:
@@ -720,7 +729,7 @@ def api_restore_task(project_id):
         return jsonify(ok=False, error="Invalid stage."), 400
     if not title or not 0 <= stage <= 7:
         return jsonify(ok=False, error="Nothing to restore."), 400
-    ttype = d.get("type") if d.get("type") in TYPES else "admin"
+    ttype = d.get("type") if d.get("type") in TYPES else "recommended"
     status = d.get("status") if d.get("status") in STATUSES else "todo"
     urgent = 1 if d.get("urgent") else 0
     awaiting_on = (d.get("awaiting_on") or "").strip() or None

@@ -5,9 +5,9 @@
          data-section="{{ t.section_id if t.section_id is not none else '' }}">
   <div class="card-top">
     <span class="drag-handle" aria-hidden="true" title="Drag to move">⠿</span>
-    <select class="type-select" data-action="change-type" aria-label="Task type">
-      {% for ty in ['client', 'statutory', 'admin'] %}
-        <option value="{{ ty }}" {% if t.type == ty %}selected{% endif %}>{{ type_labels[ty] }}</option>
+    <select class="type-select" data-action="change-type" aria-label="Task category">
+      {% for ty, lbl in type_labels.items() %}
+        <option value="{{ ty }}" {% if t.type == ty %}selected{% endif %}>{{ lbl }}</option>
       {% endfor %}
     </select>
     <span class="card-top-spacer"></span>
@@ -22,8 +22,9 @@
 
   <div class="task-title" data-action="edit-title" role="button" tabindex="0">{{ t.title }}</div>
 
+  {% set ph = 'decision by?' if t.type == 'decision' else 'who / what?' %}
   <div class="awaiting-on" data-action="edit-awaiting" role="button" tabindex="0">
     <span class="awaiting-mark">⧖</span>
-    <span class="awaiting-text {% if not t.awaiting_on %}is-empty{% endif %}">{{ t.awaiting_on or 'who / what?' }}</span>
+    <span class="awaiting-text {% if not t.awaiting_on %}is-empty{% endif %}">{{ t.awaiting_on or ph }}</span>
   </div>
 </article>
