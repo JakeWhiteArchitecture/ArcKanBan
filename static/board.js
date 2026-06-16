@@ -262,17 +262,20 @@
       cell.textContent = r ? (val || (field === "number" ? "—" : raw)) : raw;
     });
   }
+  // rename/delete are driven from the Sections popup (rows keyed by section id);
+  // the popup always reflects the stage in view, so updates target that stage.
   function renameSection(titleEl) {
-    var holder = titleEl.closest("[data-section]"); var id = holder.dataset.section;
+    var id = titleEl.closest("[data-section]").dataset.section;
     var text = titleEl.textContent.trim();
     editInline(titleEl, text, async function (val, changed) {
       if (val === null || !changed || !val) { titleEl.textContent = text; return; }
       var r = await api("/api/sections/" + id, { title: val });
       if (!r) { titleEl.textContent = text; return; }
       titleEl.textContent = val;
-      if (LAYOUT === "grouped") {
-        var stageEl = stageOf(titleEl);
+      var stageEl = document.getElementById("stage-" + activeStage());
+      if (stageEl) {
         stageEl.querySelectorAll('.bubble[data-section="' + id + '"] .bubble-name').forEach(function (n) { n.textContent = val; });
+        stageEl.querySelectorAll('.sec-chip[data-section="' + id + '"] .sec-chip-name').forEach(function (n) { n.textContent = val; });
         stageEl.querySelectorAll('.add-task select[name="section"] option[value="' + id + '"]').forEach(function (o) { o.textContent = val; });
       }
     });
@@ -543,13 +546,12 @@
     }
   }
   async function deleteSection(el) {
-    var id = el.dataset.section || (laneOf(el) && laneOf(el).dataset.section);
-    if (!id) return;
+    var id = el.dataset.section; if (!id) return;
     if (!confirm("Delete this section? Its tasks move to General.")) return;
     var r = await api("/api/sections/" + id + "/delete", {});
     if (!r) return;
-    var stageEl = stageOf(el);
-    if (LAYOUT === "grouped") {
+    var stageEl = document.getElementById("stage-" + activeStage());
+    if (stageEl) {
       stageEl.querySelectorAll(".col-body").forEach(function (colBody) {
         var bubble = colBody.querySelector('.bubble[data-section="' + id + '"]');
         if (!bubble) return;
@@ -559,16 +561,66 @@
       });
       var chip = stageEl.querySelector('.sec-chip[data-section="' + id + '"]'); if (chip) chip.remove();
       stageEl.querySelectorAll('.add-task select[name="section"] option[value="' + id + '"]').forEach(function (o) { o.remove(); });
-    } else {
-      var lane = laneOf(el), general = stageEl.querySelector(".section-lane.is-general");
-      STATUSES.forEach(function (st) {
-        var srcc = lane.querySelector('.col-cards[data-status="' + st + '"]');
-        var dstc = general.querySelector('.col-cards[data-status="' + st + '"]');
-        while (srcc && srcc.firstElementChild) { var c = srcc.firstElementChild; c.dataset.section = ""; dstc.appendChild(c); }
-      });
-      lane.remove();
+      recountStageFull(stageEl);
     }
-    recountStageFull(stageEl);
+    var row = document.querySelector('#sections-pop .sec-row[data-section="' + id + '"]'); if (row) row.remove();
+    var list = document.querySelector("#sections-pop .sections-list");
+    if (list && !list.querySelector(".sec-row")) renderSectionsList(stageEl);   // show the empty hint
+  }
+
+  // ---- Sections popup (add / rename / delete for the stage in view) ------
+  function renderSectionsList(stageEl) {
+    var pop = document.getElementById("sections-pop"); if (!pop) return;
+    var list = pop.querySelector(".sections-list"); list.innerHTML = "";
+    var chips = stageEl ? stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)") : [];
+    if (!chips.length) {
+      var e = document.createElement("div"); e.className = "sections-empty";
+      e.textContent = "No sections yet — add one below."; list.appendChild(e); return;
+    }
+    chips.forEach(function (ch) {
+      var id = ch.dataset.section, name = ch.querySelector(".sec-chip-name").textContent.trim();
+      var rollEl = ch.querySelector(".sec-chip-roll");
+      var row = document.createElement("div"); row.className = "sec-row"; row.dataset.section = id;
+      var nm = document.createElement("span"); nm.className = "sec-row-name"; nm.dataset.action = "rename-section";
+      nm.setAttribute("role", "button"); nm.tabIndex = 0; nm.title = "Rename"; nm.textContent = name;
+      var rl = document.createElement("span"); rl.className = "sec-row-roll"; rl.textContent = rollEl ? rollEl.textContent.trim() : "";
+      var del = document.createElement("button"); del.type = "button"; del.className = "sec-row-del";
+      del.dataset.action = "delete-section"; del.dataset.section = id;
+      del.setAttribute("aria-label", "Delete section"); del.title = "Delete section (tasks → General)"; del.textContent = "×";
+      row.appendChild(nm); row.appendChild(rl); row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  function openSections() {
+    var pop = document.getElementById("sections-pop"); if (!pop) return;
+    var n = activeStage(), stageEl = document.getElementById("stage-" + n);
+    var lbl = pop.querySelector(".sections-stage"); if (lbl) lbl.textContent = "Stage " + n + " · " + RIBA[n];
+    renderSectionsList(stageEl);
+    closePops("sections-pop"); pop.hidden = false;
+    var ti = pop.querySelector(".sections-add input"); if (ti) ti.value = "";
+  }
+  async function addSectionPop(form) {
+    var stage = activeStage();
+    var input = form.querySelector('input[name="title"]');
+    var title = input.value.trim(); if (!title) { input.focus(); return; }
+    var r = await api("/api/projects/" + projectId + "/sections", { stage: stage, title: title });
+    if (!r) return;
+    var stageEl = document.getElementById("stage-" + stage);
+    if (stageEl) {
+      var reg = stageEl.querySelector(".section-reg");
+      var pos = stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").length;
+      var chip = document.createElement("span");
+      chip.className = "sec-chip"; chip.dataset.section = r.section.id; chip.dataset.pos = pos;
+      var nm = document.createElement("span"); nm.className = "sec-chip-name"; nm.textContent = r.section.title;
+      var roll = document.createElement("span"); roll.className = "sec-chip-roll"; roll.textContent = "0/0";
+      chip.appendChild(nm); chip.appendChild(roll);
+      if (reg) reg.appendChild(chip);
+      stageEl.querySelectorAll('.add-task select[name="section"]').forEach(function (sel) {
+        var o = document.createElement("option"); o.value = r.section.id; o.textContent = r.section.title; sel.appendChild(o);
+      });
+      renderSectionsList(stageEl);
+    }
+    input.value = ""; input.focus();
   }
 
   // ---- filters & collapse (persisted) -----------------------------------
@@ -584,7 +636,7 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   // ---- titleblock popovers (filters / more / scope / create) ------------
-  var POP_IDS = ["filter-pop", "more-pop", "scope-pop", "create-pop"];
+  var POP_IDS = ["filter-pop", "more-pop", "scope-pop", "create-pop", "sections-pop"];
   function closePops(except) {
     POP_IDS.forEach(function (id) { if (id === except) return; var el = document.getElementById(id); if (el) el.hidden = true; });
   }
@@ -855,6 +907,7 @@
         case "create-close": createSave(true); break;
         case "toggle-filters": togglePop("filter-pop"); break;
         case "toggle-more": togglePop("more-pop"); break;
+        case "toggle-sections": { var secp = document.getElementById("sections-pop"); if (secp.hidden) openSections(); else secp.hidden = true; break; }
         case "toggle-scope": togglePop("scope-pop"); break;
         case "dock-peek": if (document.body.classList.contains("dock-open")) document.body.classList.remove("dock-open"); else dockReveal(); break;
         case "apply-scope": applyScope(); break;
@@ -888,19 +941,20 @@
   document.addEventListener("click", function (e) {
     if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu();
     var inPop = e.target.closest(".tb-pop, .scope-pop");
-    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="toggle-scope"], [data-action="create-open"]');
+    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="toggle-scope"], [data-action="create-open"], [data-action="toggle-sections"]');
     if (!inPop && !onTrigger) closePops();
     if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop, .scope-pop")) dockHideSoon();
   });
   track.addEventListener("scroll", closeMenu);
   document.addEventListener("submit", function (e) {
     var add = e.target.closest('[data-action="add-task"]'); if (add) { e.preventDefault(); addTask(add); return; }
+    var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); return; }
     var sec = e.target.closest('[data-action="add-section"]'); if (sec) { e.preventDefault(); addSection(sec); }
   });
   document.addEventListener("keydown", function (e) {
     var t = e.target;
     if (e.key === "Enter" || e.key === " ") {
-      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .lane-title, .sec-chip-name")) { e.preventDefault(); t.click(); }
+      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .lane-title, .sec-row-name")) { e.preventDefault(); t.click(); }
       return;
     }
     if (e.key === "Escape") { closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }

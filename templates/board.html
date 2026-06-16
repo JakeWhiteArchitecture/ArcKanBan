@@ -38,6 +38,7 @@
 
   <div class="tb-right">
     <button type="button" class="tb-btn tb-btn-accent" data-action="create-open" title="New task">＋ Task</button>
+    <button type="button" class="tb-btn" data-action="toggle-sections" title="Sections of work">Sections</button>
     <button type="button" class="tb-btn" id="filter-btn" data-action="toggle-filters" title="Filters">Filter ▾</button>
     <button type="button" class="tb-btn" data-action="toggle-log" title="Activity log">Log</button>
     <button type="button" class="tb-btn" data-action="toggle-more" aria-label="More actions" title="More">⋯</button>
@@ -113,6 +114,15 @@
     <button type="button" class="btn-quiet btn-sm" data-action="create-close">Save &amp; close</button>
     <button type="button" class="btn btn-primary btn-sm" data-action="create-save">Save</button>
   </div>
+</div>
+
+<div class="tb-pop sections-pop" id="sections-pop" hidden aria-label="Sections of work">
+  <div class="pop-head">Sections of work — <span class="sections-stage">Stage</span></div>
+  <div class="sections-list"></div>
+  <form class="sections-add" data-action="add-section-pop">
+    <input type="text" name="title" placeholder="+ New section of work…" autocomplete="off" aria-label="New section">
+    <button type="submit" class="btn-quiet btn-sm">Add</button>
+  </form>
 </div>
 
 <div class="nudge" id="nudge" hidden role="status">
