@@ -246,7 +246,11 @@
   }
   function renderAwaiting(textEl, val) {
     if (val) { textEl.textContent = val; textEl.classList.remove("is-empty"); }
-    else { textEl.textContent = "who / what?"; textEl.classList.add("is-empty"); }
+    else {
+      var card = textEl.closest(".card");
+      textEl.textContent = (card && card.dataset.type === "decision") ? "decision by?" : "who / what?";
+      textEl.classList.add("is-empty");
+    }
   }
   function editProjectField(cell, field) {
     var raw = cell.textContent.trim(), current = raw === "—" ? "" : raw;
@@ -462,7 +466,9 @@
     var r = await api("/api/tasks/" + id, { type: newType });
     if (!r) { select.value = oldType; return; }
     card.dataset.type = newType;
-    card.classList.remove("type-client", "type-statutory", "type-admin"); card.classList.add("type-" + newType);
+    card.classList.remove("type-statutory", "type-recommended", "type-process", "type-decision");
+    card.classList.add("type-" + newType);
+    var at = card.querySelector(".awaiting-text"); if (at && at.classList.contains("is-empty")) renderAwaiting(at, "");
     pushUndo("type change on “" + title + "”", function () { return undoUpdate(id, { type: oldType }); });
     registerActivity(card.dataset.stage, card.dataset.taskId);
   }

@@ -58,9 +58,10 @@ STATUS_LABELS = {
     "done": "Done",
 }
 
-# Task types. Order is also the "rigour" order — statutory is the strongest.
-TYPES = ["client", "statutory", "admin"]
-TYPE_LABELS = {"client": "Client", "statutory": "Statutory", "admin": "Admin"}
+# Task categories. 'decision' carries a responsible person (like Awaiting's
+# who/what) shown in any column; 'statutory' is the legal-teeth one (redline).
+TYPES = ["statutory", "recommended", "process", "decision"]
+TYPE_LABELS = {"statutory": "Statutory", "recommended": "Recommended", "process": "Process", "decision": "Decision"}
 
 # The person credited in the activity log. Single-user for now; override with
 # ARCKANBAN_ACTOR. (Will become per-user when the .md-file linking lands.)
@@ -130,7 +131,7 @@ def init_db():
             stage       INTEGER NOT NULL,
             title       TEXT NOT NULL,
             status      TEXT NOT NULL DEFAULT 'todo',
-            type        TEXT NOT NULL DEFAULT 'admin',
+            type        TEXT NOT NULL DEFAULT 'recommended',
             urgent      INTEGER NOT NULL DEFAULT 0,
             awaiting_on TEXT,
             position    INTEGER NOT NULL DEFAULT 0,
@@ -178,6 +179,10 @@ def init_db():
     )
     # Old 'urgent' status rows (if any) become To Do + the urgent flag.
     db.execute("UPDATE tasks SET status='todo', urgent=1 WHERE status='urgent'")
+    # Map old categories to the new set (client→recommended, admin→process); unknown → recommended.
+    db.execute("UPDATE tasks SET type='recommended' WHERE type='client'")
+    db.execute("UPDATE tasks SET type='process' WHERE type='admin'")
+    db.execute("UPDATE tasks SET type='recommended' WHERE type NOT IN ('statutory','recommended','process','decision')")
     db.commit()
     db.close()
 
@@ -223,9 +228,9 @@ def load_template(filename):
             continue
         if not title or not (0 <= stage <= 7):
             continue
-        ttype = t.get("type", "admin")
+        ttype = t.get("type", "recommended")
         if ttype not in TYPES:
-            ttype = "admin"
+            ttype = "recommended"
         section = t.get("section")
         section = str(section).strip() if section else None
         tasks.append({"stage": stage, "title": title, "type": ttype, "section": section})
@@ -681,9 +686,9 @@ def api_add_task(project_id):
         return jsonify(ok=False, error="Invalid stage."), 400
     if not 0 <= stage <= 7:
         return jsonify(ok=False, error="Stage out of range."), 400
-    ttype = data.get("type", "admin")
+    ttype = data.get("type", "recommended")
     if ttype not in TYPES:
-        ttype = "admin"
+        ttype = "recommended"
     section_id = data.get("section_id") or None
     if section_id is not None:
         try:
@@ -720,7 +725,7 @@ def api_restore_task(project_id):
         return jsonify(ok=False, error="Invalid stage."), 400
     if not title or not 0 <= stage <= 7:
         return jsonify(ok=False, error="Nothing to restore."), 400
-    ttype = d.get("type") if d.get("type") in TYPES else "admin"
+    ttype = d.get("type") if d.get("type") in TYPES else "recommended"
     status = d.get("status") if d.get("status") in STATUSES else "todo"
     urgent = 1 if d.get("urgent") else 0
     awaiting_on = (d.get("awaiting_on") or "").strip() or None
