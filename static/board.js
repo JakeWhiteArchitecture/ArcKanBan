@@ -293,13 +293,17 @@
     bubble.className = "bubble"; bubble.dataset.section = sec; bubble.dataset.pos = pos;
     var head = document.createElement("div"); head.className = "bubble-head";
     head.draggable = true; head.title = "Drag this section to another status";
+    var chev = document.createElement("button"); chev.type = "button"; chev.className = "bubble-collapse";
+    chev.dataset.action = "toggle-bubble"; chev.setAttribute("aria-label", "Collapse section");
+    chev.innerHTML = '<span class="chevron">▾</span>';
     var nm = document.createElement("span"); nm.className = "bubble-name"; nm.textContent = sectionTitle(stageEl, sec);
     var ct = document.createElement("span"); ct.className = "bubble-count"; ct.textContent = "0";
-    head.appendChild(nm); head.appendChild(ct);
+    head.appendChild(chev); head.appendChild(nm); head.appendChild(ct);
     var cards = document.createElement("div");
     cards.className = "col-cards bubble-cards";
     cards.dataset.stage = colBody.dataset.stage; cards.dataset.status = colBody.dataset.status; cards.dataset.section = sec;
     bubble.appendChild(head); bubble.appendChild(cards);
+    if (loadBubbles().has(sec)) bubble.classList.add("is-collapsed");
     var loose = colBody.querySelector(".loose-cards"), ref = null;
     var bubbles = colBody.querySelectorAll(".bubble");
     for (var i = 0; i < bubbles.length; i++) { if (Number(bubbles[i].dataset.pos) > pos) { ref = bubbles[i]; break; } }
@@ -581,6 +585,19 @@
   function applyLanes() { var s = loadLanes(); document.querySelectorAll(".section-lane").forEach(function (l) { l.classList.toggle("is-collapsed", !!s[laneKey(l)]); }); }
   function toggleLane(btn) { laneOf(btn).classList.toggle("is-collapsed"); persistLanes(); }
 
+  // collapse section bubbles (grouped) — folds a whole section across columns, persisted
+  var LS_BUBBLES = "arckanban-bubbles-" + projectId;
+  function loadBubbles() { try { return new Set(JSON.parse(localStorage.getItem(LS_BUBBLES)) || []); } catch (e) { return new Set(); } }
+  function applyBubbles() { var s = loadBubbles(); document.querySelectorAll(".bubble").forEach(function (b) { if (s.has(b.dataset.section)) b.classList.add("is-collapsed"); }); }
+  function toggleBubble(btn) {
+    var bubble = btn.closest(".bubble"); if (!bubble) return;
+    var sec = bubble.dataset.section; if (!sec) return;
+    var collapsed = !bubble.classList.contains("is-collapsed");
+    stageOf(btn).querySelectorAll('.bubble[data-section="' + sec + '"]').forEach(function (b) { b.classList.toggle("is-collapsed", collapsed); });
+    var s = loadBubbles(); if (collapsed) s.add(sec); else s.delete(sec);
+    localStorage.setItem(LS_BUBBLES, JSON.stringify(Array.from(s)));
+  }
+
   // ---- native drag -------------------------------------------------------
   var draggingCard = null, draggingBubble = null, lastOver = null, lastOverCol = null, dragFrom = null;
   function getDragAfterElement(container, y) {
@@ -635,7 +652,7 @@
       return;
     }
     var head = LAYOUT === "grouped" ? e.target.closest(".bubble-head") : null;
-    if (head) {
+    if (head && !e.target.closest(".bubble-collapse")) {
       draggingBubble = head.closest(".bubble"); draggingBubble.classList.add("dragging-bubble");
       e.dataTransfer.effectAllowed = "move";
       try { e.dataTransfer.setData("text/plain", "bubble"); } catch (_) {}
@@ -745,6 +762,7 @@
         case "rename-section": renameSection(el); break;
         case "delete-section": deleteSection(el); break;
         case "toggle-lane": toggleLane(el); break;
+        case "toggle-bubble": toggleBubble(el); break;
         case "set-current": setCurrentStage(el.dataset.stage); break;
         case "star-current": setCurrentStage(activeStage()); break;
         case "goto-stage": { var gs = Number(el.dataset.stage); if (isEnabled(gs)) { lastActive = gs; gotoStage(gs); } break; }
@@ -807,6 +825,7 @@
   applyFilters(loadFilters());
   applyCollapse(localStorage.getItem(LS_COLLAPSE) === "1");
   applyLanes();
+  applyBubbles();
   updateUrgentTally();
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
   var startN = (saved != null && saved !== "" && isEnabled(Number(saved))) ? Number(saved) : currentStage;

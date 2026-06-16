@@ -422,6 +422,7 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 39. **Auto-omit round-trips** — setting a task to Done then back out within 10 minutes removes **both** log entries (events carry a `task_id`; the drawer drops the line live via `omit_last`).
 40. **Living background** — two gentle, slow drifting/pulsing glow layers (vibrant on dark); `prefers-reduced-motion` honoured.
 41. **Backlog recorded** (§12) and the **redo expiry** decision captured.
+42. **Collapsible section bubbles** (grouped) — fold a section (across its columns) via the bubble chevron, persisted per project; and **fixed column scrolling** (`grid-template-rows: minmax(0,1fr)`) so each status column scrolls independently as it fills.
 
 ---
 
