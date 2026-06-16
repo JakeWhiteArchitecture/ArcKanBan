@@ -50,7 +50,7 @@
     {% endif %}
     <div class="dec-actions">
       <button type="button" class="dec-add" data-action="add-option">+ option</button>
-      <button type="button" class="dec-other" data-action="confirm-other">Other…</button>
+      {% if t.options|length > 1 %}<button type="button" class="dec-other" data-action="confirm-other">Other…</button>{% endif %}
     </div>
   </div>
   {% endif %}

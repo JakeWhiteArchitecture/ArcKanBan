@@ -452,6 +452,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 
 Tracked so nothing is lost; ordered roughly by priority.
 
+> **Recently shipped (v0.13):** the inline "Add a task" form was removed — the **＋ Task** header widget is the single add path; the auto-hide dock indicator is now a **fine full-width rail that merges into the centred tab** (one hover zone) that slides the header down on hover.
+>
 > **Recently shipped (v0.12):** **Decisions & the decision register** (§3.13) — decision tasks gather **options** and a confirmed **outcome** (✓ on an option or right-click → Confirm → Other…), logged as a curated "decided" milestone, exported via **Decision register** (`/projects/<id>/decisions.json`); and the register cards now lead with a **Launch** button + a **⚙ Config** popover (appointment scope, exports, and a tucked-away Delete) — the bare Delete button is gone.
 >
 > **Recently shipped (v0.11):** Awaiting/Done columns differentiate by coloured **outline + header only** (neutral fill, so the background reads through); **sections moved off the board** into a **Sections** popover (add/rename/delete for the stage in view) with a hidden per-stage data registry behind it; the **board reclaims header space** — fixed header + animated board padding so the Kanban fills up when the dock tucks away and squeezes down (no overlap) when shown/pinned; the **activity log floats** as a rounded panel clear of the header; **project Delete + Scope moved to the register** (board ⋯ menu now export-only); and **template upload** — add a saved template JSON to the library via the picker, named in a popup.
