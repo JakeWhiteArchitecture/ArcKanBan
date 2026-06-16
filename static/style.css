@@ -455,7 +455,7 @@ body.hide-done .col-done .bubble { display: none; }
 .col-body::-webkit-scrollbar { width: 6px; } .col-body::-webkit-scrollbar-thumb { background: var(--glass-bright); border-radius: 3px; }
 .col-body.drag-over { background: var(--blue-tint); box-shadow: inset 0 0 0 2px var(--blue); }
 
-.bubble { border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.03); overflow: hidden; transition: opacity 140ms ease, box-shadow 140ms ease; }
+.bubble { flex-shrink: 0; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.03); overflow: hidden; transition: opacity 140ms ease, box-shadow 140ms ease; }
 .bubble-head { display: flex; align-items: center; gap: 6px; padding: 4px 9px; font-size: 0.72rem; color: var(--ink-soft); border-bottom: 1px solid var(--hairline); }
 .bubble-name { font-weight: 600; flex: 1; }
 .bubble-collapse { width: 18px; height: 18px; border: none; background: transparent; color: var(--ink-soft); cursor: pointer; padding: 0; border-radius: 4px; }
@@ -465,7 +465,7 @@ body.hide-done .col-done .bubble { display: none; }
 .bubble.is-collapsed .bubble-collapse .chevron { transform: rotate(-90deg); }
 .bubble-count { font-family: var(--font-mono); color: var(--ink-dim); }
 .bubble-cards { padding: 8px; gap: 8px; min-height: 12px; }
-.loose-cards { padding: 4px 2px; min-height: 24px; gap: 8px; }
+.loose-cards { flex-shrink: 0; padding: 4px 2px; min-height: 24px; gap: 8px; }
 .bubble-cards:empty::after, .loose-cards:empty::after { content: none; }
 
 /* selection + cross-column section link */
