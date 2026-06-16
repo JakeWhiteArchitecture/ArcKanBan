@@ -245,6 +245,41 @@ def load_template(filename):
     return {"name": data.get("name", filename), "tasks": tasks}
 
 
+def _slugify(s):
+    """Filesystem-safe slug (alnum + underscores only — no path traversal)."""
+    out = "".join(ch if ch.isalnum() else "_" for ch in (s or "").lower())
+    while "__" in out:
+        out = out.replace("__", "_")
+    return out.strip("_")[:60]
+
+
+def sanitize_template(raw, name):
+    """Validate an uploaded template dict into the stored shape, or None."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("tasks"), list):
+        return None
+    tasks = []
+    for t in raw.get("tasks", []):
+        if not isinstance(t, dict):
+            continue
+        try:
+            stage = int(t["stage"])
+            title = str(t["title"]).strip()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not title or not (0 <= stage <= 7):
+            continue
+        ttype = t.get("type") if t.get("type") in TYPES else "recommended"
+        status = t.get("status") if t.get("status") in STATUSES else "todo"
+        section = t.get("section")
+        clean = {"stage": stage, "title": title, "type": ttype, "status": status}
+        if section:
+            clean["section"] = str(section).strip()
+        tasks.append(clean)
+    if not tasks:
+        return None
+    return {"name": name, "tasks": tasks}
+
+
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
@@ -542,9 +577,11 @@ def index():
                 "current_stage": r["current_stage"],
                 "current_stage_name": RIBA_STAGES[r["current_stage"]],
                 "spine": mini_spine(r["current_stage"]),
+                "enabled": sorted(enabled_stages(r)),
             }
         )
-    return render_template("index.html", projects=projects, templates=list_templates())
+    return render_template("index.html", projects=projects, templates=list_templates(),
+                           riba=RIBA_STAGES, selected_template=request.args.get("tpl", ""))
 
 
 @app.route("/projects", methods=["POST"])
@@ -668,6 +705,54 @@ def export_activity(project_id):
     resp.headers["Content-Type"] = "application/json"
     resp.headers["Content-Disposition"] = 'attachment; filename="arckanban-activity.json"'
     return resp
+
+
+@app.route("/projects/<int:project_id>/scope", methods=["POST"])
+def set_scope(project_id):
+    """Set a project's RIBA-stage appointment scope from the register page
+    (form POST). The board's ⋯ menu no longer carries this — it lives here, with
+    project-level management, on the exploration page."""
+    db = get_db()
+    p = get_project_or_404(db, project_id)
+    try:
+        stages = sorted({int(x) for x in request.form.getlist("stage") if 0 <= int(x) <= 7})
+    except (TypeError, ValueError):
+        stages = []
+    if not stages:
+        flash("At least one stage must stay in scope.")
+        return redirect(url_for("index"))
+    new_current = p["current_stage"]
+    if new_current not in stages:
+        new_current = stages[0]
+        db.execute("UPDATE projects SET current_stage=? WHERE id=?", (new_current, project_id))
+    db.execute("UPDATE projects SET stages=? WHERE id=?",
+               (",".join(str(s) for s in stages), project_id))
+    log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages), important=False)
+    db.commit()
+    flash("Appointment scope updated.")
+    return redirect(url_for("index"))
+
+
+@app.route("/templates/upload", methods=["POST"])
+def upload_template():
+    """Store an uploaded template JSON (one the user saved earlier) into the
+    library under a chosen name, so it's offered on the new-project picker."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="A template needs a name."), 400
+    tpl = sanitize_template(data.get("template"), name)
+    if tpl is None:
+        return jsonify(ok=False, error="That doesn't look like an ArcKanban template (no valid tasks)."), 400
+    os.makedirs(TEMPLATES_LIB, exist_ok=True)
+    base = _slugify(name) or "template"
+    fn, i = base + ".json", 2
+    while os.path.exists(os.path.join(TEMPLATES_LIB, fn)):
+        fn = "%s-%d.json" % (base, i); i += 1
+    with open(os.path.join(TEMPLATES_LIB, fn), "w", encoding="utf-8") as fh:
+        json.dump(tpl, fh, indent=2, ensure_ascii=False)
+    flash("Template “%s” added." % name)
+    return jsonify(ok=True, file=fn, name=name)
 
 
 @app.route("/projects/<int:project_id>/delete", methods=["POST"])

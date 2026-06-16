@@ -56,17 +56,6 @@
   <span class="chevron">▾</span>
 </button>
 
-<div class="scope-pop" id="scope-pop" hidden aria-label="Appointment scope">
-  <div class="scope-head">Appointment scope — RIBA stages</div>
-  {% for i in range(8) %}
-    <label class="scope-row">
-      <input type="checkbox" value="{{ i }}" {% if i in enabled %}checked{% endif %}>
-      <span class="scope-num">{{ i }}</span> {{ riba[i] }}
-    </label>
-  {% endfor %}
-  <button type="button" class="btn btn-primary btn-sm" data-action="apply-scope">Apply scope</button>
-</div>
-
 <div class="tb-pop filter-pop" id="filter-pop" hidden aria-label="Filters">
   <div class="pop-head">Filters</div>
   <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
@@ -75,14 +64,9 @@
 </div>
 
 <div class="tb-pop more-pop" id="more-pop" hidden aria-label="More actions">
-  <button type="button" class="more-item" data-action="toggle-scope">Appointment scope…</button>
   <a class="more-item" href="{{ url_for('export_template', project_id=project.id) }}" download>Save as template</a>
   <a class="more-item" href="{{ url_for('export_activity', project_id=project.id) }}" download
      title="Every event, including the minor moves hidden from the drawer">Export full log</a>
-  <form class="more-del" method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
-        onsubmit="return confirm('Delete this project and all its tasks?');">
-    <button type="submit" class="more-item more-danger">Delete project</button>
-  </form>
 </div>
 
 <div class="tb-pop create-pop" id="create-pop" hidden aria-label="Create a task">

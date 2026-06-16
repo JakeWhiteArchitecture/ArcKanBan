@@ -636,7 +636,7 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   // ---- titleblock popovers (filters / more / scope / create) ------------
-  var POP_IDS = ["filter-pop", "more-pop", "scope-pop", "create-pop", "sections-pop"];
+  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop"];
   function closePops(except) {
     POP_IDS.forEach(function (id) { if (id === except) return; var el = document.getElementById(id); if (el) el.hidden = true; });
   }
@@ -707,12 +707,9 @@
   function dockEnter() { dockHover = true; dockReveal(); }
   function dockLeave() { dockHover = false; dockHideSoon(); }
 
+  // Appointment scope is managed on the register page now; the board keeps only
+  // the in-context "Add to scope" affordance on a disabled-stage placeholder.
   function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
-  function applyScope() {
-    var set = [];
-    document.querySelectorAll('#scope-pop input[type="checkbox"]').forEach(function (b) { if (b.checked) set.push(Number(b.value)); });
-    saveScope(set);
-  }
   function laneKey(l) { return l.dataset.section ? "s" + l.dataset.section : "g" + l.dataset.stage; }
   function loadLanes() { try { return JSON.parse(localStorage.getItem(LS_LANES)) || {}; } catch (e) { return {}; } }
   function persistLanes() { var s = {}; document.querySelectorAll(".section-lane.is-collapsed").forEach(function (l) { s[laneKey(l)] = 1; }); localStorage.setItem(LS_LANES, JSON.stringify(s)); }
@@ -908,9 +905,7 @@
         case "toggle-filters": togglePop("filter-pop"); break;
         case "toggle-more": togglePop("more-pop"); break;
         case "toggle-sections": { var secp = document.getElementById("sections-pop"); if (secp.hidden) openSections(); else secp.hidden = true; break; }
-        case "toggle-scope": togglePop("scope-pop"); break;
         case "dock-peek": if (document.body.classList.contains("dock-open")) document.body.classList.remove("dock-open"); else dockReveal(); break;
-        case "apply-scope": applyScope(); break;
         case "enable-stage": { var set = enabledStages.slice(); var es = Number(el.dataset.stage); if (set.indexOf(es) < 0) set.push(es); saveScope(set); break; }
         case "toggle-titleblock": setDockMode(!dockEnabled()); break;
         case "toggle-log": {
@@ -940,10 +935,10 @@
   });
   document.addEventListener("click", function (e) {
     if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu();
-    var inPop = e.target.closest(".tb-pop, .scope-pop");
-    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="toggle-scope"], [data-action="create-open"], [data-action="toggle-sections"]');
+    var inPop = e.target.closest(".tb-pop");
+    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="create-open"], [data-action="toggle-sections"]');
     if (!inPop && !onTrigger) closePops();
-    if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop, .scope-pop")) dockHideSoon();
+    if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop")) dockHideSoon();
   });
   track.addEventListener("scroll", closeMenu);
   document.addEventListener("submit", function (e) {

@@ -22,11 +22,12 @@
       </label>
       <label class="field field-template">
         <span>Template</span>
-        <select name="template">
-          <option value="__blank__">Blank</option>
+        <select name="template" id="template-select">
+          <option value="__blank__"{% if not selected_template %} selected{% endif %}>Blank</option>
           {% for t in templates %}
-            <option value="{{ t.file }}">{{ t.name }}</option>
+            <option value="{{ t.file }}"{% if t.file == selected_template %} selected{% endif %}>{{ t.name }}</option>
           {% endfor %}
+          <option value="__upload__">⬆ Upload a template…</option>
         </select>
       </label>
       <button type="submit" class="btn btn-primary">Lay out project</button>
@@ -51,6 +52,22 @@
             <div class="project-foot">
               <span class="stage-label"><span class="stage-num">{{ p.current_stage }}</span> {{ p.current_stage_name }}</span>
               <span class="project-actions">
+                <details class="card-scope">
+                  <summary class="btn-quiet btn-sm" title="RIBA stages in this appointment">Scope</summary>
+                  <form class="scope-form" method="post" action="{{ url_for('set_scope', project_id=p.id) }}">
+                    <div class="scope-head">Appointment scope — RIBA stages</div>
+                    <div class="scope-grid">
+                      {% for i in range(8) %}
+                        <label class="scope-chip" style="--c: var(--riba-{{ i }})">
+                          <input type="checkbox" name="stage" value="{{ i }}" {% if i in p.enabled %}checked{% endif %}>
+                          <span class="scope-num">{{ i }}</span>
+                          <span class="scope-nm">{{ riba[i] }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Apply scope</button>
+                  </form>
+                </details>
                 <a class="btn-quiet btn-sm" href="{{ url_for('export_template', project_id=p.id) }}" download
                    title="Save as template (no names)">Template</a>
                 <form method="post" action="{{ url_for('delete_project', project_id=p.id) }}"
@@ -67,4 +84,21 @@
     {% endif %}
   </section>
 </main>
+
+<div class="modal-backdrop" id="upload-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="upload-h">
+    <h3 id="upload-h">Name this template</h3>
+    <p class="modal-sub" id="upload-file-note"></p>
+    <input type="text" id="upload-name" placeholder="e.g. Loft conversion" autocomplete="off">
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet" id="upload-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="upload-save">Save template</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="tpl-file" accept=".json,application/json" hidden>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='home.js') }}"></script>
 {% endblock %}
