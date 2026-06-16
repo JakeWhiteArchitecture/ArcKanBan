@@ -390,6 +390,18 @@
   // ---- decisions: options + confirmed outcome (decision register) -------
   function decBlock(card) { return card.querySelector(".dec-block"); }
   function decOutcome(card) { var o = card.querySelector(".dec-outcome-text"); return o ? o.textContent.trim() : ""; }
+  // Build the decision block on a card that's just become a decision (the
+  // server only renders it for tasks already typed as decisions).
+  function ensureDecBlock(card) {
+    if (card.querySelector(".dec-block")) return;
+    var block = document.createElement("div"); block.className = "dec-block";
+    var actions = document.createElement("div"); actions.className = "dec-actions";
+    var add = document.createElement("button"); add.type = "button"; add.className = "dec-add"; add.dataset.action = "add-option"; add.textContent = "+ option";
+    var other = document.createElement("button"); other.type = "button"; other.className = "dec-other"; other.dataset.action = "confirm-other"; other.textContent = "Other…";
+    actions.appendChild(add); actions.appendChild(other); block.appendChild(actions);
+    card.appendChild(block);
+  }
+  function removeDecBlock(card) { var b = card.querySelector(".dec-block"); if (b) b.remove(); }
   function renderOption(id, text) {
     var li = document.createElement("li"); li.className = "dec-option"; li.dataset.optionId = id;
     var c = document.createElement("button"); c.type = "button"; c.className = "dec-confirm";
@@ -574,6 +586,7 @@
     card.dataset.type = newType;
     card.classList.remove("type-statutory", "type-recommended", "type-process", "type-decision");
     card.classList.add("type-" + newType);
+    if (newType === "decision") ensureDecBlock(card); else removeDecBlock(card);   // options UI appears/leaves with the type
     var at = card.querySelector(".awaiting-text"); if (at && at.classList.contains("is-empty")) renderAwaiting(at, "");
     pushUndo("type change on “" + title + "”", function () { return undoUpdate(id, { type: oldType }); });
     registerActivity(card.dataset.stage, card.dataset.taskId);
