@@ -2,7 +2,30 @@
    The instrument identity (titleblock, spine, mono register figures, the
    redline/ochre/sage semantics, type margin rules) rendered as a modern,
    floating, frosted-glass UI on deep navy. RIBA stage colours on the spine.
-   Real Hanken Grotesk + IBM Plex Mono woff2 are vendored in a later pass. */
+   Hanken Grotesk + IBM Plex Mono are vendored locally (static/fonts/, SIL OFL —
+   see OFL.txt); no CDN, nothing fetched at runtime. */
+
+/* ---- Vendored fonts (served from static/fonts/) ----------------------- */
+@font-face {
+  font-family: "Hanken Grotesk"; font-style: normal; font-weight: 100 900;   /* variable */
+  font-display: swap; src: url("fonts/hanken-grotesk.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400;
+  font-display: swap; src: url("fonts/ibm-plex-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500;
+  font-display: swap; src: url("fonts/ibm-plex-mono-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600;
+  font-display: swap; src: url("fonts/ibm-plex-mono-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono"; font-style: normal; font-weight: 700;
+  font-display: swap; src: url("fonts/ibm-plex-mono-700.woff2") format("woff2");
+}
 
 :root {
   /* Surfaces — deep navy with luminous glass */
