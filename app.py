@@ -64,6 +64,11 @@ STATUS_LABELS = {
 TYPES = ["statutory", "recommended", "process", "decision"]
 TYPE_LABELS = {"statutory": "Statutory", "recommended": "Recommended", "process": "Process", "decision": "Decision"}
 
+# Standard responsible parties offered as autocomplete for a task's "decision
+# by?" / awaiting field. Anything else typed is remembered per-project (derived
+# from that project's existing awaiting_on values).
+STANDARD_ASSIGNEES = ["Client", "Structural Engineer", "M&E Consultant", "BRPD", "BRPC"]
+
 # The person credited in the activity log. Single-user for now; override with
 # ARCKANBAN_ACTOR. (Will become per-user when the .md-file linking lands.)
 ACTOR = os.environ.get("ARCKANBAN_ACTOR", "JW")
@@ -667,6 +672,13 @@ def board(project_id):
     ev_rows = db.execute(
         "SELECT * FROM events WHERE project_id=? AND important=1 ORDER BY id DESC LIMIT 200", (project_id,)
     ).fetchall()
+    # Autocomplete for "decision by?" / awaiting: standard roles + any names this
+    # project has already used (remembered per-project, deduped case-insensitively).
+    used = [r["awaiting_on"] for r in db.execute(
+        "SELECT DISTINCT awaiting_on FROM tasks WHERE project_id=? AND awaiting_on IS NOT NULL "
+        "AND awaiting_on<>'' ORDER BY awaiting_on", (project_id,))]
+    _seen = {a.lower() for a in STANDARD_ASSIGNEES}
+    assignees = STANDARD_ASSIGNEES + [a for a in used if a.lower() not in _seen]
     resp = make_response(render_template(
         "board.html",
         project={
@@ -683,6 +695,7 @@ def board(project_id):
         events=[format_event(e) for e in reversed(ev_rows)],  # oldest→newest (latest at bottom)
         enabled=sorted(en),
         riba=RIBA_STAGES,
+        assignees=assignees,
     ))
     return resp
 

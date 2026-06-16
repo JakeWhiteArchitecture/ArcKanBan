@@ -112,6 +112,10 @@
   </form>
 </div>
 
+<datalist id="assignee-suggestions">
+  {% for a in assignees %}<option value="{{ a }}"></option>{% endfor %}
+</datalist>
+
 <div class="nudge" id="nudge" hidden role="status">
   <span class="nudge-text"></span>
   <span class="nudge-actions">

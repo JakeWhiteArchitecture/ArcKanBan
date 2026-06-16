@@ -71,6 +71,7 @@
   function laneOf(el) { return el.closest(".section-lane"); }
   function stageOf(el) { return el.closest(".stage"); }
   function colBodyOf(el) { return el.closest(".col-body"); }
+  function stageHasCards(n) { var el = document.getElementById("stage-" + n); return !!(el && el.querySelector(".card")); }
 
   // ---- horizontal navigation --------------------------------------------
   var LS_STAGE = "arckanban-stage-" + projectId;
@@ -212,11 +213,12 @@
   }
 
   // ---- inline editing ----------------------------------------------------
-  function editInline(displayEl, currentText, onSave) {
+  function editInline(displayEl, currentText, onSave, listId) {
     if (displayEl.dataset.editing) return;
     displayEl.dataset.editing = "1";
     var input = document.createElement("input");
     input.type = "text"; input.className = "title-input"; input.value = currentText;
+    if (listId) { input.setAttribute("list", listId); input.setAttribute("autocomplete", "off"); }
     displayEl.replaceChildren(input); input.focus(); input.select();
     var done = false;
     function finish(commit) {
@@ -236,6 +238,11 @@
       var r = await api("/api/tasks/" + id, { title: val }); titleEl.textContent = (r && val) || text;
     });
   }
+  function rememberAssignee(val) {
+    var dl = document.getElementById("assignee-suggestions"); if (!dl || !val) return;
+    var has = Array.prototype.some.call(dl.options, function (o) { return o.value.toLowerCase() === val.toLowerCase(); });
+    if (!has) { var o = document.createElement("option"); o.value = val; dl.appendChild(o); }
+  }
   function editAwaiting(box) {
     var id = cardOf(box).dataset.taskId, textEl = box.querySelector(".awaiting-text");
     var current = textEl.classList.contains("is-empty") ? "" : textEl.textContent.trim();
@@ -243,7 +250,8 @@
       if (val === null) { renderAwaiting(textEl, current); return; }
       if (changed) await api("/api/tasks/" + id, { awaiting_on: val });
       renderAwaiting(textEl, changed ? val : current);
-    });
+      if (val) rememberAssignee(val);   // new names autocomplete next time, this project
+    }, "assignee-suggestions");
   }
   function renderAwaiting(textEl, val) {
     if (val) { textEl.textContent = val; textEl.classList.remove("is-empty"); }
@@ -1112,6 +1120,17 @@
   var drEl = document.querySelector(".dock-rail");
   if (drEl) { drEl.addEventListener("mouseenter", dockEnter); drEl.addEventListener("mouseleave", dockLeave); }
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
-  var startN = (saved != null && saved !== "" && isEnabled(Number(saved))) ? Number(saved) : currentStage;
+  var startN;
+  if (saved != null && saved !== "" && isEnabled(Number(saved))) {
+    startN = Number(saved);
+  } else {
+    startN = currentStage;
+    // Fresh project (no remembered stage): if the current stage is empty — e.g.
+    // a template whose tasks sit in later stages — open on the first enabled
+    // stage that actually has cards, so the board never looks empty.
+    if (!stageHasCards(startN)) {
+      for (var si = 0; si <= 7; si++) { if (isEnabled(si) && stageHasCards(si)) { startN = si; break; } }
+    }
+  }
   gotoStage(startN, true);
 })();
