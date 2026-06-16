@@ -50,10 +50,14 @@
             </ol>
             <div class="project-foot">
               <span class="stage-label"><span class="stage-num">{{ p.current_stage }}</span> {{ p.current_stage_name }}</span>
-              <form method="post" action="{{ url_for('delete_project', project_id=p.id) }}"
-                    onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks?');">
-                <button type="submit" class="btn-quiet btn-danger" aria-label="Delete project">Delete</button>
-              </form>
+              <span class="project-actions">
+                <a class="btn-quiet btn-sm" href="{{ url_for('export_template', project_id=p.id) }}" download
+                   title="Save as template (no names)">Template</a>
+                <form method="post" action="{{ url_for('delete_project', project_id=p.id) }}"
+                      onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks?');">
+                  <button type="submit" class="btn-quiet btn-danger" aria-label="Delete project">Delete</button>
+                </form>
+              </span>
             </div>
           </li>
         {% endfor %}

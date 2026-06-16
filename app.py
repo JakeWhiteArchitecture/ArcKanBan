@@ -234,7 +234,9 @@ def load_template(filename):
             ttype = "recommended"
         section = t.get("section")
         section = str(section).strip() if section else None
-        tasks.append({"stage": stage, "title": title, "type": ttype, "section": section})
+        status = t.get("status")
+        status = status if status in STATUSES else "todo"
+        tasks.append({"stage": stage, "title": title, "type": ttype, "section": section, "status": status})
     return {"name": data.get("name", filename), "tasks": tasks}
 
 
@@ -464,6 +466,25 @@ def render_lane(lane, stage_idx):
     )
 
 
+def build_template_export(db, project_id, name="Untitled template"):
+    """A reusable template from a project's structure — tasks, sections, types
+    and statuses only. Excludes the project name and any people (awaiting/
+    decision-by), urgent flags and ids — so it's a clean, shareable starting point."""
+    secs = {r["id"]: r["title"] for r in
+            db.execute("SELECT id, title FROM sections WHERE project_id=?", (project_id,))}
+    rows = db.execute(
+        "SELECT * FROM tasks WHERE project_id=? AND parent_id IS NULL ORDER BY stage, position, id",
+        (project_id,),
+    ).fetchall()
+    tasks = []
+    for r in rows:
+        t = {"stage": r["stage"], "title": r["title"], "type": r["type"], "status": r["status"]}
+        if r["section_id"] and r["section_id"] in secs:
+            t["section"] = secs[r["section_id"]]
+        tasks.append(t)
+    return {"name": name, "tasks": tasks}
+
+
 def mini_spine(current_stage):
     """Read-only spine cells for the home register."""
     cells = []
@@ -550,13 +571,13 @@ def create_project():
                         )
                         section_ids[key] = cur2.lastrowid
                     section_id = section_ids[key]
-                lane = (stage, section_id)
+                lane = (stage, section_id, t["status"])
                 pos = pos_by_lane.get(lane, 0)
                 pos_by_lane[lane] = pos + 1
                 db.execute(
                     "INSERT INTO tasks (project_id, stage, title, status, type, "
-                    "position, section_id) VALUES (?, ?, ?, 'todo', ?, ?, ?)",
-                    (project_id, stage, t["title"], t["type"], pos, section_id),
+                    "position, section_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (project_id, stage, t["title"], t["status"], t["type"], pos, section_id),
                 )
     db.commit()
     return redirect(url_for("board", project_id=project_id))
@@ -591,6 +612,18 @@ def board(project_id):
         enabled=sorted(en),
         riba=RIBA_STAGES,
     ))
+    return resp
+
+
+@app.route("/projects/<int:project_id>/template.json")
+def export_template(project_id):
+    """Download the project as a reusable template JSON (no names/people)."""
+    db = get_db()
+    get_project_or_404(db, project_id)
+    data = build_template_export(db, project_id)
+    resp = make_response(json.dumps(data, indent=2, ensure_ascii=False))
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Content-Disposition"] = 'attachment; filename="arckanban-template.json"'
     return resp
 
 

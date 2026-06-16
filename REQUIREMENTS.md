@@ -430,6 +430,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 46. **Animated WebGL background** — a self-contained "Neat"-style domain-warped gradient shader (no npm/library/CDN), rich Prussian palette; reduced-motion + WebGL-absent fallbacks.
 47. **Five status columns** — **Backlog · Upcoming · To Do · Awaiting · Done** (split the endless Upcoming into Backlog + Upcoming; existing Upcoming tasks unchanged; Backlog is new).
 48. **Scope: current stage can now be disabled** — disabling the in-scope current stage auto-advances `current_stage` to the lowest remaining in-scope stage (was: blocked, so Stage 0 couldn't be turned off).
+49. **Background tuned darker & blobbier** — zoomed in, fewer octaves, gentler warp, ~0.4 render scale (soft upscale), darkened palette — sits well within the dark theme.
+50. **Save as template (export)** — `GET /projects/<id>/template.json` downloads a sanitized template (tasks · sections · types · **statuses**), **excluding the project name, any people (awaiting/decision-by), urgent flags and ids**. Templates now support a per-task `status` on import. Links on the board and home register. *(Phase 5 "save current project as template" — done as an export.)*
 
 ---
 
