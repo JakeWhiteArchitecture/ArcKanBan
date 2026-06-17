@@ -763,9 +763,9 @@
   function dockHideSoon() {
     if (!dockEnabled()) return;
     clearTimeout(dockTimer);
-    // Long pause before retracting, so the header doesn't jump when the pointer
-    // briefly leaves the bar/rail.
-    dockTimer = setTimeout(function () { if (!dockHover && !anyPopOpen()) document.body.classList.remove("dock-open"); }, 800);
+    // Long pause before retracting, so brushing the bar a few times keeps it
+    // open — it barely gets a chance to close.
+    dockTimer = setTimeout(function () { if (!dockHover && !anyPopOpen()) document.body.classList.remove("dock-open"); }, 2200);
   }
   function dockEnter() { dockHover = true; dockReveal(); }
   function dockLeave() { dockHover = false; dockHideSoon(); }
@@ -1024,9 +1024,13 @@
   if (dhEl) { dhEl.addEventListener("mouseenter", dockEnter); dhEl.addEventListener("mouseleave", dockLeave); }
   var drEl = document.querySelector(".dock-rail");
   if (drEl) { drEl.addEventListener("mouseenter", dockEnter); drEl.addEventListener("mouseleave", dockLeave); }
+  var qStage = null; try { qStage = new URLSearchParams(location.search).get("stage"); } catch (e) {}
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
   var startN;
-  if (saved != null && saved !== "" && isEnabled(Number(saved))) {
+  if (qStage != null && qStage !== "" && isEnabled(Number(qStage))) {
+    startN = Number(qStage);   // explicit return-to-stage (e.g. coming back from the decision register)
+    try { history.replaceState({}, "", location.pathname); } catch (e) {}   // keep the URL clean
+  } else if (saved != null && saved !== "" && isEnabled(Number(saved))) {
     startN = Number(saved);
   } else {
     startN = currentStage;

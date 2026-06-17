@@ -4,6 +4,14 @@
    later (process analysis / AI). No reload — the new task is appended in place. */
 (function () {
   "use strict";
+
+  // Return to the same board stage you were viewing (board.js saves it per project).
+  var back = document.querySelector(".dr-back");
+  if (back && back.dataset.projectId) {
+    var n = null; try { n = localStorage.getItem("arckanban-stage-" + back.dataset.projectId); } catch (e) {}
+    if (n != null && n !== "") back.href = back.href.split("?")[0] + "?stage=" + encodeURIComponent(n);
+  }
+
   var table = document.querySelector(".dr-table");
   if (!table) return;
 

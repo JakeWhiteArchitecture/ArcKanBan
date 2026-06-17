@@ -343,29 +343,31 @@ def format_event(e):
     return {"text": " ".join(parts), "when": when, "iso": e["created_at"]}
 
 
-def log_event(db, project_id, verb, target=None, detail=None, task_id=None, important=True):
+def log_event(db, project_id, verb, target=None, detail=None, task_id=None, important=True, actor=None):
     """Record one activity event (person → action → task/section). The events
     table is the FULL audit trail (every change, for later agent use); the
-    `important` flag marks the curated milestones surfaced in the drawer.
+    `important` flag marks the curated milestones surfaced in the drawer. `actor`
+    overrides the credited person (decisions are credited to the decision-maker).
     Returns the rendered event when important (so the endpoint can hand it to
     the drawer), or None when it's full-log-only."""
     ts = now_iso()
+    who = (actor or "").strip() or ACTOR
     db.execute(
         "INSERT INTO events (project_id, actor, verb, target, detail, created_at, task_id, important) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (project_id, ACTOR, verb, target, detail, ts, task_id, 1 if important else 0),
+        (project_id, who, verb, target, detail, ts, task_id, 1 if important else 0),
     )
     if not important:
         return None
-    return format_event({"actor": ACTOR, "verb": verb, "target": target,
+    return format_event({"actor": who, "verb": verb, "target": target,
                          "detail": detail, "created_at": ts})
 
 
 def log_status(db, row, new_status):
-    """Log a status change. Reaching Done is a curated milestone ('completed');
-    every other move (backlog→upcoming, etc.) is full-log-only. If a task leaves
-    Done within 10 minutes of being completed, retract the 'completed' line from
-    the visible log (it stays in the full audit trail).
+    """Log a status change. The curated drawer narrative keeps only status moves
+    to Awaiting or Done; every other move (backlog→upcoming, etc.) is full-log-
+    only. If a task leaves Done within 10 minutes of being completed, retract the
+    'completed' line from the visible log (it stays in the full audit trail).
     Returns (event_or_None, omitted_bool)."""
     old = row["status"]
     if new_status == old:
@@ -384,6 +386,9 @@ def log_status(db, row, new_status):
             return None, True
     if new_status == "done":
         ev = log_event(db, row["project_id"], "completed", row["title"], task_id=row["id"])
+    elif new_status == "awaiting":
+        ev = log_event(db, row["project_id"], "set", row["title"],
+                       'to “%s”' % STATUS_LABELS[new_status], task_id=row["id"], important=True)
     else:
         ev = log_event(db, row["project_id"], "set", row["title"],
                        'to “%s”' % STATUS_LABELS[new_status], task_id=row["id"], important=False)
@@ -640,7 +645,7 @@ def create_project():
     )
     project_id = cur.lastrowid
 
-    log_event(db, project_id, "created project", name)
+    log_event(db, project_id, "created project", name, important=False)
     if template_file and template_file != "__blank__":
         tpl = load_template(template_file)
         if tpl is None:
@@ -687,7 +692,13 @@ def board(project_uid):
     for s in stages:
         s["enabled"] = s["idx"] in en
     ev_rows = db.execute(
-        "SELECT * FROM events WHERE project_id=? AND important=1 ORDER BY id DESC LIMIT 200", (project_id,)
+        # Curated narrative only: tasks added (anywhere), status set to Awaiting
+        # or Done, and decisions made. (The verb filter also tidies legacy events
+        # logged before the curation rules; important=0 still hides retractions.)
+        "SELECT * FROM events WHERE project_id=? AND important=1 AND ("
+        "  verb IN ('added', 'completed', 'decided')"
+        "  OR (verb='set' AND (detail LIKE '%Awaiting%' OR detail LIKE '%Done%'))"
+        ") ORDER BY id DESC LIMIT 200", (project_id,)
     ).fetchall()
     # Autocomplete for "decision by?" / awaiting: standard roles + any names this
     # project has already used (remembered per-project, deduped case-insensitively).
@@ -914,7 +925,7 @@ def api_set_current_stage(project_id):
     if not 0 <= stage <= 7:
         return jsonify(ok=False, error="Stage out of range."), 400
     db.execute("UPDATE projects SET current_stage=? WHERE id=?", (stage, project_id))
-    ev = log_event(db, project_id, "set current stage", None, "to %d · %s" % (stage, RIBA_STAGES[stage]))
+    ev = log_event(db, project_id, "set current stage", None, "to %d · %s" % (stage, RIBA_STAGES[stage]), important=False)
     db.commit()
     return jsonify(ok=True, current_stage=stage, event=ev)
 
@@ -1059,7 +1070,8 @@ def api_confirm_decision(task_id):
     pos = next_position(db, row["project_id"], row["stage"], "done", row["section_id"])
     db.execute("UPDATE tasks SET outcome=?, decided_at=?, status='done', position=? WHERE id=?",
                (text, when, pos, task_id))
-    ev = log_event(db, row["project_id"], "decided", row["title"], "→ " + text, task_id=task_id)
+    ev = log_event(db, row["project_id"], "decided", row["title"], "→ " + text,
+                   task_id=task_id, actor=row["awaiting_on"])   # credited to the decision-maker
     db.commit()
     return jsonify(ok=True, outcome=text, option=option, status="done", event=ev)
 
@@ -1131,7 +1143,7 @@ def api_restore_task(project_id):
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (project_id, stage, title, status, ttype, urgent, awaiting_on, pos, section_id),
     )
-    ev = log_event(db, project_id, "restored", title, task_id=cur.lastrowid)
+    ev = log_event(db, project_id, "restored", title, task_id=cur.lastrowid, important=False)
     db.commit()
     row = db.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone()
     return jsonify(ok=True, task=task_to_dict(row), event=ev)
@@ -1352,7 +1364,7 @@ def api_delete_task(task_id):
         return jsonify(ok=False, error="No such task."), 404
     deleted = task_to_dict(row)
     deleted["awaiting_on"] = row["awaiting_on"] or ""
-    ev = log_event(db, row["project_id"], "deleted", row["title"], task_id=task_id)
+    ev = log_event(db, row["project_id"], "deleted", row["title"], task_id=task_id, important=False)
     # Nesting arrives next increment; for now a task has no children.
     db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
     db.commit()

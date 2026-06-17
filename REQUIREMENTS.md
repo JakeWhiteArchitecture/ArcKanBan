@@ -161,10 +161,11 @@ An optional grouping between a stage and its tasks: **Stage → Section → Task
 
 ### 3.12 Activity log & undo
 - Every change is recorded as an **event** (person → action → task/section) in an `events` table — the **full audit trail**, *nothing is dropped*. Each event carries an `important` flag splitting the log in two:
-  - **Visible drawer (curated):** only milestones — **task added · completed · deleted · restored**, plus **project created** and **stage advanced**. The right-hand pop-out ("Log" in the titleblock) shows just these, newest at the bottom: *"JW completed “Measured survey” · 15 Jun 2026 · 14:32"*. Minor moves (e.g. *Backlog → Upcoming*), section/type tweaks, urgent flips and scope edits are **not** shown here.
-  - **Full log (audit):** every event including the minor moves, exported as JSON via **More → Export full log** (`/projects/<id>/activity.json`). This is the trail intended to be handed to an agent later for practice automation.
+  - **Visible drawer (curated narrative):** a tight, readable story — only **a task being added** (anywhere), **status set to Awaiting or Done**, and **a decision being made**. Everything else (Backlog/Upcoming/To Do/In Progress moves, section/type tweaks, urgent flips, deletes, restores, scope/stage edits, project created) is **not** shown. The verb filter is applied at query time, so it also tidies events logged before these rules.
+  - **Decisions are credited to the decision-maker:** a confirmed decision reads *"Client decided “Wall colour” → Red"* (actor = the "decision by?" assignee), not the practitioner.
+  - **Full log (audit):** every event including the minor moves, exported as JSON via **More → Export full log** (`/projects/<uid>/activity.json`). This is the trail intended to be handed to an agent later for practice automation.
   - **Done-then-undone within 10 min:** the "completed" line is **retracted from the visible drawer** (kept in the full log), so a quick mis-tick leaves no false milestone.
-- Events are **structured** (actor, verb, target, detail, timestamp, important) so they can feed local `.md` / JSON files later. Actor is single-user for now (`ARCKANBAN_ACTOR`, default "JW").
+- Events are **structured** (actor, verb, target, detail, timestamp, important) so they can feed local `.md` / JSON files later. Actor defaults to `ARCKANBAN_ACTOR` ("JW"); decision events use the assignee.
 - **Create-task widget:** a **＋ Task** popover in the titleblock controls — name, type, section, and **status (defaults to To Do, but settable on creation)** — so a task can be born straight into Awaiting/Backlog/etc. **Save** keeps the popover open for rapid multi-add; **Save & close** files the last one and dismisses it.
 - **Right-click** a card → assign it to a section / break it out to General. **Right-click empty space** → Actions → **Undo {last action}** (covers move, urgent, type, add, delete-via-restore, section reassignment, bulk section move). Single most-recent action for now; more actions / multi-level later.
 
@@ -453,6 +454,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 
 Tracked so nothing is lost; ordered roughly by priority.
 
+> **Recently shipped (v0.17):** the curated drawer is trimmed to a readable narrative (task added · status→Awaiting/Done · decision made — everything else full-log-only, §3.12), with **decisions credited to the decision-maker** ("Client decided … → Red"); the **auto-hide dock retracts much more slowly** with a long pause (brush it and it stays open); and the **decision register returns you to the board stage you were viewing** (back-link carries `?stage`).
+>
 > **Recently shipped (v0.16):** an **In Progress** column (now six: Backlog · Upcoming · To Do · In Progress · Awaiting · Done); decision **reopen ⟺ status** (reopen → To Do; drag/step out of Done auto-unconfirms); **uid-based project URLs** (`/projects/<hex>`, stable across delete/recreate) with the durable uid also carried in the decision-register export.
 >
 > **Recently shipped (v0.15):** **decision automation** — a decision can't be confirmed until its “decision by?” assignee is set, and confirming **stamps the date + auto-moves it to Done** (§3.13); a styled **Decision register page** (Decisions button, top-right) with #/description/assignee/outcome/date and an **Add task** that links spawned tasks back to the decision (`from_decision_id`, logged); and an **identity capsule** (top-left) that keeps the job no. + name visible while the auto-hide header is tucked away.
