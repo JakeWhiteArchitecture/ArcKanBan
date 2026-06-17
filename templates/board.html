@@ -37,6 +37,7 @@
   <span class="tb-urgent" id="tb-urgent" hidden></span>
 
   <div class="tb-right">
+    <button type="button" class="tb-btn tb-search-btn" data-action="toggle-search" aria-label="Search tasks" title="Search tasks (press /)">⌕</button>
     <button type="button" class="tb-btn tb-btn-accent" data-action="create-open" title="New task">＋ Task</button>
     <button type="button" class="tb-btn" data-action="toggle-sections" title="Sections of work">Sections</button>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
@@ -112,6 +113,11 @@
     <input type="text" name="title" placeholder="+ New section of work…" autocomplete="off" aria-label="New section">
     <button type="submit" class="btn-quiet btn-sm">Add</button>
   </form>
+</div>
+
+<div class="tb-pop search-pop" id="search-pop" hidden aria-label="Search tasks">
+  <input type="text" class="search-input" placeholder="Search tasks across all stages…" autocomplete="off" aria-label="Search tasks">
+  <div class="search-results" aria-live="polite"></div>
 </div>
 
 <datalist id="assignee-suggestions">

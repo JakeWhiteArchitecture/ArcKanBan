@@ -454,6 +454,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 
 Tracked so nothing is lost; ordered roughly by priority.
 
+> **Recently shipped (v0.18):** **task search** — a ⌕ button (and the `/` shortcut) opens a popover that finds tasks by title across every stage; results show stage · section · status, and clicking (or Enter) jumps to the card (paging to its stage, expanding its section, and flashing it). Tasks only.
+>
 > **Recently shipped (v0.17):** the curated drawer is trimmed to a readable narrative (task added · status→Awaiting/Done · decision made — everything else full-log-only, §3.12), with **decisions credited to the decision-maker** ("Client decided … → Red"); the **auto-hide dock retracts much more slowly** with a long pause (brush it and it stays open); and the **decision register returns you to the board stage you were viewing** (back-link carries `?stage`).
 >
 > **Recently shipped (v0.16):** an **In Progress** column (now six: Backlog · Upcoming · To Do · In Progress · Awaiting · Done); decision **reopen ⟺ status** (reopen → To Do; drag/step out of Done auto-unconfirms); **uid-based project URLs** (`/projects/<hex>`, stable across delete/recreate) with the durable uid also carried in the decision-register export.

@@ -697,7 +697,7 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   // ---- titleblock popovers (filters / more / scope / create) ------------
-  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop"];
+  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop", "search-pop"];
   function closePops(except) {
     POP_IDS.forEach(function (id) { if (id === except) return; var el = document.getElementById(id); if (el) el.hidden = true; });
   }
@@ -706,6 +706,49 @@
     var willOpen = el.hidden; closePops(id); el.hidden = !willOpen;
   }
   function anyPopOpen() { return POP_IDS.some(function (id) { var el = document.getElementById(id); return el && !el.hidden; }); }
+
+  // ---- task search (tasks only, across every stage) ---------------------
+  function openSearch() {
+    var pop = document.getElementById("search-pop"); if (!pop) return;
+    closePops("search-pop"); pop.hidden = false;
+    var inp = pop.querySelector(".search-input"); inp.value = ""; inp.focus();
+    renderSearch("");
+  }
+  function renderSearch(q) {
+    var pop = document.getElementById("search-pop"); if (!pop) return;
+    var box = pop.querySelector(".search-results"); box.innerHTML = "";
+    q = (q || "").trim().toLowerCase();
+    if (!q) { box.innerHTML = '<div class="search-hint">Type to find a task across all stages…</div>'; return; }
+    var matches = [].slice.call(board.querySelectorAll(".card")).filter(function (card) {
+      var t = card.querySelector(".task-title");
+      return t && t.textContent.trim().toLowerCase().indexOf(q) >= 0;
+    });
+    if (!matches.length) { box.innerHTML = '<div class="search-hint">No tasks match.</div>'; return; }
+    matches.slice(0, 40).forEach(function (card) {
+      var stage = Number(card.dataset.stage);
+      var sec = card.dataset.section ? sectionTitle(stageOf(card), card.dataset.section) : "General";
+      var row = document.createElement("button");
+      row.type = "button"; row.className = "search-result type-" + (card.dataset.type || "recommended");
+      row.dataset.action = "search-jump"; row.dataset.taskId = card.dataset.taskId;
+      var title = document.createElement("span"); title.className = "search-result-title";
+      title.textContent = card.querySelector(".task-title").textContent.trim();
+      var meta = document.createElement("span"); meta.className = "search-result-meta";
+      meta.textContent = "Stage " + stage + " · " + RIBA[stage] + " · " + sec + " · " + (STATUS_LABELS[card.dataset.status] || card.dataset.status);
+      row.appendChild(title); row.appendChild(meta); box.appendChild(row);
+    });
+    if (matches.length > 40) box.insertAdjacentHTML("beforeend", '<div class="search-hint">…and ' + (matches.length - 40) + ' more — keep typing</div>');
+  }
+  function jumpToTask(id) {
+    var card = board.querySelector('.card[data-task-id="' + id + '"]'); if (!card) return;
+    closePops();
+    var collapsed = card.closest(".bubble.is-collapsed"); if (collapsed) collapsed.classList.remove("is-collapsed");
+    var stage = Number(card.dataset.stage); lastActive = stage; gotoStage(stage);
+    setTimeout(function () {
+      card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center", inline: "nearest" });
+      card.classList.remove("is-found"); void card.offsetWidth; card.classList.add("is-found");
+      setTimeout(function () { card.classList.remove("is-found"); }, 1700);
+    }, reduceMotion ? 0 : 340);
+  }
 
   // ---- create-task widget -----------------------------------------------
   function openCreate() {
@@ -954,6 +997,8 @@
         case "create-close": createSave(true); break;
         case "toggle-filters": togglePop("filter-pop"); break;
         case "toggle-more": togglePop("more-pop"); break;
+        case "toggle-search": { var spp = document.getElementById("search-pop"); if (spp.hidden) openSearch(); else spp.hidden = true; break; }
+        case "search-jump": jumpToTask(el.dataset.taskId); break;
         case "toggle-sections": { var secp = document.getElementById("sections-pop"); if (secp.hidden) openSections(); else secp.hidden = true; break; }
         case "dock-peek": if (document.body.classList.contains("dock-open")) document.body.classList.remove("dock-open"); else dockReveal(); break;
         case "enable-stage": { var set = enabledStages.slice(); var es = Number(el.dataset.stage); if (set.indexOf(es) < 0) set.push(es); saveScope(set); break; }
@@ -975,6 +1020,7 @@
     else if (!card) clearSelection();
   });
   document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); });
+  document.addEventListener("input", function (e) { if (e.target.classList.contains("search-input")) renderSearch(e.target.value); });
   document.addEventListener("contextmenu", function (e) {
     var card = e.target.closest(".card");
     if (card) { e.preventDefault(); openSectionMenu(card, e.clientX, e.clientY); return; }
@@ -984,7 +1030,7 @@
   document.addEventListener("click", function (e) {
     if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu();
     var inPop = e.target.closest(".tb-pop");
-    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="create-open"], [data-action="toggle-sections"]');
+    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="create-open"], [data-action="toggle-sections"], [data-action="toggle-search"]');
     if (!inPop && !onTrigger) closePops();
     if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop")) dockHideSoon();
   });
@@ -994,6 +1040,11 @@
   });
   document.addEventListener("keydown", function (e) {
     var t = e.target;
+    if (t.classList && t.classList.contains("search-input")) {   // typing in the search box
+      if (e.key === "Enter") { var f = document.querySelector("#search-pop .search-result"); if (f) { e.preventDefault(); jumpToTask(f.dataset.taskId); } }
+      return;   // let "/" etc. type normally here
+    }
+    if (e.key === "/" && !t.matches("input, select, textarea, [contenteditable]")) { e.preventDefault(); openSearch(); return; }
     if (e.key === "Enter" || e.key === " ") {
       if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .sec-row-name")) { e.preventDefault(); t.click(); }
       return;
