@@ -58,6 +58,7 @@ Templates do the structural work: a template is a set of stages each with a stan
 - A project records its **current RIBA stage** (the "you are here" pointer).
 - Projects are listed on the home register, **newest first** (`ORDER BY id DESC` — avoids relying on text-date sorting), each showing job no., name, a mini stage spine, and current stage.
 - **Project-level management lives on the register** (not the board's ⋯ menu): each project card carries **Delete** (with confirmation; explicit route cascade + `PRAGMA foreign_keys = ON`, so it cannot silently no-op) and a **Scope** popover. The board's ⋯ More menu now holds only the export actions (Save as template, Export full log).
+- **Stable URLs:** page URLs address a project by its short random-hex **`uid`** (6 hex chars, e.g. `/projects/30fa25`), not the reusable integer id — so a link survives a project being deleted and another created (the int id could be reused). The uid is assigned with a uniqueness check (retried on the rare clash), so the short length never collides. Internal API calls still use the id (not user-visible); sections/tasks keep a long uid for the share/merge loop.
 - A project has an **appointment scope** — the subset of RIBA stages it covers. Out-of-scope stages are **disabled**: greyed in the spine, skipped by paging, and shown as an "outside the appointment scope" placeholder (their tasks are retained, just hidden, until re-enabled). The **current stage always stays in scope**. Default: all eight. Edited via the **Scope** popover on the register card (`projects.stages` — CSV of enabled indices; NULL = all); a disabled-stage placeholder on the board still offers a one-click "Add to scope".
 
 ### 3.2 Templates
@@ -105,7 +106,7 @@ The eight stages of the RIBA Plan of Work 2020, fixed:
 - Delete a task.
 
 ### 3.5 Per-stage Kanban
-- Each stage shows the five columns: **Backlog · Upcoming · To Do · Awaiting · Done**.
+- Each stage shows the six columns: **Backlog · Upcoming · To Do · In Progress · Awaiting · Done** (In Progress = actively being worked, between To Do and Awaiting).
 - The collapsed summary shows live counts per status (e.g. *2 upcoming · 3 to do · 2 awaiting · 4 done*) plus a separate **redline urgent tally** (e.g. *· 1 urgent*) when any top-level card is flagged — urgency is orthogonal, so it is counted separately, not inside a status. All counts are **top-level cards only** (children excluded). Zero-count pips may be hidden to keep the summary clean.
 - The board **pages horizontally** — one stage at a time fills the screen; on load it opens on the **current stage**. Navigate by the floating ‹ › arrows, the spine, swipe, or ←/→ keys.
 
@@ -170,9 +171,9 @@ An optional grouping between a stage and its tasks: **Stage → Section → Task
 ### 3.13 Decisions & the decision register
 - A **Decision** task (one of the four types) carries, under its **decision-by** assignee: a list of candidate **options** and a single confirmed **outcome**.
 - **Add options** inline on the card ("+ option", keep typing to add several). Options persist in a `decision_options` table.
-- **Confirm a choice** by the ✓ on an option, or via **right-click → Confirm decision** (lists the options + **Other…**). Decisions rarely land on a listed option, so **Other…** lets you type the real outcome — which is also recorded as an option, so the register shows the chosen item. The confirmed outcome shows as a green **✓ Decided** banner; it can be **reopened** (cleared).
-- Confirming logs a **curated milestone** (*"JW decided “Choose feature wall colour” → RAL 9010"*). Confirming is decoupled from status (you can confirm without moving to Done).
-- The **decision register** is the source of truth for the practice's decisions: **More → Decision register** (and the card Config) exports `/projects/<id>/decisions.json` — every decision with its stage, decision-by, options, status and confirmed outcome.
+- **Confirm a choice** by the ✓ on an option, or via **right-click → Confirm decision** (lists the options + **Other…** once there's more than one). Decisions rarely land on a listed option, so **Other…** lets you type the real outcome — which is also recorded as an option, so the register shows the chosen item. The confirmed outcome shows as a green **✓ Decided** banner; it can be **reopened** (cleared).
+- **Automation:** options can be added before a decision-maker is set, **but a decision cannot be confirmed until the “decision by?” assignee is set**. On confirming, the decision is **stamped with the date and auto-moved to Done**. Confirmed ⟺ Done: **reopening a decision sends it back to To Do**, and **dragging/stepping a decision out of Done auto-unconfirms it** (outcome + date cleared). Confirming logs a **curated milestone** (*"JW decided “Choose feature wall colour” → RAL 9010"*).
+- The **decision register** is a second view of each project (**Decisions** button, top-right of the board → `/projects/<id>/decisions`): a styled table of every decision — **# · description · decision-by · outcome · decided date · stage** — with an **Add task** action per row that spawns a task **linked back to the decision** (`from_decision_id`, logged), so the provenance of work is recoverable later (process analysis / AI). Downloadable as JSON (`/projects/<id>/decisions.json`).
 
 ---
 
@@ -452,6 +453,12 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 
 Tracked so nothing is lost; ordered roughly by priority.
 
+> **Recently shipped (v0.16):** an **In Progress** column (now six: Backlog · Upcoming · To Do · In Progress · Awaiting · Done); decision **reopen ⟺ status** (reopen → To Do; drag/step out of Done auto-unconfirms); **uid-based project URLs** (`/projects/<hex>`, stable across delete/recreate) with the durable uid also carried in the decision-register export.
+>
+> **Recently shipped (v0.15):** **decision automation** — a decision can't be confirmed until its “decision by?” assignee is set, and confirming **stamps the date + auto-moves it to Done** (§3.13); a styled **Decision register page** (Decisions button, top-right) with #/description/assignee/outcome/date and an **Add task** that links spawned tasks back to the decision (`from_decision_id`, logged); and an **identity capsule** (top-left) that keeps the job no. + name visible while the auto-hide header is tucked away.
+>
+> **Recently shipped (v0.14):** **vendored fonts** — Hanken Grotesk (variable) + IBM Plex Mono woff2 served from `static/fonts/` with OFL.txt (no CDN); the **dormant swimlane layout** code/CSS/template removed (the board is status-primary only now); the auto-hide dock **retracts slowly with a longer pause** so the header stops jumping; **assignee autocomplete** on "decision by?"/awaiting (standard roles + per-project remembered names); and a new project **opens on the first populated stage** so a template's board never looks empty.
+>
 > **Recently shipped (v0.13):** the inline "Add a task" form was removed — the **＋ Task** header widget is the single add path; the auto-hide dock indicator is now a **fine full-width rail that merges into the centred tab** (one hover zone) that slides the header down on hover.
 >
 > **Recently shipped (v0.12):** **Decisions & the decision register** (§3.13) — decision tasks gather **options** and a confirmed **outcome** (✓ on an option or right-click → Confirm → Other…), logged as a curated "decided" milestone, exported via **Decision register** (`/projects/<id>/decisions.json`); and the register cards now lead with a **Launch** button + a **⚙ Config** popover (appointment scope, exports, and a tucked-away Delete) — the bare Delete button is gone.
@@ -472,9 +479,9 @@ Tracked so nothing is lost; ordered roughly by priority.
 - **Import + merge** — import a returned changeset, match by **`uid`**, idempotent, behind a **review list** (Apply all / Cancel); log each accepted change as an event.
 
 ### Design & polish
-- **Vendor the fonts** (Hanken Grotesk + IBM Plex Mono woff2; currently a system stack).
 - **Background** — further morphing/contouring "orb" work (user-led). Live base is the WebGL shader in `static/bg.js` (multi-hue, domain-warped fbm) with the `body::before/::after` CSS glow as the no-WebGL fallback.
-- Optionally **remove the dormant swimlane** layout code (retired from the UI in v0.8).
+- ~~Vendor the fonts~~ **done (v0.14)** — Hanken Grotesk + IBM Plex Mono woff2 in `static/fonts/` (SIL OFL).
+- ~~Remove the dormant swimlane layout code~~ **done (v0.14)**.
 
 ### Templates (Phase 5)
 - Author more templates (New Build, Loft Conversion, Garage Conversion, Listed/Conservation); optional in-app **"save current project as template."**

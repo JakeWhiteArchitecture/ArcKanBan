@@ -50,11 +50,12 @@ RIBA_STAGES = [
 ]
 
 # Status columns, left to right. Order matters: the ‹ › steppers walk this list.
-STATUSES = ["backlog", "upcoming", "todo", "awaiting", "done"]
+STATUSES = ["backlog", "upcoming", "todo", "inprogress", "awaiting", "done"]
 STATUS_LABELS = {
     "backlog": "Backlog",
     "upcoming": "Upcoming",
     "todo": "To Do",
+    "inprogress": "In Progress",
     "awaiting": "Awaiting",
     "done": "Done",
 }
@@ -63,6 +64,11 @@ STATUS_LABELS = {
 # who/what) shown in any column; 'statutory' is the legal-teeth one (redline).
 TYPES = ["statutory", "recommended", "process", "decision"]
 TYPE_LABELS = {"statutory": "Statutory", "recommended": "Recommended", "process": "Process", "decision": "Decision"}
+
+# Standard responsible parties offered as autocomplete for a task's "decision
+# by?" / awaiting field. Anything else typed is remembered per-project (derived
+# from that project's existing awaiting_on values).
+STANDARD_ASSIGNEES = ["Client", "Structural Engineer", "M&E Consultant", "BRPD", "BRPC"]
 
 # The person credited in the activity log. Single-user for now; override with
 # ARCKANBAN_ACTOR. (Will become per-user when the .md-file linking lands.)
@@ -178,15 +184,30 @@ def init_db():
     # Decision tasks carry a confirmed outcome (the decision register's source of
     # truth); their candidate options live in the decision_options table.
     _ensure_column(db, "tasks", "outcome", "outcome TEXT")
-    for tbl in ("projects", "sections", "tasks"):
+    # When a decision was confirmed, and the link from a spawned task back to the
+    # decision it came from (feeds the decision register + the audit trail).
+    _ensure_column(db, "tasks", "decided_at", "decided_at TEXT")
+    _ensure_column(db, "tasks", "from_decision_id", "from_decision_id INTEGER REFERENCES tasks(id)")
+    # Projects use a short (6-hex) URL-friendly uid; sections/tasks keep a long
+    # one (not user-facing). Project uids are assigned with a uniqueness check,
+    # so even the short length never collides; this also normalises any earlier
+    # long project uids down to 6 hex (a one-time pass; stable thereafter).
+    for r in db.execute("SELECT id FROM projects WHERE uid IS NULL OR uid='' OR length(uid)<>6").fetchall():
+        while True:
+            u = os.urandom(3).hex()
+            if db.execute("SELECT 1 FROM projects WHERE uid=?", (u,)).fetchone() is None:
+                break
+        db.execute("UPDATE projects SET uid=? WHERE id=?", (u, r[0]))
+    for tbl in ("sections", "tasks"):
         db.execute("UPDATE %s SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL OR uid = ''" % tbl)
     db.executescript(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_uid ON projects(uid);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_sections_uid ON sections(uid);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_uid ON tasks(uid);
-        CREATE TRIGGER IF NOT EXISTS projects_uid AFTER INSERT ON projects WHEN NEW.uid IS NULL
-          BEGIN UPDATE projects SET uid = lower(hex(randomblob(16))) WHERE id = NEW.id; END;
+        DROP TRIGGER IF EXISTS projects_uid;
+        CREATE TRIGGER projects_uid AFTER INSERT ON projects WHEN NEW.uid IS NULL
+          BEGIN UPDATE projects SET uid = lower(hex(randomblob(3))) WHERE id = NEW.id; END;
         CREATE TRIGGER IF NOT EXISTS sections_uid AFTER INSERT ON sections WHEN NEW.uid IS NULL
           BEGIN UPDATE sections SET uid = lower(hex(randomblob(16))) WHERE id = NEW.id; END;
         CREATE TRIGGER IF NOT EXISTS tasks_uid AFTER INSERT ON tasks WHEN NEW.uid IS NULL
@@ -296,6 +317,16 @@ def sanitize_template(raw, name):
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def fmt_day(iso):
+    """Format an ISO timestamp as a short date (for the decision register)."""
+    if not iso:
+        return ""
+    try:
+        return datetime.fromisoformat(iso).strftime("%d %b %Y")
+    except (ValueError, TypeError):
+        return iso
 
 
 def format_event(e):
@@ -451,30 +482,30 @@ def get_project_or_404(db, project_id):
     return row
 
 
-def build_lane(section_id, title, stage_rows):
-    """One swimlane: a section's (or the loose 'General' lane's) status columns."""
-    columns = {s: [] for s in STATUSES}
-    urgent = done = total = 0
-    for r in stage_rows:
-        if r["section_id"] != section_id:
-            continue
-        columns[r["status"]].append(task_to_dict(r))
-        total += 1
-        if r["urgent"]:
-            urgent += 1
-        if r["status"] == "done":
-            done += 1
-    return {
-        "id": section_id,
-        "title": title,
-        "columns": columns,
-        "counts": {"urgent": urgent, "done_n": done, "total": total},
-    }
+def get_project_by_uid_or_404(db, uid):
+    """Look up a project by its stable hex uid — user-facing page URLs use this
+    (not the reusable integer id) so a link survives delete + recreate."""
+    row = db.execute("SELECT * FROM projects WHERE uid=?", (uid,)).fetchone()
+    if row is None:
+        from werkzeug.exceptions import NotFound
+
+        raise NotFound()
+    return row
+
+
+def unique_project_uid(db):
+    """A short (6-hex) URL-friendly project uid, retried until unique — so the
+    short length never causes a collision even over a long-running practice."""
+    while True:
+        u = os.urandom(3).hex()
+        if db.execute("SELECT 1 FROM projects WHERE uid=?", (u,)).fetchone() is None:
+            return u
 
 
 def build_stages(db, project_id):
-    """Build both layouts per stage: section swimlanes AND status-primary
-    columns-with-section-bubbles. The chosen layout is picked in the template."""
+    """Build the status-primary layout per stage: the five status columns, each
+    grouping cards into section bubbles + a loose 'General' area, with a
+    per-section roll-up and the stage's status/urgent counts."""
     sections = db.execute(
         "SELECT * FROM sections WHERE project_id=? ORDER BY stage, position, id",
         (project_id,),
@@ -493,11 +524,7 @@ def build_stages(db, project_id):
         stage_rows = [r for r in rows if r["stage"] == idx]
         secs = by_stage.get(idx, [])
 
-        # Swimlane layout: section lanes (+ loose 'General'), each with 4 columns.
-        lanes = [build_lane(s["id"], s["title"], stage_rows) for s in secs]
-        lanes.append(build_lane(None, None, stage_rows))
-
-        # Grouped layout: 4 status columns, each grouping cards into section bubbles.
+        # Status columns, each grouping cards into section bubbles + a loose area.
         pos_of = {s["id"]: i for i, s in enumerate(secs)}
         grouped = {}
         for st in STATUSES:
@@ -513,7 +540,7 @@ def build_stages(db, project_id):
             grouped[st] = {"bubbles": bubbles, "loose": loose,
                            "count": len(loose) + sum(len(b["tasks"]) for b in bubbles)}
 
-        # Section meta (for the grouped section bar): per-section roll-up.
+        # Section meta (for the Sections popup registry): per-section roll-up.
         sec_meta = []
         for i, s in enumerate(secs):
             st_rows = [r for r in stage_rows if r["section_id"] == s["id"]]
@@ -521,19 +548,11 @@ def build_stages(db, project_id):
                              "total": len(st_rows),
                              "done": sum(1 for r in st_rows if r["status"] == "done")})
 
-        counts = {st: sum(len(l["columns"][st]) for l in lanes) for st in STATUSES}
-        counts["urgent"] = sum(l["counts"]["urgent"] for l in lanes)
-        stages.append({"idx": idx, "name": name, "lanes": lanes, "grouped": grouped,
+        counts = {st: grouped[st]["count"] for st in STATUSES}
+        counts["urgent"] = sum(1 for r in stage_rows if r["urgent"])
+        stages.append({"idx": idx, "name": name, "grouped": grouped,
                        "sections": sec_meta, "counts": counts})
     return stages
-
-
-def render_lane(lane, stage_idx):
-    """Render one swimlane partial (used when a section is created)."""
-    return render_template(
-        "_lane.html", lane=lane, stage_idx=stage_idx,
-        status_labels=STATUS_LABELS, type_labels=TYPE_LABELS, statuses=STATUSES,
-    )
 
 
 def build_template_export(db, project_id, name="Untitled template"):
@@ -590,6 +609,7 @@ def index():
         projects.append(
             {
                 "id": r["id"],
+                "uid": r["uid"],
                 "number": r["number"] or "",
                 "name": r["name"],
                 "current_stage": r["current_stage"],
@@ -612,10 +632,11 @@ def create_project():
         flash("A project needs a name.")
         return redirect(url_for("index"))
 
+    puid = unique_project_uid(db)
     cur = db.execute(
-        "INSERT INTO projects (number, name, template, current_stage, created_at) "
-        "VALUES (?, ?, ?, 0, ?)",
-        (number, name, template_file or None, now_iso()),
+        "INSERT INTO projects (number, name, template, current_stage, created_at, uid) "
+        "VALUES (?, ?, ?, 0, ?, ?)",
+        (number, name, template_file or None, now_iso(), puid),
     )
     project_id = cur.lastrowid
 
@@ -652,13 +673,14 @@ def create_project():
                     (project_id, stage, t["title"], t["status"], t["type"], pos, section_id),
                 )
     db.commit()
-    return redirect(url_for("board", project_id=project_id))
+    return redirect(url_for("board", project_uid=puid))
 
 
-@app.route("/projects/<int:project_id>")
-def board(project_id):
+@app.route("/projects/<project_uid>")
+def board(project_uid):
     db = get_db()
-    p = get_project_or_404(db, project_id)
+    p = get_project_by_uid_or_404(db, project_uid)
+    project_id = p["id"]
     layout = "grouped"  # status-primary is the only layout
     en = enabled_stages(p)
     stages = build_stages(db, project_id)
@@ -667,10 +689,18 @@ def board(project_id):
     ev_rows = db.execute(
         "SELECT * FROM events WHERE project_id=? AND important=1 ORDER BY id DESC LIMIT 200", (project_id,)
     ).fetchall()
+    # Autocomplete for "decision by?" / awaiting: standard roles + any names this
+    # project has already used (remembered per-project, deduped case-insensitively).
+    used = [r["awaiting_on"] for r in db.execute(
+        "SELECT DISTINCT awaiting_on FROM tasks WHERE project_id=? AND awaiting_on IS NOT NULL "
+        "AND awaiting_on<>'' ORDER BY awaiting_on", (project_id,))]
+    _seen = {a.lower() for a in STANDARD_ASSIGNEES}
+    assignees = STANDARD_ASSIGNEES + [a for a in used if a.lower() not in _seen]
     resp = make_response(render_template(
         "board.html",
         project={
             "id": p["id"],
+            "uid": p["uid"],
             "number": p["number"] or "",
             "name": p["name"],
             "current_stage": p["current_stage"],
@@ -683,15 +713,16 @@ def board(project_id):
         events=[format_event(e) for e in reversed(ev_rows)],  # oldest→newest (latest at bottom)
         enabled=sorted(en),
         riba=RIBA_STAGES,
+        assignees=assignees,
     ))
     return resp
 
 
-@app.route("/projects/<int:project_id>/template.json")
-def export_template(project_id):
+@app.route("/projects/<project_uid>/template.json")
+def export_template(project_uid):
     """Download the project as a reusable template JSON (no names/people)."""
     db = get_db()
-    get_project_or_404(db, project_id)
+    project_id = get_project_by_uid_or_404(db, project_uid)["id"]
     data = build_template_export(db, project_id)
     resp = make_response(json.dumps(data, indent=2, ensure_ascii=False))
     resp.headers["Content-Type"] = "application/json"
@@ -699,13 +730,13 @@ def export_template(project_id):
     return resp
 
 
-@app.route("/projects/<int:project_id>/activity.json")
-def export_activity(project_id):
+@app.route("/projects/<project_uid>/activity.json")
+def export_activity(project_uid):
     """Download the FULL activity log — every event, including the minor moves
     (backlog→upcoming, section/type tweaks) hidden from the drawer. This is the
     audit trail meant to be handed to an agent later for practice automation."""
     db = get_db()
-    get_project_or_404(db, project_id)
+    project_id = get_project_by_uid_or_404(db, project_uid)["id"]
     rows = db.execute(
         "SELECT * FROM events WHERE project_id=? ORDER BY id ASC", (project_id,)
     ).fetchall()
@@ -725,44 +756,73 @@ def export_activity(project_id):
     return resp
 
 
-@app.route("/projects/<int:project_id>/decisions.json")
-def export_decisions(project_id):
-    """Download the decision register — every decision task with its options and
-    confirmed outcome. The source of truth for the practice's decision log."""
-    db = get_db()
-    get_project_or_404(db, project_id)
+def build_decisions(db, project_id):
+    """The decision register: every decision (numbered by creation order) with
+    its options, confirmed outcome + date, and the tasks spawned from it."""
     rows = db.execute(
-        "SELECT * FROM tasks WHERE project_id=? AND type='decision' ORDER BY stage, position, id",
+        "SELECT * FROM tasks WHERE project_id=? AND type='decision' ORDER BY id",
         (project_id,),
     ).fetchall()
-    decisions = []
-    for r in rows:
+    out = []
+    for i, r in enumerate(rows, start=1):
         opts = [o["text"] for o in db.execute(
             "SELECT text FROM decision_options WHERE task_id=? ORDER BY position, id", (r["id"],))]
-        decisions.append({
-            "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
-            "title": r["title"], "status": r["status"],
-            "decision_by": r["awaiting_on"] or "",
-            "options": opts,
-            "outcome": r["outcome"] or "",
-            "confirmed": bool(r["outcome"]),
+        linked = [{"id": t["id"], "title": t["title"], "status": t["status"], "stage": t["stage"]}
+                  for t in db.execute(
+                      "SELECT id, title, status, stage FROM tasks WHERE from_decision_id=? ORDER BY id", (r["id"],))]
+        out.append({
+            "n": i, "id": r["id"], "uid": r["uid"], "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
+            "title": r["title"], "status": r["status"], "assignee": r["awaiting_on"] or "",
+            "options": opts, "outcome": r["outcome"] or "", "confirmed": bool(r["outcome"]),
+            "decided_at": r["decided_at"] or "", "decided_day": fmt_day(r["decided_at"]),
+            "linked": linked,
         })
-    data = {"project_id": project_id, "exported_at": now_iso(),
+    return out
+
+
+@app.route("/projects/<project_uid>/decisions")
+def decisions_page(project_uid):
+    """The decision register, as a styled page (a second view of the project)."""
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    return render_template(
+        "decisions.html",
+        project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"]},
+        decisions=build_decisions(db, p["id"]), riba=RIBA_STAGES,
+    )
+
+
+@app.route("/projects/<project_uid>/decisions.json")
+def export_decisions(project_uid):
+    """Download the decision register — the source of truth for the practice's
+    decision log, with every decision's options, outcome, date and spawned tasks."""
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    project_id = p["id"]
+    decisions = build_decisions(db, project_id)
+    data = {"project_uid": p["uid"], "exported_at": now_iso(),
             "count": len(decisions), "confirmed": sum(1 for d in decisions if d["confirmed"]),
-            "decisions": decisions}
+            "decisions": [{
+                "number": d["n"], "uid": d["uid"], "stage": d["stage"], "stage_name": d["stage_name"],
+                "title": d["title"], "status": d["status"], "decision_by": d["assignee"],
+                "options": d["options"], "outcome": d["outcome"], "confirmed": d["confirmed"],
+                "decided_at": d["decided_at"],
+                "tasks_from_decision": [t["title"] for t in d["linked"]],
+            } for d in decisions]}
     resp = make_response(json.dumps(data, indent=2, ensure_ascii=False))
     resp.headers["Content-Type"] = "application/json"
     resp.headers["Content-Disposition"] = 'attachment; filename="arckanban-decisions.json"'
     return resp
 
 
-@app.route("/projects/<int:project_id>/scope", methods=["POST"])
-def set_scope(project_id):
+@app.route("/projects/<project_uid>/scope", methods=["POST"])
+def set_scope(project_uid):
     """Set a project's RIBA-stage appointment scope from the register page
     (form POST). The board's ⋯ menu no longer carries this — it lives here, with
     project-level management, on the exploration page."""
     db = get_db()
-    p = get_project_or_404(db, project_id)
+    p = get_project_by_uid_or_404(db, project_uid)
+    project_id = p["id"]
     try:
         stages = sorted({int(x) for x in request.form.getlist("stage") if 0 <= int(x) <= 7})
     except (TypeError, ValueError):
@@ -804,10 +864,10 @@ def upload_template():
     return jsonify(ok=True, file=fn, name=name)
 
 
-@app.route("/projects/<int:project_id>/delete", methods=["POST"])
-def delete_project(project_id):
+@app.route("/projects/<project_uid>/delete", methods=["POST"])
+def delete_project(project_uid):
     db = get_db()
-    get_project_or_404(db, project_id)
+    project_id = get_project_by_uid_or_404(db, project_uid)["id"]
     # Explicit deletes — don't rely solely on cascade (see REQUIREMENTS §3.1).
     db.execute("DELETE FROM tasks WHERE project_id=?", (project_id,))
     db.execute("DELETE FROM projects WHERE id=?", (project_id,))
@@ -976,13 +1036,15 @@ def api_delete_option(option_id):
 
 @app.route("/api/tasks/<int:task_id>/confirm", methods=["POST"])
 def api_confirm_decision(task_id):
-    """Confirm a decision's outcome (from an option or a typed 'other'). With
-    add_option set, the 'other' text is also recorded as an option so the
-    register shows the chosen item. Logged as a curated milestone ('decided')."""
+    """Confirm a decision's outcome (from an option or a typed 'other'). Requires
+    the decision-maker (awaiting_on) to be set first; on confirm the decision is
+    stamped with the date and auto-moved to Done. Logged as a curated milestone."""
     db = get_db()
     row, err = _decision_or_error(db, task_id)
     if err:
         return err
+    if not (row["awaiting_on"] or "").strip():
+        return jsonify(ok=False, error="Set the decision-maker (decision by?) before confirming."), 400
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     if not text:
@@ -992,10 +1054,14 @@ def api_confirm_decision(task_id):
         existing = db.execute("SELECT id, text FROM decision_options WHERE task_id=? AND text=?",
                               (task_id, text)).fetchone()
         option = {"id": existing["id"], "text": text} if existing else _add_option(db, task_id, text)
-    db.execute("UPDATE tasks SET outcome=? WHERE id=?", (text, task_id))
+    when = now_iso()
+    # Confirm + stamp + auto-move to Done (a decided decision is a done decision).
+    pos = next_position(db, row["project_id"], row["stage"], "done", row["section_id"])
+    db.execute("UPDATE tasks SET outcome=?, decided_at=?, status='done', position=? WHERE id=?",
+               (text, when, pos, task_id))
     ev = log_event(db, row["project_id"], "decided", row["title"], "→ " + text, task_id=task_id)
     db.commit()
-    return jsonify(ok=True, outcome=text, option=option, event=ev)
+    return jsonify(ok=True, outcome=text, option=option, status="done", event=ev)
 
 
 @app.route("/api/tasks/<int:task_id>/unconfirm", methods=["POST"])
@@ -1004,10 +1070,34 @@ def api_clear_decision(task_id):
     row, err = _decision_or_error(db, task_id)
     if err:
         return err
-    db.execute("UPDATE tasks SET outcome=NULL WHERE id=?", (task_id,))
+    pos = next_position(db, row["project_id"], row["stage"], "todo", row["section_id"])
+    db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL, status='todo', position=? WHERE id=?", (pos, task_id))
     ev = log_event(db, row["project_id"], "reopened decision", row["title"], task_id=task_id, important=False)
     db.commit()
-    return jsonify(ok=True, event=ev)
+    return jsonify(ok=True, status="todo", event=ev)
+
+
+@app.route("/api/decisions/<int:task_id>/tasks", methods=["POST"])
+def api_add_task_from_decision(task_id):
+    """Create a task that 'feeds from' a decision — linked via from_decision_id so
+    the connection is recorded (register + log) for later AI/process analysis."""
+    db = get_db()
+    dec = db.execute("SELECT * FROM tasks WHERE id=? AND type='decision'", (task_id,)).fetchone()
+    if dec is None:
+        return jsonify(ok=False, error="No such decision."), 404
+    title = ((request.get_json(silent=True) or {}).get("title") or "").strip()
+    if not title:
+        return jsonify(ok=False, error="A task needs a title."), 400
+    stage = dec["stage"]
+    pos = next_position(db, dec["project_id"], stage, "todo", None)
+    cur = db.execute(
+        "INSERT INTO tasks (project_id, stage, title, status, type, position, from_decision_id) "
+        "VALUES (?, ?, ?, 'todo', 'process', ?, ?)",
+        (dec["project_id"], stage, title, pos, task_id),
+    )
+    log_event(db, dec["project_id"], "added", title, "from decision “%s”" % dec["title"], task_id=cur.lastrowid)
+    db.commit()
+    return jsonify(ok=True, task={"id": cur.lastrowid, "title": title, "status": "todo", "stage": stage})
 
 
 @app.route("/api/projects/<int:project_id>/tasks/restore", methods=["POST"])
@@ -1099,6 +1189,9 @@ def api_update_task(task_id):
     if reposition:
         fields.append("position=?")
         values.append(next_position(db, row["project_id"], row["stage"], new_status, new_section))
+    # A decision dragged/stepped out of Done is no longer decided — unconfirm it.
+    if row["type"] == "decision" and row["status"] == "done" and new_status != "done":
+        fields.append("outcome=NULL"); fields.append("decided_at=NULL")
 
     if not fields:
         return jsonify(ok=True)
@@ -1137,6 +1230,9 @@ def api_move_task(task_id):
         index = 0
 
     db.execute("UPDATE tasks SET status=?, section_id=? WHERE id=?", (status, section_id, task_id))
+    # A decision dragged out of Done is no longer decided — unconfirm it.
+    if row["type"] == "decision" and row["status"] == "done" and status != "done":
+        db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL WHERE id=?", (task_id,))
     siblings = [r["id"] for r in db.execute(
         """SELECT id FROM tasks WHERE project_id=? AND stage=? AND status=? AND section_id IS ?
            AND parent_id IS NULL AND id<>? ORDER BY position, id""",
@@ -1184,9 +1280,7 @@ def api_add_section(project_id):
     )
     ev = log_event(db, project_id, "created section", title, important=False)
     db.commit()
-    lane = build_lane(cur.lastrowid, title, [])
-    return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "title": title},
-                   html=render_lane(lane, stage), event=ev)
+    return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "title": title}, event=ev)
 
 
 @app.route("/api/sections/<int:section_id>", methods=["POST"])

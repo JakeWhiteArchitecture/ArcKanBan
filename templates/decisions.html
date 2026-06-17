@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Decisions — {{ project.number }} {{ project.name }}{% endblock %}
+{% block body_class %}page-decisions{% endblock %}
+
+{% block content %}
+<main class="register-page">
+  <header class="dr-head">
+    <div class="dr-id">
+      <a class="dr-back" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">‹ Board</a>
+      <h1 class="dr-title"><span class="dr-no">{{ project.number or 'no.' }}</span> {{ project.name }}</h1>
+      <span class="dr-sub">Decision register</span>
+    </div>
+    <a class="btn-quiet btn-sm" href="{{ url_for('export_decisions', project_uid=project.uid) }}" download
+       title="Download the register as JSON">Download JSON</a>
+  </header>
+
+  {% if decisions %}
+  <div class="dr-wrap">
+    <table class="dr-table">
+      <thead>
+        <tr>
+          <th class="dr-c-n">#</th>
+          <th class="dr-c-desc">Decision</th>
+          <th class="dr-c-by">Decision&nbsp;by</th>
+          <th class="dr-c-out">Outcome</th>
+          <th class="dr-c-date">Decided</th>
+          <th class="dr-c-stage">Stage</th>
+          <th class="dr-c-tasks">Tasks from this decision</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in decisions %}
+        <tr class="dr-row{% if d.confirmed %} is-decided{% endif %}" data-decision-id="{{ d.id }}">
+          <td class="dr-c-n">{{ '%03d'|format(d.n) }}</td>
+          <td class="dr-c-desc">{{ d.title }}</td>
+          <td class="dr-c-by">{% if d.assignee %}{{ d.assignee }}{% else %}<span class="dr-empty">— not set</span>{% endif %}</td>
+          <td class="dr-c-out">{% if d.outcome %}<span class="dr-outcome">✓ {{ d.outcome }}</span>{% else %}<span class="dr-pending">pending</span>{% endif %}</td>
+          <td class="dr-c-date">{{ d.decided_day or '—' }}</td>
+          <td class="dr-c-stage"><span class="dr-stage" style="--c: var(--riba-{{ d.stage }})">{{ d.stage }}</span> {{ d.stage_name }}</td>
+          <td class="dr-c-tasks">
+            <ul class="dr-linked">
+              {% for t in d.linked %}<li class="dr-linked-item">{{ t.title }}</li>{% endfor %}
+            </ul>
+            <form class="dr-addtask" data-decision-id="{{ d.id }}">
+              <input type="text" name="title" placeholder="+ task from this decision…" autocomplete="off" aria-label="New task from this decision">
+              <button type="submit" class="btn-quiet btn-sm">Add task</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No decisions yet — add a <strong>Decision</strong> task on the board and it'll appear here.</p>
+  {% endif %}
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='decisions.js') }}"></script>
+{% endblock %}
