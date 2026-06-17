@@ -452,6 +452,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 
 Tracked so nothing is lost; ordered roughly by priority.
 
+> **Recently shipped (v0.14):** **vendored fonts** — Hanken Grotesk (variable) + IBM Plex Mono woff2 served from `static/fonts/` with OFL.txt (no CDN); the **dormant swimlane layout** code/CSS/template removed (the board is status-primary only now); the auto-hide dock **retracts slowly with a longer pause** so the header stops jumping; **assignee autocomplete** on "decision by?"/awaiting (standard roles + per-project remembered names); and a new project **opens on the first populated stage** so a template's board never looks empty.
+>
 > **Recently shipped (v0.13):** the inline "Add a task" form was removed — the **＋ Task** header widget is the single add path; the auto-hide dock indicator is now a **fine full-width rail that merges into the centred tab** (one hover zone) that slides the header down on hover.
 >
 > **Recently shipped (v0.12):** **Decisions & the decision register** (§3.13) — decision tasks gather **options** and a confirmed **outcome** (✓ on an option or right-click → Confirm → Other…), logged as a curated "decided" milestone, exported via **Decision register** (`/projects/<id>/decisions.json`); and the register cards now lead with a **Launch** button + a **⚙ Config** popover (appointment scope, exports, and a tucked-away Delete) — the bare Delete button is gone.
@@ -472,9 +474,9 @@ Tracked so nothing is lost; ordered roughly by priority.
 - **Import + merge** — import a returned changeset, match by **`uid`**, idempotent, behind a **review list** (Apply all / Cancel); log each accepted change as an event.
 
 ### Design & polish
-- **Vendor the fonts** (Hanken Grotesk + IBM Plex Mono woff2; currently a system stack).
 - **Background** — further morphing/contouring "orb" work (user-led). Live base is the WebGL shader in `static/bg.js` (multi-hue, domain-warped fbm) with the `body::before/::after` CSS glow as the no-WebGL fallback.
-- Optionally **remove the dormant swimlane** layout code (retired from the UI in v0.8).
+- ~~Vendor the fonts~~ **done (v0.14)** — Hanken Grotesk + IBM Plex Mono woff2 in `static/fonts/` (SIL OFL).
+- ~~Remove the dormant swimlane layout code~~ **done (v0.14)**.
 
 ### Templates (Phase 5)
 - Author more templates (New Build, Loft Conversion, Garage Conversion, Listed/Conservation); optional in-app **"save current project as template."**

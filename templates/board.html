@@ -141,17 +141,7 @@
           </span>
         </div>
 
-        {% if layout == 'grouped' %}
-          {% include "_grouped.html" %}
-        {% else %}
-        <div class="lanes">
-          {% for lane in s.lanes %}{% with stage_idx = s.idx %}{% include "_lane.html" %}{% endwith %}{% endfor %}
-          <form class="add-section" data-action="add-section" data-stage="{{ s.idx }}">
-            <input type="text" name="title" placeholder="+ New section of work…" autocomplete="off">
-            <button type="submit" class="btn-quiet">Add section</button>
-          </form>
-        </div>
-        {% endif %}
+        {% include "_grouped.html" %}
         {% else %}
         <div class="stage-disabled">
           <span class="stage-num" style="--c: var(--riba-{{ s.idx }})">{{ s.idx }}</span>

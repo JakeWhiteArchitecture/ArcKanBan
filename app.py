@@ -456,30 +456,10 @@ def get_project_or_404(db, project_id):
     return row
 
 
-def build_lane(section_id, title, stage_rows):
-    """One swimlane: a section's (or the loose 'General' lane's) status columns."""
-    columns = {s: [] for s in STATUSES}
-    urgent = done = total = 0
-    for r in stage_rows:
-        if r["section_id"] != section_id:
-            continue
-        columns[r["status"]].append(task_to_dict(r))
-        total += 1
-        if r["urgent"]:
-            urgent += 1
-        if r["status"] == "done":
-            done += 1
-    return {
-        "id": section_id,
-        "title": title,
-        "columns": columns,
-        "counts": {"urgent": urgent, "done_n": done, "total": total},
-    }
-
-
 def build_stages(db, project_id):
-    """Build both layouts per stage: section swimlanes AND status-primary
-    columns-with-section-bubbles. The chosen layout is picked in the template."""
+    """Build the status-primary layout per stage: the five status columns, each
+    grouping cards into section bubbles + a loose 'General' area, with a
+    per-section roll-up and the stage's status/urgent counts."""
     sections = db.execute(
         "SELECT * FROM sections WHERE project_id=? ORDER BY stage, position, id",
         (project_id,),
@@ -498,11 +478,7 @@ def build_stages(db, project_id):
         stage_rows = [r for r in rows if r["stage"] == idx]
         secs = by_stage.get(idx, [])
 
-        # Swimlane layout: section lanes (+ loose 'General'), each with 4 columns.
-        lanes = [build_lane(s["id"], s["title"], stage_rows) for s in secs]
-        lanes.append(build_lane(None, None, stage_rows))
-
-        # Grouped layout: 4 status columns, each grouping cards into section bubbles.
+        # Status columns, each grouping cards into section bubbles + a loose area.
         pos_of = {s["id"]: i for i, s in enumerate(secs)}
         grouped = {}
         for st in STATUSES:
@@ -518,7 +494,7 @@ def build_stages(db, project_id):
             grouped[st] = {"bubbles": bubbles, "loose": loose,
                            "count": len(loose) + sum(len(b["tasks"]) for b in bubbles)}
 
-        # Section meta (for the grouped section bar): per-section roll-up.
+        # Section meta (for the Sections popup registry): per-section roll-up.
         sec_meta = []
         for i, s in enumerate(secs):
             st_rows = [r for r in stage_rows if r["section_id"] == s["id"]]
@@ -526,19 +502,11 @@ def build_stages(db, project_id):
                              "total": len(st_rows),
                              "done": sum(1 for r in st_rows if r["status"] == "done")})
 
-        counts = {st: sum(len(l["columns"][st]) for l in lanes) for st in STATUSES}
-        counts["urgent"] = sum(l["counts"]["urgent"] for l in lanes)
-        stages.append({"idx": idx, "name": name, "lanes": lanes, "grouped": grouped,
+        counts = {st: grouped[st]["count"] for st in STATUSES}
+        counts["urgent"] = sum(1 for r in stage_rows if r["urgent"])
+        stages.append({"idx": idx, "name": name, "grouped": grouped,
                        "sections": sec_meta, "counts": counts})
     return stages
-
-
-def render_lane(lane, stage_idx):
-    """Render one swimlane partial (used when a section is created)."""
-    return render_template(
-        "_lane.html", lane=lane, stage_idx=stage_idx,
-        status_labels=STATUS_LABELS, type_labels=TYPE_LABELS, statuses=STATUSES,
-    )
 
 
 def build_template_export(db, project_id, name="Untitled template"):
@@ -1197,9 +1165,7 @@ def api_add_section(project_id):
     )
     ev = log_event(db, project_id, "created section", title, important=False)
     db.commit()
-    lane = build_lane(cur.lastrowid, title, [])
-    return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "title": title},
-                   html=render_lane(lane, stage), event=ev)
+    return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "title": title}, event=ev)
 
 
 @app.route("/api/sections/<int:section_id>", methods=["POST"])

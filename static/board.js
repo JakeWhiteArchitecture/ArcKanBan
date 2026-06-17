@@ -1,11 +1,10 @@
 /* ArcKanban — board interactions.
-   Two layouts share this file (board.dataset.layout):
-     swimlane — section bands; drag across the section×status grid.
-     grouped  — status columns with section bubbles; drag changes status and
-                auto-regroups into the section's bubble; click a card to link
-                its section across columns; reassign section via the chip bar.
-   Horizontal stage paging throughout; status steppers as the click fallback.
-   Everything persists via small JSON endpoints, no reload. Nesting is next. */
+   Status-primary layout: five status columns, each grouping cards into section
+   bubbles + a loose area. Drag changes status and auto-regroups into the
+   section's bubble; click a card to link its section across columns; sections
+   are managed in the Sections popup. Horizontal stage paging throughout, with
+   status steppers as the click fallback. Decision tasks carry options + a
+   confirmed outcome. Everything persists via small JSON endpoints, no reload. */
 (function () {
   "use strict";
 
@@ -22,7 +21,6 @@
   var track = document.getElementById("stage-track");
   var projectId = Number(board.dataset.projectId);
   var currentStage = Number(board.dataset.currentStage);
-  var LAYOUT = board.dataset.layout || "swimlane";
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var enabledStages = (board.dataset.stages || "0,1,2,3,4,5,6,7").split(",").map(Number);
   function isEnabled(n) { return enabledStages.indexOf(Number(n)) >= 0; }
@@ -68,7 +66,6 @@
   async function undoMove(id, status, section) { var r = await api("/api/tasks/" + id, { status: status, section_id: section || null }); if (r) location.reload(); }
 
   function cardOf(el) { return el.closest(".card"); }
-  function laneOf(el) { return el.closest(".section-lane"); }
   function stageOf(el) { return el.closest(".stage"); }
   function colBodyOf(el) { return el.closest(".col-body"); }
   function stageHasCards(n) { var el = document.getElementById("stage-" + n); return !!(el && el.querySelector(".card")); }
@@ -115,19 +112,6 @@
   function colCards(scope, status) {
     return scope.querySelectorAll('.col-cards[data-status="' + status + '"] > .card').length;
   }
-  function recountLane(laneEl) {
-    if (!laneEl) return;
-    var total = 0, done = 0;
-    STATUSES.forEach(function (st) {
-      var n = colCards(laneEl, st);
-      var cc = laneEl.querySelector(".col-" + st + " .col-count"); if (cc) cc.textContent = n;
-      total += n; if (st === "done") done = n;
-    });
-    var urgent = laneEl.querySelectorAll(".card.is-urgent").length;
-    var roll = laneEl.querySelector(".lane-rollup");
-    if (roll) roll.innerHTML = total
-      ? (done + "/" + total + (urgent ? ' <span class="rollup-urgent">!' + urgent + "</span>" : "")) : "";
-  }
   function recountStagePips(stageEl) {
     var html = "";
     STATUSES.forEach(function (st) {
@@ -146,25 +130,21 @@
   }
   function recountStageFull(stageEl) {
     if (!stageEl) return;
-    if (LAYOUT === "grouped") {
-      stageEl.querySelectorAll(".gcolumns .column").forEach(function (col) {
-        var n = col.querySelectorAll(".col-cards > .card").length;
-        var cc = col.querySelector(".col-count"); if (cc) cc.textContent = n;
-      });
-      stageEl.querySelectorAll(".bubble").forEach(function (b) {
-        var n = b.querySelectorAll(".bubble-cards > .card").length;
-        var bc = b.querySelector(".bubble-count"); if (bc) bc.textContent = n;
-        if (n === 0) b.remove();
-      });
-      stageEl.querySelectorAll(".sec-chip").forEach(function (chip) {
-        var sid = chip.dataset.section; if (!sid) return;
-        var total = stageEl.querySelectorAll('.col-cards[data-section="' + sid + '"] > .card').length;
-        var done = stageEl.querySelectorAll('.col-done .col-cards[data-section="' + sid + '"] > .card').length;
-        var roll = chip.querySelector(".sec-chip-roll"); if (roll) roll.textContent = done + "/" + total;
-      });
-    } else {
-      stageEl.querySelectorAll(".section-lane").forEach(recountLane);
-    }
+    stageEl.querySelectorAll(".gcolumns .column").forEach(function (col) {
+      var n = col.querySelectorAll(".col-cards > .card").length;
+      var cc = col.querySelector(".col-count"); if (cc) cc.textContent = n;
+    });
+    stageEl.querySelectorAll(".bubble").forEach(function (b) {
+      var n = b.querySelectorAll(".bubble-cards > .card").length;
+      var bc = b.querySelector(".bubble-count"); if (bc) bc.textContent = n;
+      if (n === 0) b.remove();
+    });
+    stageEl.querySelectorAll(".sec-chip").forEach(function (chip) {
+      var sid = chip.dataset.section; if (!sid) return;
+      var total = stageEl.querySelectorAll('.col-cards[data-section="' + sid + '"] > .card').length;
+      var done = stageEl.querySelectorAll('.col-done .col-cards[data-section="' + sid + '"] > .card').length;
+      var roll = chip.querySelector(".sec-chip-roll"); if (roll) roll.textContent = done + "/" + total;
+    });
     recountStagePips(stageEl);
     updateUrgentTally();
   }
@@ -284,7 +264,6 @@
       if (stageEl) {
         stageEl.querySelectorAll('.bubble[data-section="' + id + '"] .bubble-name').forEach(function (n) { n.textContent = val; });
         stageEl.querySelectorAll('.sec-chip[data-section="' + id + '"] .sec-chip-name').forEach(function (n) { n.textContent = val; });
-        stageEl.querySelectorAll('.add-task select[name="section"] option[value="' + id + '"]').forEach(function (o) { o.textContent = val; });
       }
     });
   }
@@ -367,14 +346,9 @@
   function closeMenu() { if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; } }
   function stageSections(stageEl) {
     var out = [];
-    if (LAYOUT === "grouped")
-      stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").forEach(function (ch) {
-        out.push({ id: ch.dataset.section, title: ch.querySelector(".sec-chip-name").textContent.trim() });
-      });
-    else
-      stageEl.querySelectorAll(".section-lane:not(.is-general)").forEach(function (l) {
-        out.push({ id: l.dataset.section, title: l.querySelector(".lane-title").textContent.trim() });
-      });
+    stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").forEach(function (ch) {
+      out.push({ id: ch.dataset.section, title: ch.querySelector(".sec-chip-name").textContent.trim() });
+    });
     return out;
   }
   async function assignCardToSection(card, sec) {
@@ -385,13 +359,7 @@
     if (!r) return;
     card.dataset.section = sec || "";
     var stageEl = stageOf(card);
-    if (LAYOUT === "grouped") {
-      ensureContainer(colBodyOf(card), sec).appendChild(card);
-    } else {
-      var lane = sec ? stageEl.querySelector('.section-lane[data-section="' + sec + '"]')
-                     : stageEl.querySelector(".section-lane.is-general");
-      if (lane) { var cont = lane.querySelector('.col-cards[data-status="' + card.dataset.status + '"]'); if (cont) cont.appendChild(card); }
-    }
+    ensureContainer(colBodyOf(card), sec).appendChild(card);
     recountStageFull(stageEl);
     pushUndo("move of “" + title + "”", function () { return undoUpdate(id, { section_id: prev || null }); });
   }
@@ -574,13 +542,8 @@
     applyCardStatus(card, newStatus);
     pushUndo("move of “" + title + "”", function () { return undoMove(id, prev, sec); });
     var stageEl = stageOf(card);
-    if (LAYOUT === "grouped") {
-      var destCol = stageEl.querySelector('.col-body[data-status="' + newStatus + '"]');
-      if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
-    } else {
-      var dest = laneOf(card).querySelector('.col-cards[data-status="' + newStatus + '"]');
-      if (dest) dest.appendChild(card);
-    }
+    var destCol = stageEl.querySelector('.col-body[data-status="' + newStatus + '"]');
+    if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
     recountStageFull(stageEl); registerActivity(card.dataset.stage, card.dataset.taskId);
   }
   async function toggleUrgent(btn) {
@@ -621,65 +584,7 @@
     if (r.task) pushUndo("delete of “" + (r.task.title || "task") + "”",
       async function () { var rr = await api("/api/projects/" + projectId + "/tasks/restore", r.task); if (rr) location.reload(); });
   }
-  async function addTask(form) {
-    var stage = Number(form.dataset.stage);
-    var titleInput = form.querySelector('input[name="title"]');
-    var title = titleInput.value.trim(); if (!title) { titleInput.focus(); return; }
-    var typeSel = form.querySelector('select[name="type"]');
-    var secSel = form.querySelector('select[name="section"]');
-    var section = secSel ? secSel.value : (form.dataset.section || "");
-    var payload = { stage: stage, title: title, section_id: section };
-    if (typeSel) payload.type = typeSel.value;
-    var r = await api("/api/projects/" + projectId + "/tasks", payload);
-    if (!r) return;
-    var stageEl = document.getElementById("stage-" + stage), cont;
-    if (LAYOUT === "grouped") {
-      var todoCol = stageEl.querySelector('.col-body[data-status="todo"]');
-      cont = ensureContainer(todoCol, section);
-    } else {
-      cont = form.closest(".section-lane").querySelector('.col-cards[data-status="todo"]');
-    }
-    cont.insertAdjacentHTML("beforeend", r.html);
-    titleInput.value = ""; titleInput.focus();
-    var newId = r.task.id;
-    pushUndo("add of “" + title + "”", async function () { var rr = await api("/api/tasks/" + newId + "/delete", {}); if (rr) location.reload(); });
-    recountStageFull(stageEl); registerActivity(stage, r.task.id);
-  }
-
   // ---- sections ----------------------------------------------------------
-  async function addSection(form) {
-    var stage = Number(form.dataset.stage);
-    var input = form.querySelector('input[name="title"]');
-    var title = input.value.trim(); if (!title) { input.focus(); return; }
-    var r = await api("/api/projects/" + projectId + "/sections", { stage: stage, title: title });
-    if (!r) return;
-    var stageEl = document.getElementById("stage-" + stage);
-    if (LAYOUT === "grouped") {
-      var bar = stageEl.querySelector(".section-bar");
-      var pos = stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").length;
-      var chip = document.createElement("span");
-      chip.className = "sec-chip"; chip.dataset.section = r.section.id; chip.dataset.pos = pos;
-      var nm = document.createElement("span"); nm.className = "sec-chip-name editable";
-      nm.dataset.action = "rename-section"; nm.setAttribute("role", "button"); nm.tabIndex = 0; nm.textContent = r.section.title;
-      var roll = document.createElement("span"); roll.className = "sec-chip-roll"; roll.textContent = "0/0";
-      var del = document.createElement("button"); del.type = "button"; del.className = "sec-chip-del";
-      del.dataset.action = "delete-section"; del.dataset.section = r.section.id; del.setAttribute("aria-label", "Delete section"); del.textContent = "×";
-      chip.appendChild(nm); chip.appendChild(roll); chip.appendChild(del);
-      bar.insertBefore(chip, form);
-      stageEl.querySelectorAll('.add-task select[name="section"]').forEach(function (sel) {
-        var o = document.createElement("option"); o.value = r.section.id; o.textContent = r.section.title; sel.appendChild(o);
-      });
-      input.value = "";
-    } else {
-      var lanes = stageEl.querySelector(".lanes");
-      var general = lanes.querySelector(".section-lane.is-general");
-      var temp = document.createElement("div"); temp.innerHTML = r.html.trim();
-      var newLane = temp.firstElementChild;
-      lanes.insertBefore(newLane, general);
-      input.value = "";
-      var fi = newLane.querySelector('.add-task input[name="title"]'); if (fi) fi.focus();
-    }
-  }
   async function deleteSection(el) {
     var id = el.dataset.section; if (!id) return;
     if (!confirm("Delete this section? Its tasks move to General.")) return;
@@ -695,7 +600,6 @@
         bubble.remove();
       });
       var chip = stageEl.querySelector('.sec-chip[data-section="' + id + '"]'); if (chip) chip.remove();
-      stageEl.querySelectorAll('.add-task select[name="section"] option[value="' + id + '"]').forEach(function (o) { o.remove(); });
       recountStageFull(stageEl);
     }
     var row = document.querySelector('#sections-pop .sec-row[data-section="' + id + '"]'); if (row) row.remove();
@@ -750,16 +654,13 @@
       var roll = document.createElement("span"); roll.className = "sec-chip-roll"; roll.textContent = "0/0";
       chip.appendChild(nm); chip.appendChild(roll);
       if (reg) reg.appendChild(chip);
-      stageEl.querySelectorAll('.add-task select[name="section"]').forEach(function (sel) {
-        var o = document.createElement("option"); o.value = r.section.id; o.textContent = r.section.title; sel.appendChild(o);
-      });
       renderSectionsList(stageEl);
     }
     input.value = ""; input.focus();
   }
 
   // ---- filters & collapse (persisted) -----------------------------------
-  var LS_FILTERS = "arckanban-filters", LS_LANES = "arckanban-lanes-" + projectId;
+  var LS_FILTERS = "arckanban-filters";
   function applyFilters(state) {
     document.body.classList.toggle("filter-urgent", !!state.urgent);
     document.body.classList.toggle("filter-statutory", !!state.statutory);
@@ -847,11 +748,6 @@
   // Appointment scope is managed on the register page now; the board keeps only
   // the in-context "Add to scope" affordance on a disabled-stage placeholder.
   function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
-  function laneKey(l) { return l.dataset.section ? "s" + l.dataset.section : "g" + l.dataset.stage; }
-  function loadLanes() { try { return JSON.parse(localStorage.getItem(LS_LANES)) || {}; } catch (e) { return {}; } }
-  function persistLanes() { var s = {}; document.querySelectorAll(".section-lane.is-collapsed").forEach(function (l) { s[laneKey(l)] = 1; }); localStorage.setItem(LS_LANES, JSON.stringify(s)); }
-  function applyLanes() { var s = loadLanes(); document.querySelectorAll(".section-lane").forEach(function (l) { l.classList.toggle("is-collapsed", !!s[laneKey(l)]); }); }
-  function toggleLane(btn) { laneOf(btn).classList.toggle("is-collapsed"); persistLanes(); }
 
   // collapse section bubbles (grouped) — folds a whole section across columns, persisted
   var LS_BUBBLES = "arckanban-bubbles-" + projectId;
@@ -919,7 +815,7 @@
       try { e.dataTransfer.setData("text/plain", card.dataset.taskId); } catch (_) {}
       return;
     }
-    var head = LAYOUT === "grouped" ? e.target.closest(".bubble-head") : null;
+    var head = e.target.closest(".bubble-head");
     if (head && !e.target.closest(".bubble-collapse")) {
       draggingBubble = head.closest(".bubble"); draggingBubble.classList.add("dragging-bubble");
       e.dataTransfer.effectAllowed = "move";
@@ -935,21 +831,15 @@
       return;
     }
     if (!draggingCard) return;
-    if (LAYOUT === "grouped") {
-      var colBody = e.target.closest(".col-body"); if (!colBody) return;
-      e.preventDefault(); e.dataTransfer.dropEffect = "move";
-      lastOverCol = colBody;
-      if (colBody.dataset.status === draggingCard.dataset.status) {
-        var cont = containerFor(colBody, draggingCard.dataset.section || "");
-        if (cont) maybePlace(cont, e.clientY);   // slide into its section bubble
-      } else if (draggingCard.parentElement !== colBody) {
-        // cross-column: slide the card itself into the destination column (no highlight)
-        flipReorder(stageOf(colBody), function () { colBody.appendChild(draggingCard); });
-      }
-    } else {
-      var container = e.target.closest(".col-cards"); if (!container) return;
-      e.preventDefault(); e.dataTransfer.dropEffect = "move";
-      maybePlace(container, e.clientY);
+    var colBody = e.target.closest(".col-body"); if (!colBody) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    lastOverCol = colBody;
+    if (colBody.dataset.status === draggingCard.dataset.status) {
+      var cont = containerFor(colBody, draggingCard.dataset.section || "");
+      if (cont) maybePlace(cont, e.clientY);   // slide into its section bubble
+    } else if (draggingCard.parentElement !== colBody) {
+      // cross-column: slide the card itself into the destination column (no highlight)
+      flipReorder(stageOf(colBody), function () { colBody.appendChild(draggingCard); });
     }
   });
   track.addEventListener("drop", function (e) { if (draggingCard) e.preventDefault(); });
@@ -981,17 +871,11 @@
     var card = draggingCard; draggingCard = null; card.classList.remove("dragging");
     if (lastOver) { lastOver.classList.remove("drag-over"); lastOver = null; }
     if (lastOverCol) { lastOverCol.classList.remove("drag-over"); }
-    var container, status, section;
-    if (LAYOUT === "grouped") {
-      var destCol = lastOverCol || colBodyOf(card); lastOverCol = null;
-      if (!destCol) return;
-      status = destCol.dataset.status; section = card.dataset.section || "";
-      container = ensureContainer(destCol, section);
-      if (card.parentElement !== container) container.appendChild(card);
-    } else {
-      container = card.closest(".col-cards"); if (!container) return;
-      status = container.dataset.status; section = container.dataset.section || "";
-    }
+    var destCol = lastOverCol || colBodyOf(card); lastOverCol = null;
+    if (!destCol) return;
+    var status = destCol.dataset.status, section = card.dataset.section || "";
+    var container = ensureContainer(destCol, section);
+    if (card.parentElement !== container) container.appendChild(card);
     var index = [].slice.call(container.querySelectorAll(".card")).indexOf(card);
     var r = await api("/api/tasks/" + card.dataset.taskId + "/move",
       { status: status, section_id: section || null, index: index });
@@ -1034,7 +918,6 @@
         case "edit-project-name": editProjectField(el, "name"); break;
         case "rename-section": renameSection(el); break;
         case "delete-section": deleteSection(el); break;
-        case "toggle-lane": toggleLane(el); break;
         case "toggle-bubble": toggleBubble(el); break;
         case "set-current": setCurrentStage(el.dataset.stage); break;
         case "star-current": setCurrentStage(activeStage()); break;
@@ -1062,11 +945,9 @@
       }
       return;
     }
-    if (LAYOUT === "grouped") {
-      var card = e.target.closest(".card");
-      if (card && !e.target.closest("button, select, input, textarea, a, .task-title, .awaiting-on, [contenteditable]")) selectCard(card);
-      else if (!card) clearSelection();
-    }
+    var card = e.target.closest(".card");
+    if (card && !e.target.closest("button, select, input, textarea, a, .task-title, .awaiting-on, [contenteditable]")) selectCard(card);
+    else if (!card) clearSelection();
   });
   document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); });
   document.addEventListener("contextmenu", function (e) {
@@ -1084,14 +965,12 @@
   });
   track.addEventListener("scroll", closeMenu);
   document.addEventListener("submit", function (e) {
-    var add = e.target.closest('[data-action="add-task"]'); if (add) { e.preventDefault(); addTask(add); return; }
-    var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); return; }
-    var sec = e.target.closest('[data-action="add-section"]'); if (sec) { e.preventDefault(); addSection(sec); }
+    var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); }
   });
   document.addEventListener("keydown", function (e) {
     var t = e.target;
     if (e.key === "Enter" || e.key === " ") {
-      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .lane-title, .sec-row-name")) { e.preventDefault(); t.click(); }
+      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .sec-row-name")) { e.preventDefault(); t.click(); }
       return;
     }
     if (e.key === "Escape") { closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
@@ -1104,7 +983,6 @@
 
   // ---- init --------------------------------------------------------------
   applyFilters(loadFilters());
-  applyLanes();
   applyBubbles();
   updateUrgentTally();
   // Auto-hide dock: default ON (conceal the bar for maximum board real estate)
