@@ -50,11 +50,12 @@ RIBA_STAGES = [
 ]
 
 # Status columns, left to right. Order matters: the ‹ › steppers walk this list.
-STATUSES = ["backlog", "upcoming", "todo", "awaiting", "done"]
+STATUSES = ["backlog", "upcoming", "todo", "inprogress", "awaiting", "done"]
 STATUS_LABELS = {
     "backlog": "Backlog",
     "upcoming": "Upcoming",
     "todo": "To Do",
+    "inprogress": "In Progress",
     "awaiting": "Awaiting",
     "done": "Done",
 }
@@ -470,6 +471,17 @@ def get_project_or_404(db, project_id):
     return row
 
 
+def get_project_by_uid_or_404(db, uid):
+    """Look up a project by its stable hex uid — user-facing page URLs use this
+    (not the reusable integer id) so a link survives delete + recreate."""
+    row = db.execute("SELECT * FROM projects WHERE uid=?", (uid,)).fetchone()
+    if row is None:
+        from werkzeug.exceptions import NotFound
+
+        raise NotFound()
+    return row
+
+
 def build_stages(db, project_id):
     """Build the status-primary layout per stage: the five status columns, each
     grouping cards into section bubbles + a loose 'General' area, with a
@@ -577,6 +589,7 @@ def index():
         projects.append(
             {
                 "id": r["id"],
+                "uid": r["uid"],
                 "number": r["number"] or "",
                 "name": r["name"],
                 "current_stage": r["current_stage"],
@@ -639,13 +652,15 @@ def create_project():
                     (project_id, stage, t["title"], t["status"], t["type"], pos, section_id),
                 )
     db.commit()
-    return redirect(url_for("board", project_id=project_id))
+    uid = db.execute("SELECT uid FROM projects WHERE id=?", (project_id,)).fetchone()["uid"]
+    return redirect(url_for("board", project_uid=uid))
 
 
-@app.route("/projects/<int:project_id>")
-def board(project_id):
+@app.route("/projects/<project_uid>")
+def board(project_uid):
     db = get_db()
-    p = get_project_or_404(db, project_id)
+    p = get_project_by_uid_or_404(db, project_uid)
+    project_id = p["id"]
     layout = "grouped"  # status-primary is the only layout
     en = enabled_stages(p)
     stages = build_stages(db, project_id)
@@ -665,6 +680,7 @@ def board(project_id):
         "board.html",
         project={
             "id": p["id"],
+            "uid": p["uid"],
             "number": p["number"] or "",
             "name": p["name"],
             "current_stage": p["current_stage"],
@@ -682,11 +698,11 @@ def board(project_id):
     return resp
 
 
-@app.route("/projects/<int:project_id>/template.json")
-def export_template(project_id):
+@app.route("/projects/<project_uid>/template.json")
+def export_template(project_uid):
     """Download the project as a reusable template JSON (no names/people)."""
     db = get_db()
-    get_project_or_404(db, project_id)
+    project_id = get_project_by_uid_or_404(db, project_uid)["id"]
     data = build_template_export(db, project_id)
     resp = make_response(json.dumps(data, indent=2, ensure_ascii=False))
     resp.headers["Content-Type"] = "application/json"
@@ -694,13 +710,13 @@ def export_template(project_id):
     return resp
 
 
-@app.route("/projects/<int:project_id>/activity.json")
-def export_activity(project_id):
+@app.route("/projects/<project_uid>/activity.json")
+def export_activity(project_uid):
     """Download the FULL activity log — every event, including the minor moves
     (backlog→upcoming, section/type tweaks) hidden from the drawer. This is the
     audit trail meant to be handed to an agent later for practice automation."""
     db = get_db()
-    get_project_or_404(db, project_id)
+    project_id = get_project_by_uid_or_404(db, project_uid)["id"]
     rows = db.execute(
         "SELECT * FROM events WHERE project_id=? ORDER BY id ASC", (project_id,)
     ).fetchall()
@@ -735,7 +751,7 @@ def build_decisions(db, project_id):
                   for t in db.execute(
                       "SELECT id, title, status, stage FROM tasks WHERE from_decision_id=? ORDER BY id", (r["id"],))]
         out.append({
-            "n": i, "id": r["id"], "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
+            "n": i, "id": r["id"], "uid": r["uid"], "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
             "title": r["title"], "status": r["status"], "assignee": r["awaiting_on"] or "",
             "options": opts, "outcome": r["outcome"] or "", "confirmed": bool(r["outcome"]),
             "decided_at": r["decided_at"] or "", "decided_day": fmt_day(r["decided_at"]),
@@ -744,29 +760,30 @@ def build_decisions(db, project_id):
     return out
 
 
-@app.route("/projects/<int:project_id>/decisions")
-def decisions_page(project_id):
+@app.route("/projects/<project_uid>/decisions")
+def decisions_page(project_uid):
     """The decision register, as a styled page (a second view of the project)."""
     db = get_db()
-    p = get_project_or_404(db, project_id)
+    p = get_project_by_uid_or_404(db, project_uid)
     return render_template(
         "decisions.html",
-        project={"id": p["id"], "number": p["number"] or "", "name": p["name"]},
-        decisions=build_decisions(db, project_id), riba=RIBA_STAGES,
+        project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"]},
+        decisions=build_decisions(db, p["id"]), riba=RIBA_STAGES,
     )
 
 
-@app.route("/projects/<int:project_id>/decisions.json")
-def export_decisions(project_id):
+@app.route("/projects/<project_uid>/decisions.json")
+def export_decisions(project_uid):
     """Download the decision register — the source of truth for the practice's
     decision log, with every decision's options, outcome, date and spawned tasks."""
     db = get_db()
-    get_project_or_404(db, project_id)
+    p = get_project_by_uid_or_404(db, project_uid)
+    project_id = p["id"]
     decisions = build_decisions(db, project_id)
-    data = {"project_id": project_id, "exported_at": now_iso(),
+    data = {"project_uid": p["uid"], "exported_at": now_iso(),
             "count": len(decisions), "confirmed": sum(1 for d in decisions if d["confirmed"]),
             "decisions": [{
-                "number": d["n"], "stage": d["stage"], "stage_name": d["stage_name"],
+                "number": d["n"], "uid": d["uid"], "stage": d["stage"], "stage_name": d["stage_name"],
                 "title": d["title"], "status": d["status"], "decision_by": d["assignee"],
                 "options": d["options"], "outcome": d["outcome"], "confirmed": d["confirmed"],
                 "decided_at": d["decided_at"],
@@ -778,13 +795,14 @@ def export_decisions(project_id):
     return resp
 
 
-@app.route("/projects/<int:project_id>/scope", methods=["POST"])
-def set_scope(project_id):
+@app.route("/projects/<project_uid>/scope", methods=["POST"])
+def set_scope(project_uid):
     """Set a project's RIBA-stage appointment scope from the register page
     (form POST). The board's ⋯ menu no longer carries this — it lives here, with
     project-level management, on the exploration page."""
     db = get_db()
-    p = get_project_or_404(db, project_id)
+    p = get_project_by_uid_or_404(db, project_uid)
+    project_id = p["id"]
     try:
         stages = sorted({int(x) for x in request.form.getlist("stage") if 0 <= int(x) <= 7})
     except (TypeError, ValueError):
@@ -826,10 +844,10 @@ def upload_template():
     return jsonify(ok=True, file=fn, name=name)
 
 
-@app.route("/projects/<int:project_id>/delete", methods=["POST"])
-def delete_project(project_id):
+@app.route("/projects/<project_uid>/delete", methods=["POST"])
+def delete_project(project_uid):
     db = get_db()
-    get_project_or_404(db, project_id)
+    project_id = get_project_by_uid_or_404(db, project_uid)["id"]
     # Explicit deletes — don't rely solely on cascade (see REQUIREMENTS §3.1).
     db.execute("DELETE FROM tasks WHERE project_id=?", (project_id,))
     db.execute("DELETE FROM projects WHERE id=?", (project_id,))
@@ -1032,10 +1050,11 @@ def api_clear_decision(task_id):
     row, err = _decision_or_error(db, task_id)
     if err:
         return err
-    db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL WHERE id=?", (task_id,))
+    pos = next_position(db, row["project_id"], row["stage"], "todo", row["section_id"])
+    db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL, status='todo', position=? WHERE id=?", (pos, task_id))
     ev = log_event(db, row["project_id"], "reopened decision", row["title"], task_id=task_id, important=False)
     db.commit()
-    return jsonify(ok=True, event=ev)
+    return jsonify(ok=True, status="todo", event=ev)
 
 
 @app.route("/api/decisions/<int:task_id>/tasks", methods=["POST"])
@@ -1150,6 +1169,9 @@ def api_update_task(task_id):
     if reposition:
         fields.append("position=?")
         values.append(next_position(db, row["project_id"], row["stage"], new_status, new_section))
+    # A decision dragged/stepped out of Done is no longer decided — unconfirm it.
+    if row["type"] == "decision" and row["status"] == "done" and new_status != "done":
+        fields.append("outcome=NULL"); fields.append("decided_at=NULL")
 
     if not fields:
         return jsonify(ok=True)
@@ -1188,6 +1210,9 @@ def api_move_task(task_id):
         index = 0
 
     db.execute("UPDATE tasks SET status=?, section_id=? WHERE id=?", (status, section_id, task_id))
+    # A decision dragged out of Done is no longer decided — unconfirm it.
+    if row["type"] == "decision" and row["status"] == "done" and status != "done":
+        db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL WHERE id=?", (task_id,))
     siblings = [r["id"] for r in db.execute(
         """SELECT id FROM tasks WHERE project_id=? AND stage=? AND status=? AND section_id IS ?
            AND parent_id IS NULL AND id<>? ORDER BY position, id""",

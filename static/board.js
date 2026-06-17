@@ -8,8 +8,8 @@
 (function () {
   "use strict";
 
-  var STATUSES = ["backlog", "upcoming", "todo", "awaiting", "done"];
-  var STATUS_LABELS = { backlog: "Backlog", upcoming: "Upcoming", todo: "To Do", awaiting: "Awaiting", done: "Done" };
+  var STATUSES = ["backlog", "upcoming", "todo", "inprogress", "awaiting", "done"];
+  var STATUS_LABELS = { backlog: "Backlog", upcoming: "Upcoming", todo: "To Do", inprogress: "In Progress", awaiting: "Awaiting", done: "Done" };
   var RIBA = [
     "Strategic Definition", "Preparation and Briefing", "Concept Design",
     "Spatial Coordination", "Technical Design", "Manufacturing and Construction",
@@ -441,7 +441,14 @@
   }
   async function clearDecision(card) {
     var r = await api("/api/tasks/" + card.dataset.taskId + "/unconfirm", {});
-    if (r) setDecisionOutcome(card, "");
+    if (!r) return;
+    setDecisionOutcome(card, "");
+    if (r.status) {   // reopened -> back to To Do on the server; reflect it
+      applyCardStatus(card, r.status);
+      var stageEl = stageOf(card), destCol = stageEl.querySelector('.col-body[data-status="' + r.status + '"]');
+      if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
+      recountStageFull(stageEl); registerActivity(card.dataset.stage, card.dataset.taskId);
+    }
   }
   function setDecisionOutcome(card, outcome) {
     var block = decBlock(card); if (!block) return;
@@ -541,12 +548,14 @@
   // ---- task mutations ----------------------------------------------------
   function applyCardStatus(card, status) {
     card.dataset.status = status;
-    card.classList.remove("status-backlog", "status-upcoming", "status-todo", "status-awaiting", "status-done");
+    card.classList.remove("status-backlog", "status-upcoming", "status-todo", "status-inprogress", "status-awaiting", "status-done");
     card.classList.add("status-" + status);
     var lbl = card.querySelector(".status-label"); if (lbl) lbl.textContent = STATUS_LABELS[status];
     var i = STATUSES.indexOf(status);
     var p = card.querySelector(".step-prev"), n = card.querySelector(".step-next");
     if (p) p.disabled = i === 0; if (n) n.disabled = i === STATUSES.length - 1;
+    // A decision moved out of Done is auto-unconfirmed server-side — drop its banner.
+    if (card.dataset.type === "decision" && status !== "done" && card.querySelector(".dec-outcome")) setDecisionOutcome(card, "");
   }
   async function stepStatus(card, dir) {
     var i = STATUSES.indexOf(card.dataset.status), ni = i + dir;

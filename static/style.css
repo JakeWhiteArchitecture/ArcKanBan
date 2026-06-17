@@ -480,8 +480,8 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 .current-badge { margin-left: var(--u); font-size: 0.72rem; color: var(--blue); text-transform: uppercase; letter-spacing: 0.06em; }
 .current-badge[hidden], .set-current[hidden] { display: none; }
 
-/* ---- Status columns --------------------------------------------------- */
-.columns { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-items: start; }
+/* ---- Status columns (6: Backlog · Upcoming · To Do · In Progress · Awaiting · Done) */
+.columns { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; align-items: start; }
 .column { display: flex; flex-direction: column; border-radius: var(--radius-sm); padding: 6px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border); }
 .col-head { margin-bottom: 6px; display: flex; justify-content: space-between; padding: 0 2px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); }
 .col-count { color: var(--ink-soft); }
@@ -489,6 +489,10 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 .col-backlog .col-head { opacity: 0.55; }
 .col-upcoming { background: rgba(255, 255, 255, 0.012); }
 .col-upcoming .col-head { opacity: 0.75; }
+/* In Progress: the active column — a quiet blue outline + header. */
+.col-inprogress { border-color: color-mix(in srgb, var(--blue) 50%, var(--glass-border)); }
+.col-inprogress .col-head { color: var(--blue); }
+.pip-inprogress { color: var(--blue); }
 /* Awaiting / Done: differentiate with a coloured OUTLINE + header only — the
    fill stays the same near-transparent white as the other columns so it doesn't
    tint the whole board (no green/orange mud over the background swirls). */

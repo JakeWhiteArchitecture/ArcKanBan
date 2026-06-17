@@ -6,11 +6,11 @@
 <main class="register-page">
   <header class="dr-head">
     <div class="dr-id">
-      <a class="dr-back" href="{{ url_for('board', project_id=project.id) }}" title="Back to the board">‹ Board</a>
+      <a class="dr-back" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">‹ Board</a>
       <h1 class="dr-title"><span class="dr-no">{{ project.number or 'no.' }}</span> {{ project.name }}</h1>
       <span class="dr-sub">Decision register</span>
     </div>
-    <a class="btn-quiet btn-sm" href="{{ url_for('export_decisions', project_id=project.id) }}" download
+    <a class="btn-quiet btn-sm" href="{{ url_for('export_decisions', project_uid=project.uid) }}" download
        title="Download the register as JSON">Download JSON</a>
   </header>
 
