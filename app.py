@@ -188,15 +188,26 @@ def init_db():
     # decision it came from (feeds the decision register + the audit trail).
     _ensure_column(db, "tasks", "decided_at", "decided_at TEXT")
     _ensure_column(db, "tasks", "from_decision_id", "from_decision_id INTEGER REFERENCES tasks(id)")
-    for tbl in ("projects", "sections", "tasks"):
+    # Projects use a short (6-hex) URL-friendly uid; sections/tasks keep a long
+    # one (not user-facing). Project uids are assigned with a uniqueness check,
+    # so even the short length never collides; this also normalises any earlier
+    # long project uids down to 6 hex (a one-time pass; stable thereafter).
+    for r in db.execute("SELECT id FROM projects WHERE uid IS NULL OR uid='' OR length(uid)<>6").fetchall():
+        while True:
+            u = os.urandom(3).hex()
+            if db.execute("SELECT 1 FROM projects WHERE uid=?", (u,)).fetchone() is None:
+                break
+        db.execute("UPDATE projects SET uid=? WHERE id=?", (u, r[0]))
+    for tbl in ("sections", "tasks"):
         db.execute("UPDATE %s SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL OR uid = ''" % tbl)
     db.executescript(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_uid ON projects(uid);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_sections_uid ON sections(uid);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_uid ON tasks(uid);
-        CREATE TRIGGER IF NOT EXISTS projects_uid AFTER INSERT ON projects WHEN NEW.uid IS NULL
-          BEGIN UPDATE projects SET uid = lower(hex(randomblob(16))) WHERE id = NEW.id; END;
+        DROP TRIGGER IF EXISTS projects_uid;
+        CREATE TRIGGER projects_uid AFTER INSERT ON projects WHEN NEW.uid IS NULL
+          BEGIN UPDATE projects SET uid = lower(hex(randomblob(3))) WHERE id = NEW.id; END;
         CREATE TRIGGER IF NOT EXISTS sections_uid AFTER INSERT ON sections WHEN NEW.uid IS NULL
           BEGIN UPDATE sections SET uid = lower(hex(randomblob(16))) WHERE id = NEW.id; END;
         CREATE TRIGGER IF NOT EXISTS tasks_uid AFTER INSERT ON tasks WHEN NEW.uid IS NULL
@@ -482,6 +493,15 @@ def get_project_by_uid_or_404(db, uid):
     return row
 
 
+def unique_project_uid(db):
+    """A short (6-hex) URL-friendly project uid, retried until unique — so the
+    short length never causes a collision even over a long-running practice."""
+    while True:
+        u = os.urandom(3).hex()
+        if db.execute("SELECT 1 FROM projects WHERE uid=?", (u,)).fetchone() is None:
+            return u
+
+
 def build_stages(db, project_id):
     """Build the status-primary layout per stage: the five status columns, each
     grouping cards into section bubbles + a loose 'General' area, with a
@@ -612,10 +632,11 @@ def create_project():
         flash("A project needs a name.")
         return redirect(url_for("index"))
 
+    puid = unique_project_uid(db)
     cur = db.execute(
-        "INSERT INTO projects (number, name, template, current_stage, created_at) "
-        "VALUES (?, ?, ?, 0, ?)",
-        (number, name, template_file or None, now_iso()),
+        "INSERT INTO projects (number, name, template, current_stage, created_at, uid) "
+        "VALUES (?, ?, ?, 0, ?, ?)",
+        (number, name, template_file or None, now_iso(), puid),
     )
     project_id = cur.lastrowid
 
@@ -652,8 +673,7 @@ def create_project():
                     (project_id, stage, t["title"], t["status"], t["type"], pos, section_id),
                 )
     db.commit()
-    uid = db.execute("SELECT uid FROM projects WHERE id=?", (project_id,)).fetchone()["uid"]
-    return redirect(url_for("board", project_uid=uid))
+    return redirect(url_for("board", project_uid=puid))
 
 
 @app.route("/projects/<project_uid>")
