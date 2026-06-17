@@ -39,6 +39,7 @@
   <div class="tb-right">
     <button type="button" class="tb-btn tb-btn-accent" data-action="create-open" title="New task">＋ Task</button>
     <button type="button" class="tb-btn" data-action="toggle-sections" title="Sections of work">Sections</button>
+    <a class="tb-btn" href="{{ url_for('decisions_page', project_id=project.id) }}" title="Decision register">Decisions</a>
     <button type="button" class="tb-btn" id="filter-btn" data-action="toggle-filters" title="Filters">Filter ▾</button>
     <button type="button" class="tb-btn" data-action="toggle-log" title="Activity log">Log</button>
     <button type="button" class="tb-btn" data-action="toggle-more" aria-label="More actions" title="More">⋯</button>
@@ -51,8 +52,11 @@
 </header>
 
 <div class="dock-rail" data-action="dock-peek" aria-hidden="true"></div>
+<div class="dock-id" aria-hidden="true">
+  {% if project.number %}<span class="dock-id-no">{{ project.number }}</span>{% endif %}
+  <span class="dock-id-name">{{ project.name }}</span>
+</div>
 <button type="button" class="dock-handle" data-action="dock-peek" aria-label="Show the top bar" title="Top bar — hover to reveal">
-  <span class="dock-no">{{ project.number or 'ArcKanban' }}</span>
   <span class="dock-stage">Stage {{ project.current_stage }}</span>
   <span class="chevron">▾</span>
 </button>
@@ -66,8 +70,6 @@
 
 <div class="tb-pop more-pop" id="more-pop" hidden aria-label="More actions">
   <a class="more-item" href="{{ url_for('export_template', project_id=project.id) }}" download>Save as template</a>
-  <a class="more-item" href="{{ url_for('export_decisions', project_id=project.id) }}" download
-     title="Every decision with its options and confirmed outcome">Decision register</a>
   <a class="more-item" href="{{ url_for('export_activity', project_id=project.id) }}" download
      title="Every event, including the minor moves hidden from the drawer">Export full log</a>
 </div>

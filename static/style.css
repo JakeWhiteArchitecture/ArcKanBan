@@ -83,7 +83,7 @@ body {
   background: linear-gradient(180deg, var(--bg-2), var(--bg));
   overflow: hidden;            /* board manages its own scroll */
 }
-body.page-home { overflow: auto; }
+body.page-home, body.page-decisions { overflow: auto; }
 
 /* WebGL gradient canvas (bg.js) sits above the CSS glow fallback, below content */
 .neat-bg { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; display: block; pointer-events: none; }
@@ -405,6 +405,21 @@ body.dock-mode .dock-rail:hover ~ .dock-handle { color: var(--ink); background: 
 body.dock-mode.dock-open .dock-rail,
 body.dock-mode.dock-open .dock-handle { opacity: 0; pointer-events: none; }
 
+/* Identity capsule (top-left) — keeps the job no. + name visible while the
+   header is tucked away; animates out as the header is revealed. */
+.dock-id { display: none; }
+body.dock-mode .dock-id {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  position: fixed; top: 0; left: 16px; z-index: 31; padding: 4px 14px 5px;
+  background: var(--glass-deep); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-border); border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius); box-shadow: var(--shadow);
+  transition: opacity 240ms ease, transform 240ms ease;
+}
+body.dock-mode .dock-id .dock-id-no { color: var(--blue); font-family: var(--font-mono); font-size: 0.8rem; }
+body.dock-mode .dock-id .dock-id-name { font-weight: 600; font-size: 0.82rem; max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.dock-mode.dock-open .dock-id { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+
 body.dock-mode .titleblock {
   z-index: 32; box-shadow: var(--shadow-lift);
   transform: translateY(-100%);
@@ -706,6 +721,42 @@ body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked awa
 .stage-disabled .stage-num { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--radius-sm); color: #07101f; opacity: 0.5; background: var(--c); }
 .stage-disabled .stage-name { color: var(--ink-soft); font-size: 1.1rem; }
 .stage-off-note { margin: 0; font-style: italic; }
+
+/* ====================================================================== */
+/*  DECISION REGISTER PAGE                                                 */
+/* ====================================================================== */
+.register-page { max-width: 1200px; margin: 0 auto; padding: calc(var(--u) * 4) calc(var(--u) * 2); }
+.dr-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--u); margin-bottom: calc(var(--u) * 2); padding-bottom: calc(var(--u) * 1.5); border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
+.dr-id { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.dr-back { font-size: 0.85rem; color: var(--ink-soft); }
+.dr-back:hover { color: var(--ink); }
+.dr-title { font-size: 1.4rem; }
+.dr-no { font-family: var(--font-mono); color: var(--blue); font-size: 1.05rem; }
+.dr-sub { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft); }
+
+.dr-wrap { border: 1px solid var(--glass-border); border-radius: var(--radius); overflow: hidden; background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--shadow); }
+.dr-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.dr-table thead th { text-align: left; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--glass-border); background: rgba(255, 255, 255, 0.02); white-space: nowrap; }
+.dr-table tbody td { padding: 11px 12px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.dr-table tbody tr:last-child td { border-bottom: none; }
+.dr-row:hover { background: rgba(255, 255, 255, 0.02); }
+.dr-c-n { font-family: var(--font-mono); color: var(--ink-dim); width: 3.5em; }
+.dr-row.is-decided .dr-c-n { color: var(--sage); }
+.dr-c-desc { font-weight: 600; color: var(--ink); min-width: 200px; }
+.dr-c-by { color: var(--ink-soft); white-space: nowrap; }
+.dr-empty, .dr-pending { color: var(--ink-dim); font-style: italic; }
+.dr-outcome { color: var(--sage); font-weight: 600; }
+.dr-c-date { font-family: var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
+.dr-c-stage { color: var(--ink-soft); white-space: nowrap; font-size: 0.82rem; }
+.dr-stage { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.7rem; background: var(--c, var(--blue)); }
+.dr-c-tasks { min-width: 240px; }
+.dr-linked { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.dr-linked:empty { margin: 0; }
+.dr-linked-item { font-size: 0.82rem; color: var(--ink); padding-left: 14px; position: relative; }
+.dr-linked-item::before { content: "↳"; position: absolute; left: 0; color: var(--ink-dim); }
+.dr-addtask { display: flex; gap: 6px; }
+.dr-addtask input { flex: 1; min-width: 0; font-family: var(--font-ui); font-size: 0.82rem; padding: 5px 8px; border: 1px dashed var(--glass-border); border-radius: var(--radius-sm); background: transparent; color: var(--ink); }
+.dr-addtask input:focus { border-style: solid; border-color: var(--blue); }
 
 /* ====================================================================== */
 /*  RESPONSIVE                                                             */

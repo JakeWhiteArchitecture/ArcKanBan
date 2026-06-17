@@ -183,6 +183,10 @@ def init_db():
     # Decision tasks carry a confirmed outcome (the decision register's source of
     # truth); their candidate options live in the decision_options table.
     _ensure_column(db, "tasks", "outcome", "outcome TEXT")
+    # When a decision was confirmed, and the link from a spawned task back to the
+    # decision it came from (feeds the decision register + the audit trail).
+    _ensure_column(db, "tasks", "decided_at", "decided_at TEXT")
+    _ensure_column(db, "tasks", "from_decision_id", "from_decision_id INTEGER REFERENCES tasks(id)")
     for tbl in ("projects", "sections", "tasks"):
         db.execute("UPDATE %s SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL OR uid = ''" % tbl)
     db.executescript(
@@ -301,6 +305,16 @@ def sanitize_template(raw, name):
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def fmt_day(iso):
+    """Format an ISO timestamp as a short date (for the decision register)."""
+    if not iso:
+        return ""
+    try:
+        return datetime.fromisoformat(iso).strftime("%d %b %Y")
+    except (ValueError, TypeError):
+        return iso
 
 
 def format_event(e):
@@ -706,31 +720,58 @@ def export_activity(project_id):
     return resp
 
 
-@app.route("/projects/<int:project_id>/decisions.json")
-def export_decisions(project_id):
-    """Download the decision register — every decision task with its options and
-    confirmed outcome. The source of truth for the practice's decision log."""
-    db = get_db()
-    get_project_or_404(db, project_id)
+def build_decisions(db, project_id):
+    """The decision register: every decision (numbered by creation order) with
+    its options, confirmed outcome + date, and the tasks spawned from it."""
     rows = db.execute(
-        "SELECT * FROM tasks WHERE project_id=? AND type='decision' ORDER BY stage, position, id",
+        "SELECT * FROM tasks WHERE project_id=? AND type='decision' ORDER BY id",
         (project_id,),
     ).fetchall()
-    decisions = []
-    for r in rows:
+    out = []
+    for i, r in enumerate(rows, start=1):
         opts = [o["text"] for o in db.execute(
             "SELECT text FROM decision_options WHERE task_id=? ORDER BY position, id", (r["id"],))]
-        decisions.append({
-            "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
-            "title": r["title"], "status": r["status"],
-            "decision_by": r["awaiting_on"] or "",
-            "options": opts,
-            "outcome": r["outcome"] or "",
-            "confirmed": bool(r["outcome"]),
+        linked = [{"id": t["id"], "title": t["title"], "status": t["status"], "stage": t["stage"]}
+                  for t in db.execute(
+                      "SELECT id, title, status, stage FROM tasks WHERE from_decision_id=? ORDER BY id", (r["id"],))]
+        out.append({
+            "n": i, "id": r["id"], "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
+            "title": r["title"], "status": r["status"], "assignee": r["awaiting_on"] or "",
+            "options": opts, "outcome": r["outcome"] or "", "confirmed": bool(r["outcome"]),
+            "decided_at": r["decided_at"] or "", "decided_day": fmt_day(r["decided_at"]),
+            "linked": linked,
         })
+    return out
+
+
+@app.route("/projects/<int:project_id>/decisions")
+def decisions_page(project_id):
+    """The decision register, as a styled page (a second view of the project)."""
+    db = get_db()
+    p = get_project_or_404(db, project_id)
+    return render_template(
+        "decisions.html",
+        project={"id": p["id"], "number": p["number"] or "", "name": p["name"]},
+        decisions=build_decisions(db, project_id), riba=RIBA_STAGES,
+    )
+
+
+@app.route("/projects/<int:project_id>/decisions.json")
+def export_decisions(project_id):
+    """Download the decision register — the source of truth for the practice's
+    decision log, with every decision's options, outcome, date and spawned tasks."""
+    db = get_db()
+    get_project_or_404(db, project_id)
+    decisions = build_decisions(db, project_id)
     data = {"project_id": project_id, "exported_at": now_iso(),
             "count": len(decisions), "confirmed": sum(1 for d in decisions if d["confirmed"]),
-            "decisions": decisions}
+            "decisions": [{
+                "number": d["n"], "stage": d["stage"], "stage_name": d["stage_name"],
+                "title": d["title"], "status": d["status"], "decision_by": d["assignee"],
+                "options": d["options"], "outcome": d["outcome"], "confirmed": d["confirmed"],
+                "decided_at": d["decided_at"],
+                "tasks_from_decision": [t["title"] for t in d["linked"]],
+            } for d in decisions]}
     resp = make_response(json.dumps(data, indent=2, ensure_ascii=False))
     resp.headers["Content-Type"] = "application/json"
     resp.headers["Content-Disposition"] = 'attachment; filename="arckanban-decisions.json"'
@@ -957,13 +998,15 @@ def api_delete_option(option_id):
 
 @app.route("/api/tasks/<int:task_id>/confirm", methods=["POST"])
 def api_confirm_decision(task_id):
-    """Confirm a decision's outcome (from an option or a typed 'other'). With
-    add_option set, the 'other' text is also recorded as an option so the
-    register shows the chosen item. Logged as a curated milestone ('decided')."""
+    """Confirm a decision's outcome (from an option or a typed 'other'). Requires
+    the decision-maker (awaiting_on) to be set first; on confirm the decision is
+    stamped with the date and auto-moved to Done. Logged as a curated milestone."""
     db = get_db()
     row, err = _decision_or_error(db, task_id)
     if err:
         return err
+    if not (row["awaiting_on"] or "").strip():
+        return jsonify(ok=False, error="Set the decision-maker (decision by?) before confirming."), 400
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     if not text:
@@ -973,10 +1016,14 @@ def api_confirm_decision(task_id):
         existing = db.execute("SELECT id, text FROM decision_options WHERE task_id=? AND text=?",
                               (task_id, text)).fetchone()
         option = {"id": existing["id"], "text": text} if existing else _add_option(db, task_id, text)
-    db.execute("UPDATE tasks SET outcome=? WHERE id=?", (text, task_id))
+    when = now_iso()
+    # Confirm + stamp + auto-move to Done (a decided decision is a done decision).
+    pos = next_position(db, row["project_id"], row["stage"], "done", row["section_id"])
+    db.execute("UPDATE tasks SET outcome=?, decided_at=?, status='done', position=? WHERE id=?",
+               (text, when, pos, task_id))
     ev = log_event(db, row["project_id"], "decided", row["title"], "→ " + text, task_id=task_id)
     db.commit()
-    return jsonify(ok=True, outcome=text, option=option, event=ev)
+    return jsonify(ok=True, outcome=text, option=option, status="done", event=ev)
 
 
 @app.route("/api/tasks/<int:task_id>/unconfirm", methods=["POST"])
@@ -985,10 +1032,33 @@ def api_clear_decision(task_id):
     row, err = _decision_or_error(db, task_id)
     if err:
         return err
-    db.execute("UPDATE tasks SET outcome=NULL WHERE id=?", (task_id,))
+    db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL WHERE id=?", (task_id,))
     ev = log_event(db, row["project_id"], "reopened decision", row["title"], task_id=task_id, important=False)
     db.commit()
     return jsonify(ok=True, event=ev)
+
+
+@app.route("/api/decisions/<int:task_id>/tasks", methods=["POST"])
+def api_add_task_from_decision(task_id):
+    """Create a task that 'feeds from' a decision — linked via from_decision_id so
+    the connection is recorded (register + log) for later AI/process analysis."""
+    db = get_db()
+    dec = db.execute("SELECT * FROM tasks WHERE id=? AND type='decision'", (task_id,)).fetchone()
+    if dec is None:
+        return jsonify(ok=False, error="No such decision."), 404
+    title = ((request.get_json(silent=True) or {}).get("title") or "").strip()
+    if not title:
+        return jsonify(ok=False, error="A task needs a title."), 400
+    stage = dec["stage"]
+    pos = next_position(db, dec["project_id"], stage, "todo", None)
+    cur = db.execute(
+        "INSERT INTO tasks (project_id, stage, title, status, type, position, from_decision_id) "
+        "VALUES (?, ?, ?, 'todo', 'process', ?, ?)",
+        (dec["project_id"], stage, title, pos, task_id),
+    )
+    log_event(db, dec["project_id"], "added", title, "from decision “%s”" % dec["title"], task_id=cur.lastrowid)
+    db.commit()
+    return jsonify(ok=True, task={"id": cur.lastrowid, "title": title, "status": "todo", "stage": stage})
 
 
 @app.route("/api/projects/<int:project_id>/tasks/restore", methods=["POST"])

@@ -413,7 +413,17 @@
     var r = await api("/api/options/" + li.dataset.optionId + "/delete", {});
     if (r) { li.remove(); updateDecOther(card); }
   }
+  function decAssigneeSet(card) {
+    var t = card.querySelector(".awaiting-text");
+    return !!(t && !t.classList.contains("is-empty") && t.textContent.trim());
+  }
   async function confirmDecision(card, text, addOpt) {
+    // A decision can't be confirmed until the decision-maker is set.
+    if (!decAssigneeSet(card)) {
+      alert("Set who the decision is for (“decision by?”) before confirming it.");
+      var box = card.querySelector(".awaiting-on"); if (box) editAwaiting(box);
+      return;
+    }
     var r = await api("/api/tasks/" + card.dataset.taskId + "/confirm", { text: text, add_option: !!addOpt });
     if (!r) return;
     if (r.option) {
@@ -422,6 +432,12 @@
       updateDecOther(card);
     }
     setDecisionOutcome(card, r.outcome);
+    if (r.status) {   // auto-moved to Done on the server — reflect it on the board
+      applyCardStatus(card, r.status);
+      var stageEl = stageOf(card), destCol = stageEl.querySelector('.col-body[data-status="' + r.status + '"]');
+      if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
+      recountStageFull(stageEl); registerActivity(card.dataset.stage, card.dataset.taskId);
+    }
   }
   async function clearDecision(card) {
     var r = await api("/api/tasks/" + card.dataset.taskId + "/unconfirm", {});

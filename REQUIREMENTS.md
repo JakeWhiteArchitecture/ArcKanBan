@@ -170,9 +170,9 @@ An optional grouping between a stage and its tasks: **Stage → Section → Task
 ### 3.13 Decisions & the decision register
 - A **Decision** task (one of the four types) carries, under its **decision-by** assignee: a list of candidate **options** and a single confirmed **outcome**.
 - **Add options** inline on the card ("+ option", keep typing to add several). Options persist in a `decision_options` table.
-- **Confirm a choice** by the ✓ on an option, or via **right-click → Confirm decision** (lists the options + **Other…**). Decisions rarely land on a listed option, so **Other…** lets you type the real outcome — which is also recorded as an option, so the register shows the chosen item. The confirmed outcome shows as a green **✓ Decided** banner; it can be **reopened** (cleared).
-- Confirming logs a **curated milestone** (*"JW decided “Choose feature wall colour” → RAL 9010"*). Confirming is decoupled from status (you can confirm without moving to Done).
-- The **decision register** is the source of truth for the practice's decisions: **More → Decision register** (and the card Config) exports `/projects/<id>/decisions.json` — every decision with its stage, decision-by, options, status and confirmed outcome.
+- **Confirm a choice** by the ✓ on an option, or via **right-click → Confirm decision** (lists the options + **Other…** once there's more than one). Decisions rarely land on a listed option, so **Other…** lets you type the real outcome — which is also recorded as an option, so the register shows the chosen item. The confirmed outcome shows as a green **✓ Decided** banner; it can be **reopened** (cleared).
+- **Automation:** options can be added before a decision-maker is set, **but a decision cannot be confirmed until the “decision by?” assignee is set**. On confirming, the decision is **stamped with the date and auto-moved to Done**. Confirming logs a **curated milestone** (*"JW decided “Choose feature wall colour” → RAL 9010"*).
+- The **decision register** is a second view of each project (**Decisions** button, top-right of the board → `/projects/<id>/decisions`): a styled table of every decision — **# · description · decision-by · outcome · decided date · stage** — with an **Add task** action per row that spawns a task **linked back to the decision** (`from_decision_id`, logged), so the provenance of work is recoverable later (process analysis / AI). Downloadable as JSON (`/projects/<id>/decisions.json`).
 
 ---
 
@@ -452,6 +452,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 
 Tracked so nothing is lost; ordered roughly by priority.
 
+> **Recently shipped (v0.15):** **decision automation** — a decision can't be confirmed until its “decision by?” assignee is set, and confirming **stamps the date + auto-moves it to Done** (§3.13); a styled **Decision register page** (Decisions button, top-right) with #/description/assignee/outcome/date and an **Add task** that links spawned tasks back to the decision (`from_decision_id`, logged); and an **identity capsule** (top-left) that keeps the job no. + name visible while the auto-hide header is tucked away.
+>
 > **Recently shipped (v0.14):** **vendored fonts** — Hanken Grotesk (variable) + IBM Plex Mono woff2 served from `static/fonts/` with OFL.txt (no CDN); the **dormant swimlane layout** code/CSS/template removed (the board is status-primary only now); the auto-hide dock **retracts slowly with a longer pause** so the header stops jumping; **assignee autocomplete** on "decision by?"/awaiting (standard roles + per-project remembered names); and a new project **opens on the first populated stage** so a template's board never looks empty.
 >
 > **Recently shipped (v0.13):** the inline "Add a task" form was removed — the **＋ Task** header widget is the single add path; the auto-hide dock indicator is now a **fine full-width rail that merges into the centred tab** (one hover zone) that slides the header down on hover.

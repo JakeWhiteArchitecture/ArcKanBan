@@ -71,7 +71,7 @@
                     </form>
                     <div class="config-links">
                       <a class="config-item" href="{{ url_for('export_template', project_id=p.id) }}" download>Save as template</a>
-                      <a class="config-item" href="{{ url_for('export_decisions', project_id=p.id) }}" download>Decision register</a>
+                      <a class="config-item" href="{{ url_for('decisions_page', project_id=p.id) }}">Decision register</a>
                     </div>
                     <form class="config-danger" method="post" action="{{ url_for('delete_project', project_id=p.id) }}"
                           onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks? This cannot be undone.');">
