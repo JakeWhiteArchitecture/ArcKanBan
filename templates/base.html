@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ArcKanban{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="mask-icon" href="{{ url_for('static', filename='favicon.svg') }}" color="#0A0F1F">
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <canvas class="neat-bg" id="neat-bg" aria-hidden="true"></canvas>

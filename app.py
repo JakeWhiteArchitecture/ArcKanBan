@@ -52,7 +52,7 @@ RIBA_STAGES = [
 # Status columns, left to right. Order matters: the ‹ › steppers walk this list.
 STATUSES = ["backlog", "upcoming", "todo", "inprogress", "awaiting", "done"]
 STATUS_LABELS = {
-    "backlog": "Stage Goals",
+    "backlog": "Stage goals",
     "upcoming": "Upcoming",
     "todo": "To Do",
     "inprogress": "In Progress",

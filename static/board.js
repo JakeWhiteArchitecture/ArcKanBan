@@ -9,7 +9,7 @@
   "use strict";
 
   var STATUSES = ["backlog", "upcoming", "todo", "inprogress", "awaiting", "done"];
-  var STATUS_LABELS = { backlog: "Stage Goals", upcoming: "Upcoming", todo: "To Do", inprogress: "In Progress", awaiting: "Awaiting", done: "Done" };
+  var STATUS_LABELS = { backlog: "Stage goals", upcoming: "Upcoming", todo: "To Do", inprogress: "In Progress", awaiting: "Awaiting", done: "Done" };
   var RIBA = [
     "Strategic Definition", "Preparation and Briefing", "Concept Design",
     "Spatial Coordination", "Technical Design", "Manufacturing and Construction",
