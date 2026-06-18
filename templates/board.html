@@ -8,8 +8,10 @@
           aria-label="Collapse titleblock" title="Collapse"><span class="chevron">▾</span></button>
 
   <div class="tb-left">
+    <a class="tb-logo-link" href="{{ url_for('index') }}" title="Register" aria-label="ArcKanBan — back to register">
+      <img class="tb-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="ArcKanBan">
+    </a>
     <div class="tb-id">
-      <a class="tb-home" href="{{ url_for('index') }}" title="Register" aria-label="Back to register">⌂</a>
       <span class="tb-cell tb-job-no editable{% if not project.number %} is-empty{% endif %}" data-action="edit-project-number" role="button"
             tabindex="0" title="Edit job number">{{ project.number or 'no.' }}</span>
       <span class="tb-cell tb-name editable" data-action="edit-project-name" role="button"
