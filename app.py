@@ -1083,15 +1083,30 @@ def api_confirm_decision(task_id):
 
 @app.route("/api/tasks/<int:task_id>/unconfirm", methods=["POST"])
 def api_clear_decision(task_id):
+    """Undo a decision: clear its outcome, date and rationale, and send it back to
+    To Do. The decision itself stays in the register; the prior outcome + rationale
+    are written into the activity log so the record of what was decided — and why —
+    is never lost. Returns any tasks spawned from this decision so the board can
+    offer to revise or remove them now that the decision is unmade."""
     db = get_db()
     row, err = _decision_or_error(db, task_id)
     if err:
         return err
+    # Preserve the "what" and the "why" in the audit trail before wiping the fields.
+    prior = []
+    if (row["outcome"] or "").strip():
+        prior.append("was “%s”" % row["outcome"].strip())
+    if (row["rationale"] or "").strip():
+        prior.append("rationale: " + row["rationale"].strip())
     pos = next_position(db, row["project_id"], row["stage"], "todo", row["section_id"])
-    db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL, status='todo', position=? WHERE id=?", (pos, task_id))
-    ev = log_event(db, row["project_id"], "reopened decision", row["title"], task_id=task_id, important=False)
+    db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL, rationale=NULL, status='todo', position=? WHERE id=?",
+               (pos, task_id))
+    ev = log_event(db, row["project_id"], "reopened decision", row["title"],
+                   " — ".join(prior) or None, task_id=task_id, important=True)
+    linked = [{"id": t["id"], "title": t["title"]} for t in db.execute(
+        "SELECT id, title FROM tasks WHERE from_decision_id=? ORDER BY id", (task_id,))]
     db.commit()
-    return jsonify(ok=True, status="todo", event=ev)
+    return jsonify(ok=True, status="todo", event=ev, linked=linked)
 
 
 @app.route("/api/decisions/<int:task_id>/tasks", methods=["POST"])
@@ -1210,9 +1225,10 @@ def api_update_task(task_id):
     if reposition:
         fields.append("position=?")
         values.append(next_position(db, row["project_id"], row["stage"], new_status, new_section))
-    # A decision dragged/stepped out of Done is no longer decided — unconfirm it.
+    # A decision dragged/stepped out of Done is no longer decided — unconfirm it
+    # (and drop its now-stale rationale, consistent with an explicit reopen).
     if row["type"] == "decision" and row["status"] == "done" and new_status != "done":
-        fields.append("outcome=NULL"); fields.append("decided_at=NULL")
+        fields.append("outcome=NULL"); fields.append("decided_at=NULL"); fields.append("rationale=NULL")
 
     if not fields:
         return jsonify(ok=True)
@@ -1251,9 +1267,10 @@ def api_move_task(task_id):
         index = 0
 
     db.execute("UPDATE tasks SET status=?, section_id=? WHERE id=?", (status, section_id, task_id))
-    # A decision dragged out of Done is no longer decided — unconfirm it.
+    # A decision dragged out of Done is no longer decided — unconfirm it
+    # (and drop its now-stale rationale, consistent with an explicit reopen).
     if row["type"] == "decision" and row["status"] == "done" and status != "done":
-        db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL WHERE id=?", (task_id,))
+        db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL, rationale=NULL WHERE id=?", (task_id,))
     siblings = [r["id"] for r in db.execute(
         """SELECT id FROM tasks WHERE project_id=? AND stage=? AND status=? AND section_id IS ?
            AND parent_id IS NULL AND id<>? ORDER BY position, id""",
