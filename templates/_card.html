@@ -2,7 +2,8 @@
 <article class="card type-{{ t.type }} status-{{ t.status }}{% if t.urgent %} is-urgent{% endif %}"
          draggable="true" data-task-id="{{ t.id }}" data-status="{{ t.status }}" data-stage="{{ t.stage }}"
          data-type="{{ t.type }}" data-urgent="{{ 1 if t.urgent else 0 }}"
-         data-section="{{ t.section_id if t.section_id is not none else '' }}">
+         data-section="{{ t.section_id if t.section_id is not none else '' }}"
+         data-rationale="{{ t.rationale or '' }}">
   <div class="card-top">
     <span class="drag-handle" aria-hidden="true" title="Drag to move">⠿</span>
     <select class="type-select" data-action="change-type" aria-label="Task category">
@@ -35,6 +36,7 @@
       <span class="dec-check">✓</span>
       <span class="dec-outcome-text">{{ t.outcome }}</span>
       <button type="button" class="dec-clear" data-action="clear-decision" aria-label="Reopen decision" title="Reopen decision">×</button>
+      {% if t.options %}<button type="button" class="dec-history-toggle" data-action="toggle-dec-history" aria-label="Show options considered" title="Show the options considered">▾</button>{% endif %}
     </div>
     {% endif %}
     {% if t.options %}

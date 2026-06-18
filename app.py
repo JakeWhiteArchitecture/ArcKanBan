@@ -187,6 +187,9 @@ def init_db():
     # When a decision was confirmed, and the link from a spawned task back to the
     # decision it came from (feeds the decision register + the audit trail).
     _ensure_column(db, "tasks", "decided_at", "decided_at TEXT")
+    # Optional free-text rationale for a decision (the "why") — shown in the
+    # register and captured when a decision lands in Done. Not mandatory.
+    _ensure_column(db, "tasks", "rationale", "rationale TEXT")
     _ensure_column(db, "tasks", "from_decision_id", "from_decision_id INTEGER REFERENCES tasks(id)")
     # Projects use a short (6-hex) URL-friendly uid; sections/tasks keep a long
     # one (not user-facing). Project uids are assigned with a uniqueness check,
@@ -446,6 +449,7 @@ def task_to_dict(row):
         "section_id": row["section_id"],
         "parent_id": row["parent_id"],
         "outcome": (row["outcome"] if "outcome" in keys else None) or "",
+        "rationale": (row["rationale"] if "rationale" in keys else None) or "",
         "options": [],
     }
     # Decision tasks carry their candidate options (small list) for the card.
@@ -785,6 +789,7 @@ def build_decisions(db, project_id):
             "n": i, "id": r["id"], "uid": r["uid"], "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
             "title": r["title"], "status": r["status"], "assignee": r["awaiting_on"] or "",
             "options": opts, "outcome": r["outcome"] or "", "confirmed": bool(r["outcome"]),
+            "rationale": r["rationale"] or "",
             "decided_at": r["decided_at"] or "", "decided_day": fmt_day(r["decided_at"]),
             "linked": linked,
         })
@@ -1179,6 +1184,10 @@ def api_update_task(task_id):
     if "awaiting_on" in data:
         fields.append("awaiting_on=?")
         values.append((data["awaiting_on"] or "").strip() or None)
+
+    if "rationale" in data:
+        fields.append("rationale=?")
+        values.append((data["rationale"] or "").strip() or None)
 
     # Status and/or section change → reposition once at the end of the target column.
     new_status, new_section, reposition = row["status"], row["section_id"], False

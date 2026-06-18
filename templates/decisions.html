@@ -23,8 +23,10 @@
           <th class="dr-c-desc">Decision</th>
           <th class="dr-c-by">Decision&nbsp;by</th>
           <th class="dr-c-out">Outcome</th>
+          <th class="dr-c-opts">Options considered</th>
           <th class="dr-c-date">Decided</th>
           <th class="dr-c-stage">Stage</th>
+          <th class="dr-c-rat">Rationale</th>
           <th class="dr-c-tasks">Tasks from this decision</th>
         </tr>
       </thead>
@@ -35,8 +37,20 @@
           <td class="dr-c-desc">{{ d.title }}</td>
           <td class="dr-c-by">{% if d.assignee %}{{ d.assignee }}{% else %}<span class="dr-empty">— not set</span>{% endif %}</td>
           <td class="dr-c-out">{% if d.outcome %}<span class="dr-outcome">✓ {{ d.outcome }}</span>{% else %}<span class="dr-pending">pending</span>{% endif %}</td>
+          <td class="dr-c-opts">
+            {% if d.confirmed %}
+              {% set dismissed = d.options | reject('equalto', d.outcome) | list %}
+              {% if dismissed %}<ul class="dr-dismissed">{% for o in dismissed %}<li>{{ o }}</li>{% endfor %}</ul>{% else %}<span class="dr-empty">—</span>{% endif %}
+            {% elif d.options %}
+              <ul class="dr-optlist">{% for o in d.options %}<li>{{ o }}</li>{% endfor %}</ul>
+            {% else %}<span class="dr-empty">—</span>{% endif %}
+          </td>
           <td class="dr-c-date">{{ d.decided_day or '—' }}</td>
           <td class="dr-c-stage"><span class="dr-stage" style="--c: var(--riba-{{ d.stage }})">{{ d.stage }}</span> {{ d.stage_name }}</td>
+          <td class="dr-c-rat">
+            <div class="dr-rationale" data-decision-id="{{ d.id }}" data-action="edit-rationale" role="button" tabindex="0"
+                 title="Click to edit the rationale">{% if d.rationale %}{{ d.rationale }}{% else %}<span class="dr-empty">— add rationale</span>{% endif %}</div>
+          </td>
           <td class="dr-c-tasks">
             <ul class="dr-linked">
               {% for t in d.linked %}<li class="dr-linked-item">{{ t.title }}</li>{% endfor %}

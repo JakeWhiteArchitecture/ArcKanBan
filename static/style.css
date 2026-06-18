@@ -94,9 +94,9 @@ body.has-neat::before, body.has-neat::after { animation: none; }   /* freeze the
 body::before, body::after { content: ""; position: fixed; inset: -25%; z-index: -2; pointer-events: none; }
 body::before {
   background:
-    radial-gradient(40% 40% at 20% 26%, rgba(150, 90, 230, 0.40), transparent 62%),   /* violet */
-    radial-gradient(36% 36% at 82% 22%, rgba(225, 130, 70, 0.30), transparent 62%),    /* warm orange */
-    radial-gradient(46% 46% at 64% 84%, rgba(55, 170, 135, 0.30), transparent 62%),    /* green */
+    radial-gradient(40% 40% at 20% 26%, rgba(132, 96, 232, 0.38), transparent 62%),   /* violet */
+    radial-gradient(36% 36% at 82% 22%, rgba(72, 118, 224, 0.30), transparent 62%),    /* cool blue */
+    radial-gradient(46% 46% at 64% 84%, rgba(56, 128, 200, 0.26), transparent 62%),    /* steel blue */
     radial-gradient(40% 40% at 12% 80%, rgba(70, 110, 230, 0.32), transparent 62%);    /* blue */
   filter: blur(20px);
   animation: bg-drift 42s ease-in-out infinite alternate;
@@ -105,8 +105,8 @@ body::before {
 body::after {
   background:
     radial-gradient(30% 30% at 68% 58%, rgba(90, 140, 239, 0.26), transparent 62%),    /* blue */
-    radial-gradient(26% 26% at 36% 52%, rgba(170, 90, 210, 0.22), transparent 62%),    /* violet */
-    radial-gradient(24% 24% at 50% 30%, rgba(225, 140, 70, 0.18), transparent 62%);    /* warm orange */
+    radial-gradient(26% 26% at 36% 52%, rgba(150, 102, 222, 0.22), transparent 62%),   /* violet */
+    radial-gradient(24% 24% at 50% 30%, rgba(78, 112, 216, 0.18), transparent 62%);    /* indigo */
   filter: blur(30px);
   animation: bg-pulse 30s ease-in-out infinite alternate;
   will-change: transform, opacity;
@@ -607,6 +607,24 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 .dec-add, .dec-other { border: 1px dashed var(--glass-border); background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; }
 .dec-add:hover, .dec-other:hover { color: var(--ink); border-color: var(--glass-bright); }
 .dec-option-input { font: inherit; font-size: 0.8rem; width: 100%; border: 1px solid var(--blue); border-radius: 5px; padding: 2px 6px; background: var(--glass-deep); color: var(--ink); }
+
+/* A decision in Done is decided & locked: collapse to just the ✓ + outcome.
+   Keyed off status + the presence of an outcome, so it holds however the card
+   reached Done (server render, confirming, or a drag). No data is removed —
+   the options are only hidden, and drag out of Done expands it again. */
+.card[data-type="decision"][data-status="done"] .dec-block:has(.dec-outcome) { border-top: none; margin-top: 4px; padding-top: 0; }
+.card[data-type="decision"][data-status="done"] .dec-block:has(.dec-outcome) .dec-options,
+.card[data-type="decision"][data-status="done"] .dec-block:has(.dec-outcome) .dec-actions { display: none; }
+/* ▾ disclosure (sits right of the ×) reveals the options read-only, for the record. */
+.dec-history-toggle { display: none; border: none; background: transparent; color: var(--ink-dim); cursor: pointer; width: 18px; height: 18px; border-radius: 50%; font-size: 0.8rem; line-height: 1; transition: transform 140ms ease; }
+.dec-history-toggle:hover { color: var(--ink); background: var(--glass); }
+.card[data-type="decision"][data-status="done"] .dec-block:has(.dec-options) .dec-history-toggle { display: inline-flex; align-items: center; justify-content: center; }
+.dec-block.is-history-open .dec-history-toggle { transform: rotate(180deg); }
+.card[data-type="decision"][data-status="done"] .dec-block.is-history-open:has(.dec-outcome) .dec-options { display: flex; }
+/* In Done the revealed options are a read-only record — no confirming, adding or deleting. */
+.card[data-type="decision"][data-status="done"] .dec-option .dec-confirm,
+.card[data-type="decision"][data-status="done"] .dec-option .dec-option-del { display: none; }
+.card[data-type="decision"][data-status="done"] .dec-option { cursor: default; }
 .ctx-sep { height: 1px; background: var(--hairline); margin: 4px 6px; }
 
 .step { width: 22px; height: 20px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
@@ -755,7 +773,7 @@ body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked awa
 /* ====================================================================== */
 /*  DECISION REGISTER PAGE                                                 */
 /* ====================================================================== */
-.register-page { max-width: 1200px; margin: 0 auto; padding: calc(var(--u) * 4) calc(var(--u) * 2); }
+.register-page { max-width: min(1640px, 96vw); margin: 0 auto; padding: calc(var(--u) * 4) calc(var(--u) * 2); }
 .dr-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--u); margin-bottom: calc(var(--u) * 2); padding-bottom: calc(var(--u) * 1.5); border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
 .dr-id { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .dr-back { font-size: 0.85rem; color: var(--ink-soft); }
@@ -776,6 +794,31 @@ body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked awa
 .dr-c-by { color: var(--ink-soft); white-space: nowrap; }
 .dr-empty, .dr-pending { color: var(--ink-dim); font-style: italic; }
 .dr-outcome { color: var(--sage); font-weight: 600; }
+/* Outcome + Options + Rationale get the room — they're often short paragraphs. */
+.dr-c-out { min-width: 200px; }
+.dr-outcome { display: inline-block; line-height: 1.4; }
+.dr-c-opts { min-width: 240px; font-size: 0.82rem; }
+.dr-optlist, .dr-dismissed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.4; }
+.dr-optlist li { color: var(--ink-soft); }
+.dr-dismissed li { color: var(--ink-dim); text-decoration: line-through; }
+.dr-c-rat { min-width: 280px; }
+.dr-rationale { cursor: text; color: var(--ink-soft); white-space: pre-wrap; line-height: 1.45; border-radius: 6px; padding: 3px 5px; margin: -3px -5px; min-height: 1.3em; }
+.dr-rationale:hover { background: var(--glass); }
+.dr-rationale-input { width: 100%; font: inherit; font-size: 0.84rem; background: var(--glass-deep); color: var(--ink); border: 1px solid var(--blue); border-radius: 6px; padding: 5px 7px; resize: vertical; }
+
+/* Centred modal (decision rationale capture) */
+.modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(4, 6, 12, 0.62); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: pop-in 140ms ease; }
+.modal-backdrop[hidden] { display: none; }
+.modal { width: 480px; max-width: 100%; display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; background: var(--glass-deep); border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: var(--shadow-lift); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+.modal-title { margin: 0; font-size: 1.15rem; color: var(--ink); }
+.modal-sub { margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
+.rationale-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.rat-chip { border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-soft); cursor: pointer; font-size: 0.78rem; padding: 5px 11px; border-radius: 999px; }
+.rat-chip:hover { color: var(--ink); border-color: var(--glass-bright); }
+.rat-chip.is-on { color: var(--ink); border-color: var(--blue); background: var(--blue-tint); }
+.rationale-text { width: 100%; font: inherit; font-size: 0.9rem; min-height: 96px; padding: 9px 11px; background: var(--glass-deep); color: var(--ink); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); resize: vertical; }
+.rationale-text:focus { border-color: var(--blue); outline: none; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 2px; }
 .dr-c-date { font-family: var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 .dr-c-stage { color: var(--ink-soft); white-space: nowrap; font-size: 0.82rem; }
 .dr-stage { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.7rem; background: var(--c, var(--blue)); }

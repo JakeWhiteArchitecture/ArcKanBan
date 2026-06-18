@@ -1,8 +1,8 @@
 /* ArcKanban — animated "Neat"-style gradient background.
    A self-contained WebGL fragment shader (domain-warped fbm) — no library,
-   no npm, no CDN, nothing fetched. Dark, blobby multi-hue glow — violet,
-   green, warm orange and blue amorphous forms over a dark base, with the
-   lighter areas allowed to lift for variety (still dark mode). Falls back to
+   no npm, no CDN, nothing fetched. Dark, blobby cool glow — violet, steel
+   blue and blue amorphous forms over a near-black base, with the lighter
+   areas allowed to lift for variety (still dark mode). Falls back to
    the CSS gradient if WebGL/shader fails; honours prefers-reduced-motion;
    pauses when the tab is hidden. */
 (function () {
@@ -16,11 +16,11 @@
   var fsrc = [
     "precision highp float;",
     "uniform vec2 u_res; uniform float u_time;",
-    "const vec3 c0=vec3(0.018,0.020,0.045);",   // deep indigo base (dark)
-    "const vec3 c1=vec3(0.165,0.085,0.245);",   // violet
-    "const vec3 c2=vec3(0.030,0.155,0.120);",   // green / teal
-    "const vec3 c3=vec3(0.300,0.140,0.055);",   // warm orange
-    "const vec3 c4=vec3(0.055,0.120,0.265);",   // blue
+    "const vec3 c0=vec3(0.013,0.015,0.028);",   // near-black, faint cool tint (dark grey→black)
+    "const vec3 c1=vec3(0.150,0.090,0.250);",   // violet
+    "const vec3 c2=vec3(0.040,0.120,0.195);",   // steel blue (was green)
+    "const vec3 c3=vec3(0.060,0.150,0.275);",   // cool blue pocket (was warm orange)
+    "const vec3 c4=vec3(0.055,0.115,0.260);",   // blue
     "float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}",
     "float noise(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash(i),b=hash(i+vec2(1.,0.)),c=hash(i+vec2(0.,1.)),d=hash(i+vec2(1.,1.));vec2 u=f*f*(3.-2.*f);return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}",
     "float fbm(vec2 p){float v=0.,a=0.5;for(int i=0;i<3;i++){v+=a*noise(p);p*=2.0;a*=0.5;}return v;}",  // few octaves = blobby
