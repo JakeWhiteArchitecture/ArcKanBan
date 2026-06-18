@@ -6,7 +6,7 @@
 <main class="register-page">
   <header class="dr-head">
     <div class="dr-id">
-      <a class="dr-back" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">‹ Board</a>
+      <a class="dr-back" href="{{ url_for('board', project_uid=project.uid) }}" data-project-id="{{ project.id }}" title="Back to the board">‹ Board</a>
       <h1 class="dr-title"><span class="dr-no">{{ project.number or 'no.' }}</span> {{ project.name }}</h1>
       <span class="dr-sub">Decision register</span>
     </div>

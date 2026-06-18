@@ -331,6 +331,32 @@ a { color: var(--blue); text-decoration: none; }
 .tb-pop[hidden] { display: none; }
 .pop-head { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); padding: 2px 6px 5px; }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.tb-search-btn { font-size: 1rem; line-height: 1; padding: 6px 10px; }
+
+/* Task search popover */
+.search-pop { width: 360px; max-width: 92vw; gap: 6px; }
+.search-input { width: 100%; font-family: var(--font-ui); font-size: 0.95rem; padding: 9px 11px;
+  border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--glass-deep); color: var(--ink); }
+.search-input:focus { border-color: var(--blue); }
+.search-results { display: flex; flex-direction: column; gap: 2px; max-height: 52vh; overflow-y: auto; scrollbar-width: thin; }
+.search-results::-webkit-scrollbar { width: 6px; } .search-results::-webkit-scrollbar-thumb { background: var(--glass-bright); border-radius: 3px; }
+.search-hint { color: var(--ink-dim); font-style: italic; font-size: 0.82rem; padding: 6px 8px; }
+.search-result { display: block; width: 100%; text-align: left; border: none; background: transparent; cursor: pointer;
+  padding: 7px 9px; border-radius: 7px; border-left: 3px solid var(--glass-border); }
+.search-result:hover, .search-result:focus-visible { background: var(--glass); }
+.search-result.type-statutory { border-left-color: var(--redline); }
+.search-result.type-recommended { border-left-color: var(--blue); }
+.search-result.type-process { border-left-color: var(--violet); }
+.search-result.type-decision { border-left-color: var(--ochre); }
+.search-result-title { display: block; color: var(--ink); font-size: 0.88rem; line-height: 1.3; }
+.search-result-meta { display: block; margin-top: 2px; font-size: 0.72rem; color: var(--ink-soft); font-family: var(--font-mono); }
+
+/* Flash a task when you jump to it from search */
+.card.is-found { animation: card-found 1.6s ease; }
+@keyframes card-found {
+  0%, 100% { box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
+  12%, 58% { box-shadow: 0 0 0 2px var(--blue), 0 0 22px var(--blue-glow); }
+}
 
 .filter-btn { border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-soft); border-radius: var(--radius-sm); padding: 7px 11px; font-size: 0.82rem; cursor: pointer; text-align: left; }
 .filter-btn:hover { color: var(--ink); border-color: var(--glass-bright); }
@@ -423,10 +449,10 @@ body.dock-mode.dock-open .dock-id { opacity: 0; transform: translateY(-8px); poi
 body.dock-mode .titleblock {
   z-index: 32; box-shadow: var(--shadow-lift);
   transform: translateY(-100%);
-  transition: transform 560ms cubic-bezier(.4, 0, .2, 1);         /* slow, gentle retract */
+  transition: transform 1100ms cubic-bezier(.4, 0, .2, 1);        /* very slow, gentle retract */
 }
 body.dock-mode.dock-open .titleblock { transform: translateY(0); transition: transform 200ms cubic-bezier(.2, .7, .3, 1); }  /* snappy reveal */
-body.dock-mode .board { padding-top: 0; transition: padding-top 560ms cubic-bezier(.4, 0, .2, 1); }        /* tucked: Kanban fills up (slow) */
+body.dock-mode .board { padding-top: 0; transition: padding-top 1100ms cubic-bezier(.4, 0, .2, 1); }      /* tucked: Kanban fills up (slow) */
 body.dock-mode.dock-open .board { padding-top: var(--tb-h); transition: padding-top 200ms cubic-bezier(.2, .7, .3, 1); }     /* revealed: squeeze down (snappy) */
 body.dock-mode .nudge { top: 16px; }
 body.dock-mode.dock-open .nudge { top: calc(var(--tb-h) + 10px); }
