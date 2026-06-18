@@ -691,7 +691,8 @@ body.hide-done .col-done .bubble { display: none; }
 .bubble-collapse .chevron { display: inline-block; transition: transform 160ms ease; font-size: 0.8rem; }
 .bubble.is-collapsed .bubble-cards { display: none; }
 .bubble.is-collapsed .bubble-head { border-bottom: none; }
-.bubble.is-collapsed .bubble-collapse .chevron { transform: rotate(-90deg); }
+.bubble.is-collapsed .bubble-collapse .chevron,
+.bubble.is-collapsing .bubble-collapse .chevron { transform: rotate(-90deg); }
 .bubble-count { font-family: var(--font-mono); color: var(--ink-dim); }
 .bubble-cards { padding: 6px; gap: 6px; min-height: 12px; }
 .loose-cards { flex-shrink: 0; padding: 3px 2px; min-height: 22px; gap: 6px; }
@@ -704,9 +705,13 @@ body.hide-done .col-done .bubble { display: none; }
 .grouped.linking .loose-cards > .card { opacity: 0.35; }
 .grouped.linking .loose-cards > .card.is-selected { opacity: 1; }
 
-/* drag a whole section (bubble) by its header */
-.bubble-head { cursor: grab; user-select: none; }
-.bubble-head:active { cursor: grabbing; }
+/* The header toggles collapse on click; the grip (⠿) is the drag affordance for
+   moving the whole section to another status. */
+.bubble-head { cursor: pointer; user-select: none; }
+.bubble-head:hover { background: rgba(255, 255, 255, 0.03); }
+.bubble-grip { flex-shrink: 0; cursor: grab; color: var(--ink-dim); font-size: 0.95rem; line-height: 1; letter-spacing: -2px; padding: 1px 3px; border-radius: 4px; }
+.bubble-grip:hover { color: var(--ink-soft); background: var(--glass); }
+.bubble-grip:active { cursor: grabbing; }
 .bubble.dragging-bubble { opacity: 0.5; box-shadow: var(--shadow-lift); }
 
 /* right-click section menu (both layouts) */
@@ -819,6 +824,16 @@ body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked awa
 .rationale-text { width: 100%; font: inherit; font-size: 0.9rem; min-height: 96px; padding: 9px 11px; background: var(--glass-deep); color: var(--ink); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); resize: vertical; }
 .rationale-text:focus { border-color: var(--blue); outline: none; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 2px; }
+
+/* Decision-reopened popup: the tasks that decision spawned (rename / delete). */
+.unmade-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; max-height: 46vh; overflow-y: auto; scrollbar-width: thin; }
+.unmade-list::-webkit-scrollbar { width: 6px; } .unmade-list::-webkit-scrollbar-thumb { background: var(--glass-bright); border-radius: 3px; }
+.unmade-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 8px; background: var(--glass); border: 1px solid var(--glass-border); border-left: 3px solid var(--violet); }
+.unmade-name { flex: 1; min-width: 0; color: var(--ink); font-size: 0.9rem; cursor: text; border-radius: 5px; padding: 2px 5px; margin: -2px -5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unmade-name:hover { background: var(--glass-raised); }
+.unmade-item .title-input { font-size: 0.9rem; }
+.unmade-del { flex-shrink: 0; width: 24px; height: 24px; border: 1px solid transparent; background: transparent; color: var(--ink-soft); cursor: pointer; border-radius: 6px; font-size: 1.15rem; line-height: 1; }
+.unmade-del:hover { color: var(--redline); border-color: var(--redline); background: var(--redline-tint); }
 .dr-c-date { font-family: var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 .dr-c-stage { color: var(--ink-soft); white-space: nowrap; font-size: 0.82rem; }
 .dr-stage { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.7rem; background: var(--c, var(--blue)); }

@@ -150,6 +150,17 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="unmade-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="unmade-title">
+    <h2 class="modal-title" id="unmade-title">Decision reopened</h2>
+    <p class="modal-sub">These tasks came from <strong class="unmade-for">this decision</strong>. Now it's unmade, rename any that need rewording or remove the ones that no longer apply.</p>
+    <ul class="unmade-list" aria-label="Tasks from this decision"></ul>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" data-action="unmade-done">Done</button>
+    </div>
+  </div>
+</div>
+
 <main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
   <button type="button" class="nav-arrow prev" data-action="nav-prev" aria-label="Previous stage">‹</button>
   <button type="button" class="nav-arrow next" data-action="nav-next" aria-label="Next stage">›</button>
