@@ -291,7 +291,7 @@ a { color: var(--blue); text-decoration: none; }
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border-bottom: 1px solid var(--hairline);
 }
-.tb-left { display: flex; align-items: center; margin-right: auto; }
+.tb-left { display: flex; align-items: center; gap: 14px; margin-right: auto; }
 .tb-right { display: flex; align-items: center; gap: 6px; }
 .tb-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: none; }
@@ -304,9 +304,12 @@ a { color: var(--blue); text-decoration: none; }
 .tb-collapse .chevron { display: inline-block; transition: transform 160ms ease; }
 
 .tb-id { display: flex; align-items: stretch; }
-.tb-home { display: grid; place-items: center; width: 34px; border: 1px solid var(--glass-border); border-right: none; border-radius: var(--radius-sm) 0 0 var(--radius-sm); color: var(--ink-soft); font-size: 1.1rem; background: var(--glass); }
+/* The wordmark logo sits top-left of the header and links back to the register. */
+.tb-logo-link { display: flex; align-items: center; flex-shrink: 0; }
+.tb-logo { height: 28px; width: auto; display: block; }
+.tb-logo-link:hover { opacity: 0.82; }
 .tb-cell { display: grid; align-items: center; padding: 0 calc(var(--u) * 1.25); border: 1px solid var(--glass-border); background: var(--glass); }
-.tb-job-no { color: var(--blue); font-size: 0.95rem; border-right: none; }
+.tb-job-no { color: var(--blue); font-size: 0.95rem; border-right: none; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .tb-name { font-weight: 600; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editable { cursor: text; }
 .editable:hover { background: var(--glass-raised); }
