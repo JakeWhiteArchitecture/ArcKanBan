@@ -23,6 +23,7 @@
           <th class="dr-c-desc">Decision</th>
           <th class="dr-c-by">Decision&nbsp;by</th>
           <th class="dr-c-out">Outcome</th>
+          <th class="dr-c-opts">Options considered</th>
           <th class="dr-c-date">Decided</th>
           <th class="dr-c-stage">Stage</th>
           <th class="dr-c-tasks">Tasks from this decision</th>
@@ -35,6 +36,14 @@
           <td class="dr-c-desc">{{ d.title }}</td>
           <td class="dr-c-by">{% if d.assignee %}{{ d.assignee }}{% else %}<span class="dr-empty">— not set</span>{% endif %}</td>
           <td class="dr-c-out">{% if d.outcome %}<span class="dr-outcome">✓ {{ d.outcome }}</span>{% else %}<span class="dr-pending">pending</span>{% endif %}</td>
+          <td class="dr-c-opts">
+            {% if d.confirmed %}
+              {% set dismissed = d.options | reject('equalto', d.outcome) | list %}
+              {% if dismissed %}<ul class="dr-dismissed">{% for o in dismissed %}<li>{{ o }}</li>{% endfor %}</ul>{% else %}<span class="dr-empty">—</span>{% endif %}
+            {% elif d.options %}
+              <ul class="dr-optlist">{% for o in d.options %}<li>{{ o }}</li>{% endfor %}</ul>
+            {% else %}<span class="dr-empty">—</span>{% endif %}
+          </td>
           <td class="dr-c-date">{{ d.decided_day or '—' }}</td>
           <td class="dr-c-stage"><span class="dr-stage" style="--c: var(--riba-{{ d.stage }})">{{ d.stage }}</span> {{ d.stage_name }}</td>
           <td class="dr-c-tasks">

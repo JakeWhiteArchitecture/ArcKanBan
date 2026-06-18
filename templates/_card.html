@@ -35,6 +35,7 @@
       <span class="dec-check">✓</span>
       <span class="dec-outcome-text">{{ t.outcome }}</span>
       <button type="button" class="dec-clear" data-action="clear-decision" aria-label="Reopen decision" title="Reopen decision">×</button>
+      {% if t.options %}<button type="button" class="dec-history-toggle" data-action="toggle-dec-history" aria-label="Show options considered" title="Show the options considered">▾</button>{% endif %}
     </div>
     {% endif %}
     {% if t.options %}
