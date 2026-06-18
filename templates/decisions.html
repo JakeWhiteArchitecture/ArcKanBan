@@ -26,6 +26,7 @@
           <th class="dr-c-opts">Options considered</th>
           <th class="dr-c-date">Decided</th>
           <th class="dr-c-stage">Stage</th>
+          <th class="dr-c-rat">Rationale</th>
           <th class="dr-c-tasks">Tasks from this decision</th>
         </tr>
       </thead>
@@ -46,6 +47,10 @@
           </td>
           <td class="dr-c-date">{{ d.decided_day or '—' }}</td>
           <td class="dr-c-stage"><span class="dr-stage" style="--c: var(--riba-{{ d.stage }})">{{ d.stage }}</span> {{ d.stage_name }}</td>
+          <td class="dr-c-rat">
+            <div class="dr-rationale" data-decision-id="{{ d.id }}" data-action="edit-rationale" role="button" tabindex="0"
+                 title="Click to edit the rationale">{% if d.rationale %}{{ d.rationale }}{% else %}<span class="dr-empty">— add rationale</span>{% endif %}</div>
+          </td>
           <td class="dr-c-tasks">
             <ul class="dr-linked">
               {% for t in d.linked %}<li class="dr-linked-item">{{ t.title }}</li>{% endfor %}

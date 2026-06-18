@@ -437,6 +437,7 @@
       var stageEl = stageOf(card), destCol = stageEl.querySelector('.col-body[data-status="' + r.status + '"]');
       if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
       recountStageFull(stageEl); registerActivity(card.dataset.stage, card.dataset.taskId);
+      maybePromptRationale(card);
     }
   }
   async function clearDecision(card) {
@@ -489,6 +490,36 @@
       } else if (e.key === "Escape") { e.preventDefault(); finish(false); }
     });
     input.addEventListener("blur", function () { finish(true); });
+  }
+
+  // ---- decision rationale: capture the "why" when a decision lands in Done -
+  var rationaleId = null;
+  function maybePromptRationale(card) {
+    if (!card || card.dataset.type !== "decision") return;
+    if ((card.dataset.rationale || "").trim()) return;   // already explained — don't nag
+    openRationale(card);
+  }
+  function openRationale(card) {
+    var modal = document.getElementById("rationale-modal"); if (!modal) return;
+    rationaleId = card.dataset.taskId;
+    var forEl = modal.querySelector(".rationale-for"); if (forEl) forEl.textContent = cardTitle(card);
+    var ta = modal.querySelector(".rationale-text"); ta.value = card.dataset.rationale || "";
+    modal.querySelectorAll(".rat-chip").forEach(function (c) { c.classList.remove("is-on"); });
+    modal.hidden = false; ta.focus();
+  }
+  function closeRationale() { var m = document.getElementById("rationale-modal"); if (m) m.hidden = true; rationaleId = null; }
+  function rationaleChip(btn) {
+    var ta = document.getElementById("rationale-modal").querySelector(".rationale-text");
+    var label = btn.dataset.rat || btn.textContent.trim(), cur = ta.value.trim();
+    if (cur.indexOf(label) === -1) ta.value = cur ? cur + ". " + label : label;   // append; non-destructive
+    btn.classList.add("is-on"); ta.focus();
+  }
+  async function saveRationale() {
+    var id = rationaleId; if (!id) { closeRationale(); return; }
+    var val = document.getElementById("rationale-modal").querySelector(".rationale-text").value.trim();
+    var r = await api("/api/tasks/" + id, { rationale: val });
+    if (r) { var card = board.querySelector('.card[data-task-id="' + id + '"]'); if (card) card.dataset.rationale = val; }
+    closeRationale();
   }
 
   function openSectionMenu(card, x, y) {
@@ -566,6 +597,7 @@
     var r = await api("/api/tasks/" + id, { status: newStatus });
     if (!r) return;
     applyCardStatus(card, newStatus);
+    if (newStatus === "done" && prev !== "done") maybePromptRationale(card);
     pushUndo("move of “" + title + "”", function () { return undoMove(id, prev, sec); });
     var stageEl = stageOf(card);
     var destCol = stageEl.querySelector('.col-body[data-status="' + newStatus + '"]');
@@ -908,6 +940,7 @@
     if (!r) { location.reload(); return; }
     applyCardStatus(card, status);
     card.dataset.section = section || "";
+    if (status === "done" && dragFrom && dragFrom.status !== "done") maybePromptRationale(card);
     if (dragFrom && (dragFrom.status !== status || dragFrom.section !== (section || ""))) {
       var df = dragFrom;
       pushUndo("move of “" + df.title + "”", function () { return undoMove(df.id, df.status, df.section); });
@@ -939,6 +972,9 @@
         case "delete-option": deleteOption(el); break;
         case "clear-decision": clearDecision(cardOf(el)); break;
         case "toggle-dec-history": { var hb = el.closest(".dec-block"); if (hb) hb.classList.toggle("is-history-open"); break; }
+        case "rationale-chip": rationaleChip(el); break;
+        case "rationale-save": saveRationale(); break;
+        case "rationale-skip": closeRationale(); break;
         case "edit-title": editTitle(el); break;
         case "edit-awaiting": editAwaiting(el); break;
         case "edit-project-number": editProjectField(el, "number"); break;
@@ -991,6 +1027,8 @@
     if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop")) dockHideSoon();
   });
   track.addEventListener("scroll", closeMenu);
+  var ratModal = document.getElementById("rationale-modal");
+  if (ratModal) ratModal.addEventListener("click", function (e) { if (e.target === ratModal) closeRationale(); });
   document.addEventListener("submit", function (e) {
     var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); }
   });
@@ -1000,7 +1038,7 @@
       if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .sec-row-name")) { e.preventDefault(); t.click(); }
       return;
     }
-    if (e.key === "Escape") { closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
+    if (e.key === "Escape") { closeRationale(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
       var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);
