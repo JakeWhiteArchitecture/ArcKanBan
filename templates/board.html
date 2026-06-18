@@ -37,6 +37,7 @@
   <span class="tb-urgent" id="tb-urgent" hidden></span>
 
   <div class="tb-right">
+    <button type="button" class="tb-btn tb-search-btn" data-action="toggle-search" aria-label="Search tasks" title="Search tasks (press /)">⌕</button>
     <button type="button" class="tb-btn tb-btn-accent" data-action="create-open" title="New task">＋ Task</button>
     <button type="button" class="tb-btn" data-action="toggle-sections" title="Sections of work">Sections</button>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
@@ -114,6 +115,11 @@
   </form>
 </div>
 
+<div class="tb-pop search-pop" id="search-pop" hidden aria-label="Search tasks">
+  <input type="text" class="search-input" placeholder="Search tasks across all stages…" autocomplete="off" aria-label="Search tasks">
+  <div class="search-results" aria-live="polite"></div>
+</div>
+
 <datalist id="assignee-suggestions">
   {% for a in assignees %}<option value="{{ a }}"></option>{% endfor %}
 </datalist>
@@ -124,6 +130,24 @@
     <button type="button" class="btn btn-primary btn-sm" data-action="nudge-set">Set as current</button>
     <button type="button" class="btn-quiet btn-sm" data-action="nudge-dismiss">Dismiss</button>
   </span>
+</div>
+
+<div class="modal-backdrop" id="rationale-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rationale-title">
+    <h2 class="modal-title" id="rationale-title">Why this decision?</h2>
+    <p class="modal-sub">Record the rationale for <strong class="rationale-for">this decision</strong>. Optional — you can skip.</p>
+    <div class="rationale-chips">
+      <button type="button" class="rat-chip" data-action="rationale-chip" data-rat="Aesthetics">Aesthetics</button>
+      <button type="button" class="rat-chip" data-action="rationale-chip" data-rat="Structural performance">Structural performance</button>
+      <button type="button" class="rat-chip" data-action="rationale-chip" data-rat="Fire performance">Fire performance</button>
+      <button type="button" class="rat-chip" data-action="rationale-chip" data-rat="Building Regs compliance">Building Regs compliance</button>
+    </div>
+    <textarea class="rationale-text" rows="5" placeholder="Explain the logic behind the decision…" aria-label="Decision rationale"></textarea>
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet" data-action="rationale-skip">Skip</button>
+      <button type="button" class="btn btn-primary" data-action="rationale-save">Save rationale</button>
+    </div>
+  </div>
 </div>
 
 <main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">

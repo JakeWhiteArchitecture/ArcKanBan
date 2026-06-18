@@ -437,6 +437,7 @@
       var stageEl = stageOf(card), destCol = stageEl.querySelector('.col-body[data-status="' + r.status + '"]');
       if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
       recountStageFull(stageEl); registerActivity(card.dataset.stage, card.dataset.taskId);
+      maybePromptRationale(card);
     }
   }
   async function clearDecision(card) {
@@ -489,6 +490,36 @@
       } else if (e.key === "Escape") { e.preventDefault(); finish(false); }
     });
     input.addEventListener("blur", function () { finish(true); });
+  }
+
+  // ---- decision rationale: capture the "why" when a decision lands in Done -
+  var rationaleId = null;
+  function maybePromptRationale(card) {
+    if (!card || card.dataset.type !== "decision") return;
+    if ((card.dataset.rationale || "").trim()) return;   // already explained — don't nag
+    openRationale(card);
+  }
+  function openRationale(card) {
+    var modal = document.getElementById("rationale-modal"); if (!modal) return;
+    rationaleId = card.dataset.taskId;
+    var forEl = modal.querySelector(".rationale-for"); if (forEl) forEl.textContent = cardTitle(card);
+    var ta = modal.querySelector(".rationale-text"); ta.value = card.dataset.rationale || "";
+    modal.querySelectorAll(".rat-chip").forEach(function (c) { c.classList.remove("is-on"); });
+    modal.hidden = false; ta.focus();
+  }
+  function closeRationale() { var m = document.getElementById("rationale-modal"); if (m) m.hidden = true; rationaleId = null; }
+  function rationaleChip(btn) {
+    var ta = document.getElementById("rationale-modal").querySelector(".rationale-text");
+    var label = btn.dataset.rat || btn.textContent.trim(), cur = ta.value.trim();
+    if (cur.indexOf(label) === -1) ta.value = cur ? cur + ". " + label : label;   // append; non-destructive
+    btn.classList.add("is-on"); ta.focus();
+  }
+  async function saveRationale() {
+    var id = rationaleId; if (!id) { closeRationale(); return; }
+    var val = document.getElementById("rationale-modal").querySelector(".rationale-text").value.trim();
+    var r = await api("/api/tasks/" + id, { rationale: val });
+    if (r) { var card = board.querySelector('.card[data-task-id="' + id + '"]'); if (card) card.dataset.rationale = val; }
+    closeRationale();
   }
 
   function openSectionMenu(card, x, y) {
@@ -566,6 +597,7 @@
     var r = await api("/api/tasks/" + id, { status: newStatus });
     if (!r) return;
     applyCardStatus(card, newStatus);
+    if (newStatus === "done" && prev !== "done") maybePromptRationale(card);
     pushUndo("move of “" + title + "”", function () { return undoMove(id, prev, sec); });
     var stageEl = stageOf(card);
     var destCol = stageEl.querySelector('.col-body[data-status="' + newStatus + '"]');
@@ -698,7 +730,7 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   // ---- titleblock popovers (filters / more / scope / create) ------------
-  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop"];
+  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop", "search-pop"];
   function closePops(except) {
     POP_IDS.forEach(function (id) { if (id === except) return; var el = document.getElementById(id); if (el) el.hidden = true; });
   }
@@ -707,6 +739,49 @@
     var willOpen = el.hidden; closePops(id); el.hidden = !willOpen;
   }
   function anyPopOpen() { return POP_IDS.some(function (id) { var el = document.getElementById(id); return el && !el.hidden; }); }
+
+  // ---- task search (tasks only, across every stage) ---------------------
+  function openSearch() {
+    var pop = document.getElementById("search-pop"); if (!pop) return;
+    closePops("search-pop"); pop.hidden = false;
+    var inp = pop.querySelector(".search-input"); inp.value = ""; inp.focus();
+    renderSearch("");
+  }
+  function renderSearch(q) {
+    var pop = document.getElementById("search-pop"); if (!pop) return;
+    var box = pop.querySelector(".search-results"); box.innerHTML = "";
+    q = (q || "").trim().toLowerCase();
+    if (!q) { box.innerHTML = '<div class="search-hint">Type to find a task across all stages…</div>'; return; }
+    var matches = [].slice.call(board.querySelectorAll(".card")).filter(function (card) {
+      var t = card.querySelector(".task-title");
+      return t && t.textContent.trim().toLowerCase().indexOf(q) >= 0;
+    });
+    if (!matches.length) { box.innerHTML = '<div class="search-hint">No tasks match.</div>'; return; }
+    matches.slice(0, 40).forEach(function (card) {
+      var stage = Number(card.dataset.stage);
+      var sec = card.dataset.section ? sectionTitle(stageOf(card), card.dataset.section) : "General";
+      var row = document.createElement("button");
+      row.type = "button"; row.className = "search-result type-" + (card.dataset.type || "recommended");
+      row.dataset.action = "search-jump"; row.dataset.taskId = card.dataset.taskId;
+      var title = document.createElement("span"); title.className = "search-result-title";
+      title.textContent = card.querySelector(".task-title").textContent.trim();
+      var meta = document.createElement("span"); meta.className = "search-result-meta";
+      meta.textContent = "Stage " + stage + " · " + RIBA[stage] + " · " + sec + " · " + (STATUS_LABELS[card.dataset.status] || card.dataset.status);
+      row.appendChild(title); row.appendChild(meta); box.appendChild(row);
+    });
+    if (matches.length > 40) box.insertAdjacentHTML("beforeend", '<div class="search-hint">…and ' + (matches.length - 40) + ' more — keep typing</div>');
+  }
+  function jumpToTask(id) {
+    var card = board.querySelector('.card[data-task-id="' + id + '"]'); if (!card) return;
+    closePops();
+    var collapsed = card.closest(".bubble.is-collapsed"); if (collapsed) collapsed.classList.remove("is-collapsed");
+    var stage = Number(card.dataset.stage); lastActive = stage; gotoStage(stage);
+    setTimeout(function () {
+      card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center", inline: "nearest" });
+      card.classList.remove("is-found"); void card.offsetWidth; card.classList.add("is-found");
+      setTimeout(function () { card.classList.remove("is-found"); }, 1700);
+    }, reduceMotion ? 0 : 340);
+  }
 
   // ---- create-task widget -----------------------------------------------
   function openCreate() {
@@ -764,9 +839,9 @@
   function dockHideSoon() {
     if (!dockEnabled()) return;
     clearTimeout(dockTimer);
-    // Long pause before retracting, so the header doesn't jump when the pointer
-    // briefly leaves the bar/rail.
-    dockTimer = setTimeout(function () { if (!dockHover && !anyPopOpen()) document.body.classList.remove("dock-open"); }, 800);
+    // Long pause before retracting, so brushing the bar a few times keeps it
+    // open — it barely gets a chance to close.
+    dockTimer = setTimeout(function () { if (!dockHover && !anyPopOpen()) document.body.classList.remove("dock-open"); }, 2200);
   }
   function dockEnter() { dockHover = true; dockReveal(); }
   function dockLeave() { dockHover = false; dockHideSoon(); }
@@ -908,6 +983,7 @@
     if (!r) { location.reload(); return; }
     applyCardStatus(card, status);
     card.dataset.section = section || "";
+    if (status === "done" && dragFrom && dragFrom.status !== "done") maybePromptRationale(card);
     if (dragFrom && (dragFrom.status !== status || dragFrom.section !== (section || ""))) {
       var df = dragFrom;
       pushUndo("move of “" + df.title + "”", function () { return undoMove(df.id, df.status, df.section); });
@@ -939,6 +1015,9 @@
         case "delete-option": deleteOption(el); break;
         case "clear-decision": clearDecision(cardOf(el)); break;
         case "toggle-dec-history": { var hb = el.closest(".dec-block"); if (hb) hb.classList.toggle("is-history-open"); break; }
+        case "rationale-chip": rationaleChip(el); break;
+        case "rationale-save": saveRationale(); break;
+        case "rationale-skip": closeRationale(); break;
         case "edit-title": editTitle(el); break;
         case "edit-awaiting": editAwaiting(el); break;
         case "edit-project-number": editProjectField(el, "number"); break;
@@ -956,6 +1035,8 @@
         case "create-close": createSave(true); break;
         case "toggle-filters": togglePop("filter-pop"); break;
         case "toggle-more": togglePop("more-pop"); break;
+        case "toggle-search": { var spp = document.getElementById("search-pop"); if (spp.hidden) openSearch(); else spp.hidden = true; break; }
+        case "search-jump": jumpToTask(el.dataset.taskId); break;
         case "toggle-sections": { var secp = document.getElementById("sections-pop"); if (secp.hidden) openSections(); else secp.hidden = true; break; }
         case "dock-peek": if (document.body.classList.contains("dock-open")) document.body.classList.remove("dock-open"); else dockReveal(); break;
         case "enable-stage": { var set = enabledStages.slice(); var es = Number(el.dataset.stage); if (set.indexOf(es) < 0) set.push(es); saveScope(set); break; }
@@ -977,6 +1058,7 @@
     else if (!card) clearSelection();
   });
   document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); });
+  document.addEventListener("input", function (e) { if (e.target.classList.contains("search-input")) renderSearch(e.target.value); });
   document.addEventListener("contextmenu", function (e) {
     var card = e.target.closest(".card");
     if (card) { e.preventDefault(); openSectionMenu(card, e.clientX, e.clientY); return; }
@@ -986,21 +1068,28 @@
   document.addEventListener("click", function (e) {
     if (ctxMenu && !e.target.closest(".ctx-menu")) closeMenu();
     var inPop = e.target.closest(".tb-pop");
-    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="create-open"], [data-action="toggle-sections"]');
+    var onTrigger = e.target.closest('[data-action="toggle-filters"], [data-action="toggle-more"], [data-action="create-open"], [data-action="toggle-sections"], [data-action="toggle-search"]');
     if (!inPop && !onTrigger) closePops();
     if (dockEnabled() && !e.target.closest(".titleblock, .dock-handle, .tb-pop")) dockHideSoon();
   });
   track.addEventListener("scroll", closeMenu);
+  var ratModal = document.getElementById("rationale-modal");
+  if (ratModal) ratModal.addEventListener("click", function (e) { if (e.target === ratModal) closeRationale(); });
   document.addEventListener("submit", function (e) {
     var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); }
   });
   document.addEventListener("keydown", function (e) {
     var t = e.target;
+    if (t.classList && t.classList.contains("search-input")) {   // typing in the search box
+      if (e.key === "Enter") { var f = document.querySelector("#search-pop .search-result"); if (f) { e.preventDefault(); jumpToTask(f.dataset.taskId); } }
+      return;   // let "/" etc. type normally here
+    }
+    if (e.key === "/" && !t.matches("input, select, textarea, [contenteditable]")) { e.preventDefault(); openSearch(); return; }
     if (e.key === "Enter" || e.key === " ") {
       if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .sec-row-name")) { e.preventDefault(); t.click(); }
       return;
     }
-    if (e.key === "Escape") { closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
+    if (e.key === "Escape") { closeRationale(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
       var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);
@@ -1026,9 +1115,13 @@
   if (dhEl) { dhEl.addEventListener("mouseenter", dockEnter); dhEl.addEventListener("mouseleave", dockLeave); }
   var drEl = document.querySelector(".dock-rail");
   if (drEl) { drEl.addEventListener("mouseenter", dockEnter); drEl.addEventListener("mouseleave", dockLeave); }
+  var qStage = null; try { qStage = new URLSearchParams(location.search).get("stage"); } catch (e) {}
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
   var startN;
-  if (saved != null && saved !== "" && isEnabled(Number(saved))) {
+  if (qStage != null && qStage !== "" && isEnabled(Number(qStage))) {
+    startN = Number(qStage);   // explicit return-to-stage (e.g. coming back from the decision register)
+    try { history.replaceState({}, "", location.pathname); } catch (e) {}   // keep the URL clean
+  } else if (saved != null && saved !== "" && isEnabled(Number(saved))) {
     startN = Number(saved);
   } else {
     startN = currentStage;

@@ -4,6 +4,14 @@
    later (process analysis / AI). No reload — the new task is appended in place. */
 (function () {
   "use strict";
+
+  // Return to the same board stage you were viewing (board.js saves it per project).
+  var back = document.querySelector(".dr-back");
+  if (back && back.dataset.projectId) {
+    var n = null; try { n = localStorage.getItem("arckanban-stage-" + back.dataset.projectId); } catch (e) {}
+    if (n != null && n !== "") back.href = back.href.split("?")[0] + "?stage=" + encodeURIComponent(n);
+  }
+
   var table = document.querySelector(".dr-table");
   if (!table) return;
 
@@ -29,4 +37,44 @@
     ul.appendChild(li);
     input.value = ""; input.focus();   // keep adding
   });
+
+  // ---- inline rationale editing (the optional "why" column) --------------
+  document.addEventListener("click", function (e) {
+    var cell = e.target.closest(".dr-rationale");
+    if (cell && !cell.querySelector("textarea")) startRationaleEdit(cell);
+  });
+  function renderRationale(cell, val) {
+    cell.dataset.value = val;
+    if (val) cell.textContent = val;
+    else cell.innerHTML = '<span class="dr-empty">— add rationale</span>';
+  }
+  function startRationaleEdit(cell) {
+    var id = cell.dataset.decisionId;
+    var current = "value" in cell.dataset ? cell.dataset.value
+                : (cell.querySelector(".dr-empty") ? "" : cell.textContent.trim());
+    var ta = document.createElement("textarea");
+    ta.className = "dr-rationale-input"; ta.rows = 3; ta.value = current;
+    cell.textContent = ""; cell.appendChild(ta); ta.focus();
+    var done = false;
+    function finish(commit) {
+      if (done) return; done = true;
+      if (commit) saveRationale(id, ta.value.trim(), cell);
+      else renderRationale(cell, current);
+    }
+    ta.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); finish(true); }   // Shift+Enter = newline
+      else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+    });
+    ta.addEventListener("blur", function () { finish(true); });
+  }
+  async function saveRationale(id, val, cell) {
+    var res, json = {};
+    try {
+      res = await fetch("/api/tasks/" + id, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rationale: val }) });
+    } catch (err) { alert("Could not reach the app. Is it still running?"); renderRationale(cell, val); return; }
+    try { json = await res.json(); } catch (err) {}
+    if (!res.ok || !json.ok) alert((json && json.error) || "Could not save the rationale.");
+    renderRationale(cell, val);
+  }
 })();
