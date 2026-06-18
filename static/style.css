@@ -174,6 +174,8 @@ a { color: var(--blue); text-decoration: none; }
 .register { max-width: 1100px; margin: 0 auto; padding: calc(var(--u) * 5) calc(var(--u) * 2); }
 .register-head { margin-bottom: calc(var(--u) * 3); border-bottom: 1px solid var(--hairline); padding-bottom: calc(var(--u) * 2); }
 .wordmark { font-size: 2rem; background: linear-gradient(90deg, #fff, var(--blue)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Traced white-outline logo (static/logo.svg), used in place of the text wordmark */
+.wordmark-logo { display: block; width: min(440px, 72vw); height: auto; }
 .tagline { margin: calc(var(--u) * 0.5) 0 0; color: var(--ink-soft); font-size: 0.95rem; }
 
 .new-project { margin-bottom: calc(var(--u) * 4); }
