@@ -581,6 +581,24 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 .dec-add, .dec-other { border: 1px dashed var(--glass-border); background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; }
 .dec-add:hover, .dec-other:hover { color: var(--ink); border-color: var(--glass-bright); }
 .dec-option-input { font: inherit; font-size: 0.8rem; width: 100%; border: 1px solid var(--blue); border-radius: 5px; padding: 2px 6px; background: var(--glass-deep); color: var(--ink); }
+
+/* A decision in Done is decided & locked: collapse to just the ✓ + outcome.
+   Keyed off status + the presence of an outcome, so it holds however the card
+   reached Done (server render, confirming, or a drag). No data is removed —
+   the options are only hidden, and drag out of Done expands it again. */
+.card[data-type="decision"][data-status="done"] .dec-block:has(.dec-outcome) { border-top: none; margin-top: 4px; padding-top: 0; }
+.card[data-type="decision"][data-status="done"] .dec-block:has(.dec-outcome) .dec-options,
+.card[data-type="decision"][data-status="done"] .dec-block:has(.dec-outcome) .dec-actions { display: none; }
+/* ▾ disclosure (sits right of the ×) reveals the options read-only, for the record. */
+.dec-history-toggle { display: none; border: none; background: transparent; color: var(--ink-dim); cursor: pointer; width: 18px; height: 18px; border-radius: 50%; font-size: 0.8rem; line-height: 1; transition: transform 140ms ease; }
+.dec-history-toggle:hover { color: var(--ink); background: var(--glass); }
+.card[data-type="decision"][data-status="done"] .dec-block:has(.dec-options) .dec-history-toggle { display: inline-flex; align-items: center; justify-content: center; }
+.dec-block.is-history-open .dec-history-toggle { transform: rotate(180deg); }
+.card[data-type="decision"][data-status="done"] .dec-block.is-history-open:has(.dec-outcome) .dec-options { display: flex; }
+/* In Done the revealed options are a read-only record — no confirming, adding or deleting. */
+.card[data-type="decision"][data-status="done"] .dec-option .dec-confirm,
+.card[data-type="decision"][data-status="done"] .dec-option .dec-option-del { display: none; }
+.card[data-type="decision"][data-status="done"] .dec-option { cursor: default; }
 .ctx-sep { height: 1px; background: var(--hairline); margin: 4px 6px; }
 
 .step { width: 22px; height: 20px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
@@ -750,6 +768,10 @@ body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked awa
 .dr-c-by { color: var(--ink-soft); white-space: nowrap; }
 .dr-empty, .dr-pending { color: var(--ink-dim); font-style: italic; }
 .dr-outcome { color: var(--sage); font-weight: 600; }
+.dr-c-opts { min-width: 140px; font-size: 0.82rem; }
+.dr-optlist, .dr-dismissed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dr-optlist li { color: var(--ink-soft); }
+.dr-dismissed li { color: var(--ink-dim); text-decoration: line-through; }
 .dr-c-date { font-family: var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 .dr-c-stage { color: var(--ink-soft); white-space: nowrap; font-size: 0.82rem; }
 .dr-stage { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.7rem; background: var(--c, var(--blue)); }

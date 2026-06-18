@@ -457,7 +457,8 @@
       if (!banner) {
         banner = document.createElement("div"); banner.className = "dec-outcome";
         banner.innerHTML = '<span class="dec-check">✓</span> <span class="dec-outcome-text"></span>' +
-          '<button type="button" class="dec-clear" data-action="clear-decision" aria-label="Reopen decision" title="Reopen decision">×</button>';
+          '<button type="button" class="dec-clear" data-action="clear-decision" aria-label="Reopen decision" title="Reopen decision">×</button>' +
+          '<button type="button" class="dec-history-toggle" data-action="toggle-dec-history" aria-label="Show options considered" title="Show the options considered">▾</button>';
         block.insertBefore(banner, block.firstChild);
       }
       banner.querySelector(".dec-outcome-text").textContent = outcome;
@@ -937,6 +938,7 @@
         case "confirm-option": { var dli = el.closest(".dec-option"); if (dli) confirmDecision(cardOf(el), dli.querySelector(".dec-option-text").textContent.trim(), false); break; }
         case "delete-option": deleteOption(el); break;
         case "clear-decision": clearDecision(cardOf(el)); break;
+        case "toggle-dec-history": { var hb = el.closest(".dec-block"); if (hb) hb.classList.toggle("is-history-open"); break; }
         case "edit-title": editTitle(el); break;
         case "edit-awaiting": editAwaiting(el); break;
         case "edit-project-number": editProjectField(el, "number"); break;
