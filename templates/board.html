@@ -126,6 +126,24 @@
   </span>
 </div>
 
+<div class="modal-backdrop" id="rationale-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rationale-title">
+    <h2 class="modal-title" id="rationale-title">Why this decision?</h2>
+    <p class="modal-sub">Record the rationale for <strong class="rationale-for">this decision</strong>. Optional — you can skip.</p>
+    <div class="rationale-chips">
+      <button type="button" class="rat-chip" data-action="rationale-chip" data-rat="Aesthetics">Aesthetics</button>
+      <button type="button" class="rat-chip" data-action="rationale-chip" data-rat="Structural performance">Structural performance</button>
+      <button type="button" class="rat-chip" data-action="rationale-chip" data-rat="Fire performance">Fire performance</button>
+      <button type="button" class="rat-chip" data-action="rationale-chip" data-rat="Building Regs compliance">Building Regs compliance</button>
+    </div>
+    <textarea class="rationale-text" rows="5" placeholder="Explain the logic behind the decision…" aria-label="Decision rationale"></textarea>
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet" data-action="rationale-skip">Skip</button>
+      <button type="button" class="btn btn-primary" data-action="rationale-save">Save rationale</button>
+    </div>
+  </div>
+</div>
+
 <main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
   <button type="button" class="nav-arrow prev" data-action="nav-prev" aria-label="Previous stage">‹</button>
   <button type="button" class="nav-arrow next" data-action="nav-next" aria-label="Next stage">›</button>
