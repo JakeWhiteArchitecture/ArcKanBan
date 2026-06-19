@@ -50,6 +50,55 @@ Each just runs `python /path/to/serve.py` with the environment variables you wan
 
 ---
 
+## 2b. Run in a container (Podman / Docker)
+
+If you'd rather not manage a Python environment at all, run it as a container. The repo
+ships a `Containerfile` that works with **Podman** (Fedora's default) or Docker. The
+database is kept on a named volume, so it **survives the container being rebuilt** after a
+`git pull`.
+
+```bash
+# from the repo folder — build once:
+podman build -t arckanban .
+
+# run it (published to localhost only; data on the arckanban-data volume):
+podman run -d --name arckanban \
+  -p 127.0.0.1:5000:5000 \
+  -v arckanban-data:/data \
+  arckanban
+```
+
+Open **http://127.0.0.1:5000**. Day-to-day:
+
+```bash
+podman stop arckanban        # stop
+podman start arckanban       # start again
+podman logs -f arckanban     # watch output
+```
+
+To update after pulling new code — rebuild and recreate; the volume keeps your data:
+
+```bash
+git pull
+podman build -t arckanban .
+podman rm -f arckanban
+podman run -d --name arckanban -p 127.0.0.1:5000:5000 -v arckanban-data:/data arckanban
+```
+
+Notes:
+- A **named volume** (`arckanban-data`) avoids SELinux hassle. If you'd rather use a host
+  folder, add `:Z` so SELinux relabels it — e.g. `-v ./data:/data:Z`.
+- Reach it from your phone over the mesh by publishing to your NetBird address instead of
+  localhost: `-p 100.x.x.x:5000:5000` (see §3).
+- **Auto-start on boot** (Fedora): generate a user service with
+  `podman generate systemd --new --name arckanban` (or a Quadlet), enable it with
+  `systemctl --user enable …`, and `loginctl enable-linger $USER` so it runs without you
+  logged in.
+- Everything inside the container is disposable — your data lives only on the volume, so
+  back *that* up (see §5).
+
+---
+
 ## 3. Private access from your phone / tablet (NetBird / Tailscale)
 
 This is the recommended way to use ArcKanban beyond your desk **without exposing it to the

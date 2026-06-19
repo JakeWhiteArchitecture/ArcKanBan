@@ -1,0 +1,10 @@
+# Keep the image small and never bake local state into it.
+# (Podman honours .dockerignore when .containerignore is absent.)
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.db
+*.db-journal
+backups/
