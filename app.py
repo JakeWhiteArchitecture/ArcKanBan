@@ -1230,9 +1230,24 @@ def api_set_split(project_id):
     splits = project_splits(p)
     if parts <= 1:
         splits.pop(stage, None)
-        # Merge: everything in this stage collapses back into part 0 (4a → 4).
-        db.execute("UPDATE tasks SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))
-        db.execute("UPDATE sections SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))
+        # Merge: collapse every part onto the stage, renumbering each section and
+        # each status/section lane so the parts stay in order (4a's items first,
+        # then 4b's) instead of colliding at the same positions.
+        secs = db.execute(
+            "SELECT id FROM sections WHERE project_id=? AND stage=? ORDER BY substage, position, id",
+            (project_id, stage)).fetchall()
+        for i, s in enumerate(secs):
+            db.execute("UPDATE sections SET substage=0, position=? WHERE id=?", (i, s["id"]))
+        rows = db.execute(
+            "SELECT id, status, section_id FROM tasks WHERE project_id=? AND stage=? AND parent_id IS NULL "
+            "ORDER BY status, section_id IS NOT NULL, section_id, substage, position, id",
+            (project_id, stage)).fetchall()
+        lane = {}
+        for t in rows:
+            key = (t["status"], t["section_id"])
+            n = lane.get(key, 0); lane[key] = n + 1
+            db.execute("UPDATE tasks SET substage=0, position=? WHERE id=?", (n, t["id"]))
+        db.execute("UPDATE tasks SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))  # any children too
         verb, detail = "merged sub-stages", "Stage %d" % stage
     else:
         # Narrowing the split: fold any now-orphaned parts into the new last one.
