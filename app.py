@@ -890,9 +890,29 @@ def decisions_page(project_uid):
     p = get_project_by_uid_or_404(db, project_uid)
     return render_template(
         "decisions.html",
-        project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"]},
-        decisions=build_decisions(db, p["id"]), riba=RIBA_STAGES,
+        project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"],
+                 "current_stage": p["current_stage"]},
+        decisions=build_decisions(db, p["id"]), riba=RIBA_STAGES, enabled=sorted(enabled_stages(p)),
     )
+
+
+@app.route("/projects/<project_uid>/decisions.eml")
+def email_decisions(project_uid):
+    """Email a decisions table (meeting-minutes style) for the chosen stages
+    (all stages when none are given)."""
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    stages = _parse_stages(request.args.get("stages"))
+    decisions = build_decisions(db, p["id"])
+    if stages:
+        decisions = [d for d in decisions if d["stage"] in stages]
+    by_stage = {}
+    for d in decisions:
+        by_stage.setdefault(d["stage"], []).append(d)
+    groups = [{"idx": s, "name": RIBA_STAGES[s], "decisions": by_stage[s]} for s in sorted(by_stage)]
+    subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
+    html = render_template("email_decisions.html", subtitle=subtitle, date=fmt_day(now_iso()), groups=groups)
+    return _eml_response("%s — Decisions" % subtitle, html, (_slugify(subtitle) or "report") + "-decisions.eml")
 
 
 @app.route("/projects/<project_uid>/decisions.json")
@@ -930,16 +950,24 @@ def build_email_schedule(db, project_id, stage_indices):
         statuses = []
         for status in STATUSES:
             rows = db.execute(
-                "SELECT title, type, urgent, section_id FROM tasks "
+                "SELECT title, type, urgent, section_id, outcome, rationale FROM tasks "
                 "WHERE project_id=? AND stage=? AND status=? ORDER BY position, id",
                 (project_id, idx, status)).fetchall()
             if not rows:
                 continue
             by_sec = {}
             for r in rows:
+                note = ""
+                if r["type"] == "decision":
+                    if (r["outcome"] or "").strip():
+                        note = "Decided: " + r["outcome"].strip()
+                        if (r["rationale"] or "").strip():
+                            note += " — " + r["rationale"].strip()
+                    else:
+                        note = "Pending"
                 by_sec.setdefault(r["section_id"], []).append(
                     {"title": r["title"], "type_label": TYPE_LABELS.get(r["type"], r["type"]),
-                     "urgent": bool(r["urgent"])})
+                     "urgent": bool(r["urgent"]), "note": note})
             groups = [{"section": title, "rows": by_sec[sid]} for sid, title in sec_order if sid in by_sec]
             if None in by_sec:
                 groups.append({"section": "General", "rows": by_sec[None]})

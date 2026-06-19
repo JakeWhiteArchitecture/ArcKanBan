@@ -3,17 +3,40 @@
 {% block body_class %}page-decisions{% endblock %}
 
 {% block content %}
-<main class="register-page">
-  <header class="dr-head">
-    <div class="dr-id">
-      <a class="dr-back" href="{{ url_for('board', project_uid=project.uid) }}" data-project-id="{{ project.id }}" title="Back to the board">‹ Board</a>
-      <h1 class="dr-title"><span class="dr-no">{{ project.number or 'no.' }}</span> {{ project.name }}</h1>
-      <span class="dr-sub">Decision register</span>
+<header class="titleblock" id="titleblock"
+        data-project-uid="{{ project.uid }}" data-current-stage="{{ project.current_stage }}" data-stages="{{ enabled|join(',') }}">
+  <div class="tb-left">
+    <a class="tb-logo-link" href="{{ url_for('index') }}" title="Register" aria-label="ArcKanBan — back to register">
+      <img class="tb-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="ArcKanBan">
+    </a>
+    <div class="tb-id">
+      <span class="tb-cell tb-job-no{% if not project.number %} is-empty{% endif %}">{{ project.number or 'no.' }}</span>
+      <span class="tb-cell tb-name">{{ project.name }}</span>
     </div>
-    <a class="btn-quiet btn-sm" href="{{ url_for('export_decisions', project_uid=project.uid) }}" download
-       title="Download the register as JSON">Download JSON</a>
-  </header>
+    <span class="tb-context">Decisions</span>
+  </div>
 
+  <div class="tb-center">
+    <div class="tb-stage">
+      <button type="button" class="tb-pager prev" data-action="dr-prev" aria-label="Previous stage" title="Previous stage">‹</button>
+      <div class="tb-stage-id">
+        <span class="tb-stage-kicker">RIBA Stage</span>
+        <span class="tb-stage-num">{{ project.current_stage }}</span>
+      </div>
+      <button type="button" class="tb-pager next" data-action="dr-next" aria-label="Next stage" title="Next stage">›</button>
+    </div>
+    <div class="tb-stage-name">{{ riba[project.current_stage] }}</div>
+  </div>
+
+  <div class="tb-right">
+    <a class="tb-btn dr-board" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
+    <button type="button" class="tb-btn" data-action="dr-toggle-all">Show all stages</button>
+    <button type="button" class="tb-btn tb-icon-btn" data-action="dr-email" aria-label="Email decisions" title="Email a decisions table">✉</button>
+    <a class="tb-btn" href="{{ url_for('export_decisions', project_uid=project.uid) }}" download title="Download the register as JSON">JSON</a>
+  </div>
+</header>
+
+<main class="register-page dr-page">
   {% if decisions %}
   <div class="dr-wrap">
     <table class="dr-table">
@@ -32,7 +55,7 @@
       </thead>
       <tbody>
         {% for d in decisions %}
-        <tr class="dr-row{% if d.confirmed %} is-decided{% endif %}" data-decision-id="{{ d.id }}">
+        <tr class="dr-row{% if d.confirmed %} is-decided{% endif %}" data-decision-id="{{ d.id }}" data-stage="{{ d.stage }}">
           <td class="dr-c-n">{{ '%03d'|format(d.n) }}</td>
           <td class="dr-c-desc">{{ d.title }}</td>
           <td class="dr-c-by">{% if d.assignee %}{{ d.assignee }}{% else %}<span class="dr-empty">— not set</span>{% endif %}</td>
@@ -64,6 +87,7 @@
         {% endfor %}
       </tbody>
     </table>
+    <p class="dr-none" hidden>No decisions in this stage.</p>
   </div>
   {% else %}
   <p class="empty">No decisions yet — add a <strong>Decision</strong> task on the board and it'll appear here.</p>

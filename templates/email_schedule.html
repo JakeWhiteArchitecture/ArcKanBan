@@ -14,6 +14,7 @@
   table.em tbody tr:nth-child(even) td { background: #f5f5f5; }
   td.em-sec { font-weight: 700; background: #ededed; vertical-align: top; }
   td.em-urgent { text-align: center; color: #c0392b; font-weight: 700; }
+  td.em-note { color: #555; font-size: 12px; }
   .em-empty { color: #999; font-style: italic; font-size: 12px; margin: 4px 0 8px; }
 </style>
 </head>
@@ -31,8 +32,9 @@
             <tr>
               <th style="width:22%">Section</th>
               <th>Task</th>
-              <th style="width:16%">Type</th>
-              <th style="width:9%">Urgent</th>
+              <th style="width:14%">Type</th>
+              <th style="width:8%">Urgent</th>
+              <th style="width:26%">Decisions / notes</th>
             </tr>
           </thead>
           <tbody>
@@ -43,6 +45,7 @@
                 <td>{{ row.title }}</td>
                 <td>{{ row.type_label }}</td>
                 <td class="em-urgent">{% if row.urgent %}&#10003;{% endif %}</td>
+                <td class="em-note">{{ row.note }}</td>
               </tr>
               {% endfor %}
             {% endfor %}

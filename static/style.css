@@ -796,6 +796,12 @@ body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked awa
 /* ====================================================================== */
 /*  DECISION REGISTER PAGE                                                 */
 /* ====================================================================== */
+/* Decisions page shares the fixed titleblock; reserve its height + a context tag. */
+body.page-decisions { padding-top: var(--tb-h); }
+.tb-context { align-self: center; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft); }
+.dr-row[hidden] { display: none; }
+.dr-none { color: var(--ink-soft); font-style: italic; padding: calc(var(--u) * 3) 0; text-align: center; }
+
 .register-page { max-width: min(1640px, 96vw); margin: 0 auto; padding: calc(var(--u) * 4) calc(var(--u) * 2); }
 .dr-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--u); margin-bottom: calc(var(--u) * 2); padding-bottom: calc(var(--u) * 1.5); border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
 .dr-id { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
