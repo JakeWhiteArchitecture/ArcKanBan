@@ -570,59 +570,52 @@
   }
   function closeUnmade() { var m = document.getElementById("unmade-modal"); if (m) m.hidden = true; }
 
+  function ctxSep(menu) { var s = document.createElement("div"); s.className = "ctx-sep"; menu.appendChild(s); }
+  function ctxHead(menu, text) { var h = document.createElement("div"); h.className = "ctx-head"; h.textContent = text; menu.appendChild(h); }
+  function appendUndo(menu) {
+    var last = undoStack[undoStack.length - 1];
+    menu.appendChild(ctxItem("Undo", last ? function () { closeMenu(); runUndo(); } : null, !last));
+  }
+  // Right-click a card: the task's own actions. Section options appear only when
+  // the stage actually has sections to move between.
   function openSectionMenu(card, x, y) {
     closeMenu();
     var stageEl = stageOf(card), cur = card.dataset.section || "";
-    var menu = document.createElement("div"); menu.className = "ctx-menu";
-    if (card.dataset.type === "decision") {       // confirm-choice section first
-      var dh = document.createElement("div"); dh.className = "ctx-head"; dh.textContent = "Confirm decision"; menu.appendChild(dh);
+    var menu = document.createElement("div"); menu.className = "ctx-menu"; var has = false;
+    if (card.dataset.type === "decision") {
+      ctxHead(menu, "Confirm decision");
       var outcome = decOutcome(card);
       card.querySelectorAll(".dec-option .dec-option-text").forEach(function (span) {
         var text = span.textContent.trim();
-        var it = document.createElement("div"); it.className = "ctx-item" + (text === outcome ? " is-current" : "");
-        var s = document.createElement("span"); s.textContent = text; it.appendChild(s);
-        if (text !== outcome) it.addEventListener("click", function () { confirmDecision(card, text, false); closeMenu(); });
+        var it = ctxItem(text, text === outcome ? null : function () { confirmDecision(card, text, false); closeMenu(); });
+        if (text === outcome) it.classList.add("is-current");
         menu.appendChild(it);
       });
-      var other = document.createElement("div"); other.className = "ctx-item";
-      var os = document.createElement("span"); os.textContent = "Other…"; other.appendChild(os);
-      other.addEventListener("click", function () { closeMenu(); startAddOption(card, true); });
-      menu.appendChild(other);
-      if (outcome) {
-        var clr = document.createElement("div"); clr.className = "ctx-item";
-        var cs = document.createElement("span"); cs.textContent = "Clear decision"; clr.appendChild(cs);
-        clr.addEventListener("click", function () { clearDecision(card); closeMenu(); });
-        menu.appendChild(clr);
-      }
-      var sep = document.createElement("div"); sep.className = "ctx-sep"; menu.appendChild(sep);
+      menu.appendChild(ctxItem("Other…", function () { closeMenu(); startAddOption(card, true); }));
+      if (outcome) menu.appendChild(ctxItem("Clear decision", function () { clearDecision(card); closeMenu(); }));
+      has = true;
     }
-    var head = document.createElement("div"); head.className = "ctx-head"; head.textContent = "Move to section"; menu.appendChild(head);
-    [{ id: "", title: "General (no section)" }].concat(stageSections(stageEl)).forEach(function (it) {
-      var el = document.createElement("div");
-      el.className = "ctx-item" + (it.id === cur ? " is-current" : "");
-      var s = document.createElement("span"); s.textContent = it.title; el.appendChild(s);
-      if (it.id !== cur) el.addEventListener("click", function () { assignCardToSection(card, it.id); closeMenu(); });
-      menu.appendChild(el);
-    });
-    document.body.appendChild(menu);
-    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
-    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
-    ctxMenu = menu;
+    var sections = stageSections(stageEl);
+    if (sections.length) {
+      if (has) ctxSep(menu);
+      ctxHead(menu, "Move to section");
+      [{ id: "", title: "General (no section)" }].concat(sections).forEach(function (it) {
+        var el = ctxItem(it.title, it.id === cur ? null : function () { assignCardToSection(card, it.id); closeMenu(); });
+        if (it.id === cur) el.classList.add("is-current");
+        menu.appendChild(el);
+      });
+      has = true;
+    }
+    if (has) ctxSep(menu);
+    appendUndo(menu);
+    placeMenu(menu, x, y);
   }
+  // Right-click empty board space: just Undo.
   function openActionsMenu(x, y) {
     closeMenu();
     var menu = document.createElement("div"); menu.className = "ctx-menu";
-    var head = document.createElement("div"); head.className = "ctx-head"; head.textContent = "Actions"; menu.appendChild(head);
-    var last = undoStack[undoStack.length - 1];
-    var item = document.createElement("div");
-    item.className = "ctx-item" + (last ? "" : " is-disabled");
-    var s = document.createElement("span"); s.textContent = last ? ("Undo " + last.label) : "Nothing to undo"; item.appendChild(s);
-    if (last) item.addEventListener("click", function () { closeMenu(); runUndo(); });
-    menu.appendChild(item);
-    document.body.appendChild(menu);
-    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
-    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
-    ctxMenu = menu;
+    appendUndo(menu);
+    placeMenu(menu, x, y);
   }
 
   // ---- task mutations ----------------------------------------------------
@@ -1195,15 +1188,25 @@
     closeMenu();
     var stageEl = stageOf(colBody), status = colBody.dataset.status, stage = Number(colBody.dataset.stage);
     var menu = document.createElement("div"); menu.className = "ctx-menu";
-    var head = document.createElement("div"); head.className = "ctx-head";
-    head.textContent = (STATUS_LABELS[status] || status) + (sec ? " · " + sectionTitle(stageEl, sec) : "");
-    menu.appendChild(head);
-    menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(stage, status, sec); }));
-    menu.appendChild(ctxItem("New section…", function () { closeMenu(); lastActive = stage; gotoStage(stage); openSections(); }));
-    var sep = document.createElement("div"); sep.className = "ctx-sep"; menu.appendChild(sep);
-    var last = undoStack[undoStack.length - 1];
-    menu.appendChild(ctxItem(last ? "Undo " + last.label : "Nothing to undo",
-                             last ? function () { closeMenu(); runUndo(); } : null, !last));
+    if (sec) {                                   // inside a section → section context
+      ctxHead(menu, sectionTitle(stageEl, sec));
+      menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(stage, status, sec); }));
+      menu.appendChild(ctxItem("Rename section", function () {
+        closeMenu();
+        var b = stageEl.querySelector('.bubble[data-section="' + sec + '"]');
+        var nm = b && b.querySelector(".bubble-name"); if (nm) renameSection(nm);
+      }));
+      menu.appendChild(ctxItem("Delete section", function () {
+        closeMenu();
+        var b = stageEl.querySelector('.bubble[data-section="' + sec + '"]'); if (b) deleteSection(b);
+      }));
+    } else {                                     // empty column area → create context
+      ctxHead(menu, STATUS_LABELS[status] || status);
+      menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(stage, status, ""); }));
+      menu.appendChild(ctxItem("New section…", function () { closeMenu(); lastActive = stage; gotoStage(stage); openSections(); }));
+    }
+    ctxSep(menu);
+    appendUndo(menu);
     placeMenu(menu, x, y);
   }
   async function quickCreateTask(stage, status, sec) {
