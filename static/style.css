@@ -852,6 +852,13 @@ body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked awa
 .unmade-item .title-input { font-size: 0.9rem; }
 .unmade-del { flex-shrink: 0; width: 24px; height: 24px; border: 1px solid transparent; background: transparent; color: var(--ink-soft); cursor: pointer; border-radius: 6px; font-size: 1.15rem; line-height: 1; }
 .unmade-del:hover { color: var(--redline); border-color: var(--redline); background: var(--redline-tint); }
+
+/* Email-a-schedule modal: pick which stages to include. */
+.email-stages { display: flex; flex-direction: column; gap: 2px; max-height: 46vh; overflow-y: auto; scrollbar-width: thin; }
+.email-stage { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 7px; cursor: pointer; font-size: 0.9rem; color: var(--ink); }
+.email-stage:hover { background: var(--glass); }
+.email-stage input { accent-color: var(--blue); }
+.email-stage-num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; font-family: var(--font-mono); font-weight: 700; font-size: 0.72rem; color: #07101f; background: var(--c, var(--blue)); }
 .dr-c-date { font-family: var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 .dr-c-stage { color: var(--ink-soft); white-space: nowrap; font-size: 0.82rem; }
 .dr-stage { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.7rem; background: var(--c, var(--blue)); }

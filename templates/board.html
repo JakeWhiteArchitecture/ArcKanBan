@@ -141,7 +141,23 @@
   </div>
 </div>
 
-<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
+<div class="modal-backdrop" id="email-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="email-title">
+    <h2 class="modal-title" id="email-title">Email a task schedule</h2>
+    <p class="modal-sub">Pick the stages to include. Downloads an <strong>.eml</strong> you open in your mail app — laid out like meeting minutes.</p>
+    <div class="email-stages">
+      {% for i in enabled %}
+      <label class="email-stage"><input type="checkbox" class="email-stage-cb" value="{{ i }}"><span class="email-stage-num" style="--c: var(--riba-{{ i }})">{{ i }}</span> {{ riba[i] }}</label>
+      {% endfor %}
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet" data-action="email-close">Cancel</button>
+      <button type="button" class="btn btn-primary" data-action="email-download">Download .eml</button>
+    </div>
+  </div>
+</div>
+
+<main class="board" data-project-id="{{ project.id }}" data-project-uid="{{ project.uid }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
   <div class="stage-track" id="stage-track">
     {% for s in stages %}
       <section class="stage-slide stage{% if not s.enabled %} stage-off{% endif %}" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">

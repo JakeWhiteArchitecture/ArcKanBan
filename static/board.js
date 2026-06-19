@@ -20,6 +20,7 @@
   if (!board) return;
   var track = document.getElementById("stage-track");
   var projectId = Number(board.dataset.projectId);
+  var projectUid = board.dataset.projectUid;
   var currentStage = Number(board.dataset.currentStage);
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var enabledStages = (board.dataset.stages || "0,1,2,3,4,5,6,7").split(",").map(Number);
@@ -569,6 +570,22 @@
     if (list && !list.children.length) closeUnmade();                  // nothing left to manage
   }
   function closeUnmade() { var m = document.getElementById("unmade-modal"); if (m) m.hidden = true; }
+
+  // ---- email a task schedule (.eml, meeting-minutes style) --------------
+  function openEmail() {
+    var m = document.getElementById("email-modal"); if (!m) return;
+    var n = activeStage();
+    m.querySelectorAll(".email-stage-cb").forEach(function (cb) { cb.checked = Number(cb.value) === n; });
+    m.hidden = false;
+  }
+  function closeEmail() { var m = document.getElementById("email-modal"); if (m) m.hidden = true; }
+  function emailDownload() {
+    var m = document.getElementById("email-modal"); if (!m) return;
+    var stages = [].slice.call(m.querySelectorAll(".email-stage-cb:checked")).map(function (cb) { return cb.value; });
+    if (!stages.length) { alert("Pick at least one stage to include."); return; }
+    window.location.href = "/projects/" + encodeURIComponent(projectUid) + "/email.eml?stages=" + stages.join(",");
+    closeEmail();
+  }
 
   function ctxSep(menu) { var s = document.createElement("div"); s.className = "ctx-sep"; menu.appendChild(s); }
   function ctxHead(menu, text) { var h = document.createElement("div"); h.className = "ctx-head"; h.textContent = text; menu.appendChild(h); }
@@ -1127,6 +1144,9 @@
         case "rationale-save": saveRationale(); break;
         case "rationale-skip": closeRationale(); break;
         case "unmade-done": closeUnmade(); break;
+        case "open-email": openEmail(); break;
+        case "email-close": closeEmail(); break;
+        case "email-download": emailDownload(); break;
         case "edit-title": editTitle(el); break;
         case "edit-awaiting": editAwaiting(el); break;
         case "edit-project-number": editProjectField(el, "number"); break;
@@ -1250,6 +1270,8 @@
   if (ratModal) ratModal.addEventListener("click", function (e) { if (e.target === ratModal) closeRationale(); });
   var unmadeModal = document.getElementById("unmade-modal");
   if (unmadeModal) unmadeModal.addEventListener("click", function (e) { if (e.target === unmadeModal) closeUnmade(); });
+  var emailModal = document.getElementById("email-modal");
+  if (emailModal) emailModal.addEventListener("click", function (e) { if (e.target === emailModal) closeEmail(); });
   document.addEventListener("submit", function (e) {
     var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); }
   });
@@ -1264,7 +1286,7 @@
       if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .sec-row-name")) { e.preventDefault(); t.click(); }
       return;
     }
-    if (e.key === "Escape") { closeRationale(); closeUnmade(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
+    if (e.key === "Escape") { closeRationale(); closeUnmade(); closeEmail(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
       var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);

@@ -831,6 +831,73 @@ def export_decisions(project_uid):
     return resp
 
 
+def build_email_schedule(db, project_id, stage_indices):
+    """Group a project's tasks (for the chosen stages) by stage → status →
+    section, for the emailed meeting-minutes-style task schedule."""
+    out = []
+    for idx in stage_indices:
+        secs = db.execute(
+            "SELECT id, title FROM sections WHERE project_id=? AND stage=? ORDER BY position, id",
+            (project_id, idx)).fetchall()
+        sec_order = [(s["id"], s["title"]) for s in secs]
+        statuses = []
+        for status in STATUSES:
+            rows = db.execute(
+                "SELECT title, type, urgent, section_id FROM tasks "
+                "WHERE project_id=? AND stage=? AND status=? ORDER BY position, id",
+                (project_id, idx, status)).fetchall()
+            if not rows:
+                continue
+            by_sec = {}
+            for r in rows:
+                by_sec.setdefault(r["section_id"], []).append(
+                    {"title": r["title"], "type_label": TYPE_LABELS.get(r["type"], r["type"]),
+                     "urgent": bool(r["urgent"])})
+            groups = [{"section": title, "rows": by_sec[sid]} for sid, title in sec_order if sid in by_sec]
+            if None in by_sec:
+                groups.append({"section": "General", "rows": by_sec[None]})
+            statuses.append({"label": STATUS_LABELS[status], "groups": groups})
+        out.append({"idx": idx, "name": RIBA_STAGES[idx], "statuses": statuses})
+    return out
+
+
+def _eml_response(subject, html, filename):
+    """Wrap an HTML body as a downloadable .eml (RFC 822) message."""
+    from email.message import EmailMessage
+    from email.utils import formatdate
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = "ArcKanban <arckanban@localhost>"
+    msg["To"] = ""
+    msg["Date"] = formatdate(localtime=True)
+    msg.set_content("This schedule is best viewed in an HTML-capable mail client.")
+    msg.add_alternative(html, subtype="html")
+    resp = make_response(msg.as_bytes())
+    resp.headers["Content-Type"] = "message/rfc822"
+    resp.headers["Content-Disposition"] = 'attachment; filename="%s"' % filename
+    return resp
+
+
+def _parse_stages(raw):
+    try:
+        return sorted({int(x) for x in (raw or "").split(",") if x.strip() != "" and 0 <= int(x) <= 7})
+    except ValueError:
+        return []
+
+
+@app.route("/projects/<project_uid>/email.eml")
+def email_schedule(project_uid):
+    """Download a meeting-minutes-style task schedule (grouped by stage → status →
+    section) as an .eml the user can open straight in their mail app."""
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    stages = _parse_stages(request.args.get("stages")) or [p["current_stage"]]
+    subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
+    html = render_template("email_schedule.html", subtitle=subtitle, kind="Task schedule",
+                           date=fmt_day(now_iso()), stages=build_email_schedule(db, p["id"], stages))
+    return _eml_response("%s — Task schedule" % subtitle, html, (_slugify(subtitle) or "schedule") + "-tasks.eml")
+
+
 @app.route("/projects/<project_uid>/scope", methods=["POST"])
 def set_scope(project_uid):
     """Set a project's RIBA-stage appointment scope from the register page
