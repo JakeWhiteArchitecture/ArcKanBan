@@ -893,9 +893,9 @@ def email_schedule(project_uid):
     p = get_project_by_uid_or_404(db, project_uid)
     stages = _parse_stages(request.args.get("stages")) or [p["current_stage"]]
     subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
-    html = render_template("email_schedule.html", subtitle=subtitle, kind="Task schedule",
+    html = render_template("email_schedule.html", subtitle=subtitle, kind="Progress report",
                            date=fmt_day(now_iso()), stages=build_email_schedule(db, p["id"], stages))
-    return _eml_response("%s — Task schedule" % subtitle, html, (_slugify(subtitle) or "schedule") + "-tasks.eml")
+    return _eml_response("%s — Progress report" % subtitle, html, (_slugify(subtitle) or "report") + "-progress.eml")
 
 
 @app.route("/projects/<project_uid>/scope", methods=["POST"])

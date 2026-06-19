@@ -36,7 +36,7 @@
     <button type="button" class="tb-btn" data-action="toggle-sections" title="Sections of work">Sections</button>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
     <button type="button" class="tb-btn" id="filter-btn" data-action="toggle-filters" title="Filters">Filter ▾</button>
-    <button type="button" class="tb-btn tb-icon-btn" data-action="open-email" aria-label="Email a task schedule" title="Email a task schedule">✉</button>
+    <button type="button" class="tb-btn tb-icon-btn" data-action="open-email" aria-label="Email a progress report" title="Email a progress report">✉</button>
     <button type="button" class="tb-btn" data-action="toggle-log" title="Activity log">Log</button>
     <button type="button" class="tb-btn" data-action="toggle-more" aria-label="More actions" title="More">⋯</button>
   </div>
@@ -143,8 +143,8 @@
 
 <div class="modal-backdrop" id="email-modal" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="email-title">
-    <h2 class="modal-title" id="email-title">Email a task schedule</h2>
-    <p class="modal-sub">Pick the stages to include. Downloads an <strong>.eml</strong> you open in your mail app — laid out like meeting minutes.</p>
+    <h2 class="modal-title" id="email-title">Email a progress report</h2>
+    <p class="modal-sub">Pick the stages to include. Downloads an <strong>.eml</strong> you open in your mail app — a progress report laid out like meeting minutes.</p>
     <div class="email-stages">
       {% for i in enabled %}
       <label class="email-stage"><input type="checkbox" class="email-stage-cb" value="{{ i }}"><span class="email-stage-num" style="--c: var(--riba-{{ i }})">{{ i }}</span> {{ riba[i] }}</label>
