@@ -78,14 +78,11 @@
   }
   function updateNav(n) {
     if (n == null) n = activeStage();
-    document.querySelectorAll(".titleblock .spine-cell").forEach(function (c, i) {
-      c.classList.toggle("is-active", i === n);
-    });
-    var prev = document.querySelector(".nav-arrow.prev"), next = document.querySelector(".nav-arrow.next");
+    var num = document.querySelector(".tb-stage-num"); if (num) num.textContent = n;
+    var prev = document.querySelector(".tb-pager.prev"), next = document.querySelector(".tb-pager.next");
     if (prev) prev.disabled = nextEnabled(n, -1) === null;
     if (next) next.disabled = nextEnabled(n, +1) === null;
     var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[n];
-    var ds = document.querySelector(".dock-stage"); if (ds) ds.textContent = "Stage " + n;
     var star = document.querySelector(".tb-star");
     if (star) { var cur = n === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
   }
@@ -1226,8 +1223,8 @@
   updateUrgentTally();
   // Auto-hide dock: default ON (conceal the bar for maximum board real estate)
   // unless the user has pinned it open before. Hover the handle / bar to reveal.
-  var savedDock = null; try { savedDock = localStorage.getItem(LS_DOCK); } catch (e) {}
-  setDockMode(savedDock === null ? true : savedDock === "1");
+  // The top bar stays pinned in place (no auto-hide / expand-contract).
+  setDockMode(false);
   var tbEl = document.getElementById("titleblock"), dhEl = document.querySelector(".dock-handle");
   if (tbEl) {
     tbEl.addEventListener("mouseenter", dockEnter);
