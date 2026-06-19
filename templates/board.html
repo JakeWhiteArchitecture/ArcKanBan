@@ -4,63 +4,43 @@
 
 {% block content %}
 <header class="titleblock" id="titleblock">
-  <button type="button" class="tb-collapse" data-action="toggle-titleblock"
-          aria-label="Collapse titleblock" title="Collapse"><span class="chevron">▾</span></button>
-
   <div class="tb-left">
+    <a class="tb-logo-link" href="{{ url_for('index') }}" title="Register" aria-label="ArcKanBan — back to register">
+      <img class="tb-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="ArcKanBan">
+    </a>
     <div class="tb-id">
-      <a class="tb-home" href="{{ url_for('index') }}" title="Register" aria-label="Back to register">⌂</a>
       <span class="tb-cell tb-job-no editable{% if not project.number %} is-empty{% endif %}" data-action="edit-project-number" role="button"
             tabindex="0" title="Edit job number">{{ project.number or 'no.' }}</span>
       <span class="tb-cell tb-name editable" data-action="edit-project-name" role="button"
             tabindex="0" title="Edit project name">{{ project.name }}</span>
     </div>
+    <button type="button" class="tb-btn tb-search-btn" data-action="toggle-search" aria-label="Search tasks" title="Search tasks (press /)">⌕</button>
   </div>
 
   <div class="tb-center">
-    <ol class="spine" aria-label="RIBA Plan of Work — click a stage to view it">
-      {% for i in range(8) %}
-        {% set state = 'current' if i == project.current_stage else ('past' if i < project.current_stage else 'future') %}
-        <li class="spine-cell is-{{ state }}{% if i not in enabled %} is-disabled{% endif %}" style="--c: var(--riba-{{ i }})"
-            data-action="goto-stage" data-stage="{{ i }}" role="button" tabindex="0" title="Stage {{ i }}">
-          <span class="spine-num">{{ i }}</span>
-        </li>
-      {% endfor %}
-    </ol>
-    <div class="tb-focus">
-      <span class="tb-focus-name">{{ riba[project.current_stage] }}</span>
-      <button type="button" class="tb-star is-current" data-action="star-current"
-              aria-label="Set the focused stage as the current stage" title="Current stage">★</button>
+    <div class="tb-stage">
+      <button type="button" class="tb-pager prev" data-action="nav-prev" aria-label="Previous stage" title="Previous stage">‹</button>
+      <div class="tb-stage-id">
+        <span class="tb-stage-kicker">RIBA Stage</span>
+        <span class="tb-stage-num">{{ project.current_stage }}</span>
+        <button type="button" class="tb-star is-current" data-action="star-current"
+                aria-label="Set the focused stage as the current stage" title="Current stage">★</button>
+      </div>
+      <button type="button" class="tb-pager next" data-action="nav-next" aria-label="Next stage" title="Next stage">›</button>
     </div>
+    <div class="tb-stage-name tb-focus-name">{{ riba[project.current_stage] }}</div>
   </div>
 
-  <span class="tb-urgent" id="tb-urgent" hidden></span>
-
   <div class="tb-right">
-    <button type="button" class="tb-btn tb-search-btn" data-action="toggle-search" aria-label="Search tasks" title="Search tasks (press /)">⌕</button>
     <button type="button" class="tb-btn tb-btn-accent" data-action="create-open" title="New task">＋ Task</button>
     <button type="button" class="tb-btn" data-action="toggle-sections" title="Sections of work">Sections</button>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
     <button type="button" class="tb-btn" id="filter-btn" data-action="toggle-filters" title="Filters">Filter ▾</button>
+    <button type="button" class="tb-btn tb-icon-btn" data-action="open-email" aria-label="Email a progress report" title="Email a progress report">✉</button>
     <button type="button" class="tb-btn" data-action="toggle-log" title="Activity log">Log</button>
     <button type="button" class="tb-btn" data-action="toggle-more" aria-label="More actions" title="More">⋯</button>
   </div>
-
-  <div class="tb-compact" aria-hidden="true">
-    <span class="tb-compact-no">{{ project.number or '—' }}</span>
-    <span class="tb-compact-stage">Stage <span class="compact-stage-num">{{ project.current_stage }}</span></span>
-  </div>
 </header>
-
-<div class="dock-rail" data-action="dock-peek" aria-hidden="true"></div>
-<div class="dock-id" aria-hidden="true">
-  {% if project.number %}<span class="dock-id-no">{{ project.number }}</span>{% endif %}
-  <span class="dock-id-name">{{ project.name }}</span>
-</div>
-<button type="button" class="dock-handle" data-action="dock-peek" aria-label="Show the top bar" title="Top bar — hover to reveal">
-  <span class="dock-stage">Stage {{ project.current_stage }}</span>
-  <span class="chevron">▾</span>
-</button>
 
 <div class="tb-pop filter-pop" id="filter-pop" hidden aria-label="Filters">
   <div class="pop-head">Filters</div>
@@ -70,9 +50,29 @@
 </div>
 
 <div class="tb-pop more-pop" id="more-pop" hidden aria-label="More actions">
+  <button type="button" class="more-item" data-action="toggle-roles">Roles…</button>
+  <button type="button" class="more-item more-split" data-action="split-stage" hidden>Split this stage…</button>
+  <button type="button" class="more-item more-addpart" data-action="addpart-stage" hidden>Add a sub-stage</button>
+  <button type="button" class="more-item more-merge" data-action="merge-stage" hidden>Merge sub-stages</button>
   <a class="more-item" href="{{ url_for('export_template', project_uid=project.uid) }}" download>Save as template</a>
   <a class="more-item" href="{{ url_for('export_activity', project_uid=project.uid) }}" download
      title="Every event, including the minor moves hidden from the drawer">Export full log</a>
+</div>
+
+<div class="tb-pop roles-pop" id="roles-pop" hidden aria-label="Roles">
+  <div class="pop-head">Roles</div>
+  <div class="roles-list">
+    {% for r in roles %}
+    <div class="role-row" data-role="{{ r.id }}">
+      <span class="role-name" data-action="rename-role" role="button" tabindex="0" title="Rename">{{ r.name }}</span>
+      <button type="button" class="role-del" data-action="delete-role" data-role="{{ r.id }}" aria-label="Delete role" title="Delete role">×</button>
+    </div>
+    {% endfor %}
+  </div>
+  <form class="roles-add" data-action="add-role-pop">
+    <input type="text" name="name" placeholder="+ New role…" autocomplete="off" aria-label="New role">
+    <button type="submit" class="btn-quiet btn-sm">Add</button>
+  </form>
 </div>
 
 <div class="tb-pop create-pop" id="create-pop" hidden aria-label="Create a task">
@@ -150,13 +150,52 @@
   </div>
 </div>
 
-<main class="board" data-project-id="{{ project.id }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
-  <button type="button" class="nav-arrow prev" data-action="nav-prev" aria-label="Previous stage">‹</button>
-  <button type="button" class="nav-arrow next" data-action="nav-next" aria-label="Next stage">›</button>
+<div class="modal-backdrop" id="unmade-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="unmade-title">
+    <h2 class="modal-title" id="unmade-title">Decision reopened</h2>
+    <p class="modal-sub">These tasks came from <strong class="unmade-for">this decision</strong>. Now it's unmade, rename any that need rewording or remove the ones that no longer apply.</p>
+    <ul class="unmade-list" aria-label="Tasks from this decision"></ul>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" data-action="unmade-done">Done</button>
+    </div>
+  </div>
+</div>
 
+<div class="modal-backdrop" id="role-reassign-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rr-title">
+    <h2 class="modal-title" id="rr-title">Reassign tasks</h2>
+    <p class="modal-sub"><strong class="rr-role"></strong> is on <strong class="rr-count"></strong>. Move those tasks to:</p>
+    <select class="rr-select" aria-label="Reassign to"></select>
+    <input type="text" class="rr-new" placeholder="New role name…" autocomplete="off" hidden>
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet" data-action="rr-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" data-action="rr-confirm">Reassign &amp; delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="email-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="email-title">
+    <h2 class="modal-title" id="email-title">Email a progress report</h2>
+    <p class="modal-sub">Pick the stages to include. Downloads an <strong>.eml</strong> you open in your mail app — a progress report laid out like meeting minutes.</p>
+    <div class="email-stages">
+      {% for i in enabled %}
+      <label class="email-stage"><input type="checkbox" class="email-stage-cb" value="{{ i }}"><span class="email-stage-num" style="--c: var(--riba-{{ i }})">{{ i }}</span> {{ riba[i] }}</label>
+      {% endfor %}
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet" data-action="email-close">Cancel</button>
+      <button type="button" class="btn btn-primary" data-action="email-download">Download .eml</button>
+    </div>
+  </div>
+</div>
+
+<main class="board" data-project-id="{{ project.id }}" data-project-uid="{{ project.uid }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
   <div class="stage-track" id="stage-track">
     {% for s in stages %}
-      <section class="stage-slide stage{% if not s.enabled %} stage-off{% endif %}" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">
+      <section class="stage-slide stage{% if not s.enabled %} stage-off{% endif %}" id="stage-{{ s.page }}"
+               data-page="{{ s.page }}" data-stage="{{ s.idx }}" data-part="{{ s.part }}"
+               data-parts="{{ s.parts }}" data-label="{{ s.label }}" data-enabled="{{ 1 if s.enabled else 0 }}">
         {% if s.enabled %}
         <div class="slide-head">
           <span class="stage-counts slide-counts" aria-hidden="true">

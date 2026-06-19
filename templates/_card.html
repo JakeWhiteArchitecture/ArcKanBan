@@ -1,7 +1,7 @@
 {% set si = statuses.index(t.status) %}
 <article class="card type-{{ t.type }} status-{{ t.status }}{% if t.urgent %} is-urgent{% endif %}"
          draggable="true" data-task-id="{{ t.id }}" data-status="{{ t.status }}" data-stage="{{ t.stage }}"
-         data-type="{{ t.type }}" data-urgent="{{ 1 if t.urgent else 0 }}"
+         data-part="{{ t.substage }}" data-type="{{ t.type }}" data-urgent="{{ 1 if t.urgent else 0 }}"
          data-section="{{ t.section_id if t.section_id is not none else '' }}"
          data-rationale="{{ t.rationale or '' }}">
   <div class="card-top">

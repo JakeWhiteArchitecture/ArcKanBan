@@ -9,7 +9,7 @@
   "use strict";
 
   var STATUSES = ["backlog", "upcoming", "todo", "inprogress", "awaiting", "done"];
-  var STATUS_LABELS = { backlog: "Backlog", upcoming: "Upcoming", todo: "To Do", inprogress: "In Progress", awaiting: "Awaiting", done: "Done" };
+  var STATUS_LABELS = { backlog: "Stage goals", upcoming: "Upcoming", todo: "To Do", inprogress: "In Progress", awaiting: "Awaiting", done: "Done" };
   var RIBA = [
     "Strategic Definition", "Preparation and Briefing", "Concept Design",
     "Spatial Coordination", "Technical Design", "Manufacturing and Construction",
@@ -20,11 +20,11 @@
   if (!board) return;
   var track = document.getElementById("stage-track");
   var projectId = Number(board.dataset.projectId);
+  var projectUid = board.dataset.projectUid;
   var currentStage = Number(board.dataset.currentStage);
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var enabledStages = (board.dataset.stages || "0,1,2,3,4,5,6,7").split(",").map(Number);
   function isEnabled(n) { return enabledStages.indexOf(Number(n)) >= 0; }
-  function nextEnabled(from, dir) { for (var i = Number(from) + dir; i >= 0 && i <= 7; i += dir) if (isEnabled(i)) return i; return null; }
 
   var activity = {}, dismissed = {};
 
@@ -68,45 +68,85 @@
   function cardOf(el) { return el.closest(".card"); }
   function stageOf(el) { return el.closest(".stage"); }
   function colBodyOf(el) { return el.closest(".col-body"); }
-  function stageHasCards(n) { var el = document.getElementById("stage-" + n); return !!(el && el.querySelector(".card")); }
+  function pageHasCards(p) { var el = document.getElementById("stage-" + p); return !!(el && el.querySelector(".card")); }
 
-  // ---- horizontal navigation --------------------------------------------
-  var LS_STAGE = "arckanban-stage-" + projectId;
-  function activeStage() {
-    if (!track.clientWidth) return currentStage;
-    return Math.max(0, Math.min(7, Math.round(track.scrollLeft / track.clientWidth)));
+  // ---- horizontal navigation (page-based) --------------------------------
+  // The board is a flat list of pages: one per in-scope stage, or several when a
+  // stage is split into sub-stages (4a/4b…). A page no longer equals the RIBA
+  // stage number, so navigation keys off the page index and reads the stage/part
+  // each page carries; `currentStage` stays a RIBA stage (the ★ / nudge concept).
+  var LS_STAGE = "arckanban-page-" + projectId;
+  var panels = [].slice.call(track.querySelectorAll(".stage-slide")).map(function (el) {
+    return {
+      page: Number(el.dataset.page), stage: Number(el.dataset.stage), part: Number(el.dataset.part || 0),
+      parts: Number(el.dataset.parts || 1), label: el.dataset.label || el.dataset.stage,
+      enabled: el.dataset.enabled === "1", el: el,
+    };
+  });
+  var pageCount = panels.length || 1;
+  var currentPage = 0, lastActive = 0;
+  function panelAt(p) { return panels[Math.max(0, Math.min(pageCount - 1, p))] || panels[0]; }
+  function activePage() {
+    if (!track.clientWidth) return currentPage;
+    return Math.max(0, Math.min(pageCount - 1, Math.round(track.scrollLeft / track.clientWidth)));
   }
-  function updateNav(n) {
-    if (n == null) n = activeStage();
-    document.querySelectorAll(".titleblock .spine-cell").forEach(function (c, i) {
-      c.classList.toggle("is-active", i === n);
-    });
-    var prev = document.querySelector(".nav-arrow.prev"), next = document.querySelector(".nav-arrow.next");
-    if (prev) prev.disabled = nextEnabled(n, -1) === null;
-    if (next) next.disabled = nextEnabled(n, +1) === null;
-    var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[n];
-    var ds = document.querySelector(".dock-stage"); if (ds) ds.textContent = "Stage " + n;
+  function currentSlide() { return panelAt(activePage()).el; }
+  function nextEnabledPage(from, dir) {
+    for (var i = Number(from) + dir; i >= 0 && i < pageCount; i += dir) if (panels[i].enabled) return i;
+    return null;
+  }
+  function firstPageOfStage(stage) {
+    var i; stage = Number(stage);
+    for (i = 0; i < pageCount; i++) if (panels[i].stage === stage && panels[i].enabled) return i;
+    for (i = 0; i < pageCount; i++) if (panels[i].stage === stage) return i;   // disabled fallback
+    return null;
+  }
+  function pageForStagePart(stage, part) {
+    stage = Number(stage); part = Number(part || 0);
+    for (var i = 0; i < pageCount; i++) if (panels[i].stage === stage && panels[i].part === part) return i;
+    return firstPageOfStage(stage);
+  }
+  function updateNav(p) {
+    if (p == null) p = activePage();
+    var panel = panelAt(p);
+    var num = document.querySelector(".tb-stage-num"); if (num) num.textContent = panel.label;
+    var prev = document.querySelector(".tb-pager.prev"), next = document.querySelector(".tb-pager.next");
+    if (prev) prev.disabled = nextEnabledPage(p, -1) === null;
+    if (next) next.disabled = nextEnabledPage(p, +1) === null;
+    var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[panel.stage];
     var star = document.querySelector(".tb-star");
-    if (star) { var cur = n === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
+    if (star) { var cur = panel.stage === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
+    updateMoreMenu(panel);
   }
-  function gotoStage(n, instant) {
-    n = Math.max(0, Math.min(7, Number(n)));
-    track.scrollTo({ left: n * track.clientWidth, behavior: (instant || reduceMotion) ? "auto" : "smooth" });
-    updateNav(n);
+  function gotoPage(p, instant) {
+    p = Math.max(0, Math.min(pageCount - 1, Number(p)));
+    currentPage = p; lastActive = p;
+    try { localStorage.setItem(LS_STAGE, String(p)); } catch (e) {}
+    track.scrollTo({ left: p * track.clientWidth, behavior: (instant || reduceMotion) ? "auto" : "smooth" });
+    updateNav(p);
+  }
+  // Keep the ⋯ menu's split / merge items in step with the focused page.
+  function partLetter(n) { return String.fromCharCode(97 + n); }   // 0→a, 1→b…
+  function updateMoreMenu(panel) {
+    panel = panel || panelAt(activePage());
+    var sp = document.querySelector(".more-split"), ap = document.querySelector(".more-addpart"), mg = document.querySelector(".more-merge");
+    var split = panel.enabled && panel.parts > 1;
+    if (sp) { sp.hidden = !(panel.enabled && panel.parts <= 1); sp.textContent = "Split Stage " + panel.stage + " into " + panel.stage + "a / " + panel.stage + "b…"; }
+    if (ap) { ap.hidden = !(split && panel.parts < 6); ap.textContent = "Add a sub-stage to Stage " + panel.stage + " (→ " + panel.stage + partLetter(panel.parts) + ")"; }
+    if (mg) { mg.hidden = !split; mg.textContent = "Merge Stage " + panel.stage + " sub-stages"; }
   }
   var ticking = false;
   track.addEventListener("scroll", function () {
     if (!ticking) {
       ticking = true;
       requestAnimationFrame(function () {
-        var n = activeStage(); updateNav(n);
-        try { localStorage.setItem(LS_STAGE, String(n)); } catch (e) {}
-        lastActive = n; ticking = false;
+        var p = activePage(); updateNav(p);
+        try { localStorage.setItem(LS_STAGE, String(p)); } catch (e) {}
+        lastActive = p; currentPage = p; ticking = false;
       });
     }
   });
-  var lastActive = currentStage;
-  window.addEventListener("resize", function () { gotoStage(lastActive, true); });
+  window.addEventListener("resize", function () { gotoPage(lastActive, true); });
 
   // ---- counts ------------------------------------------------------------
   function colCards(scope, status) {
@@ -158,10 +198,15 @@
     }
   }
   function currentStageCompletion() {
-    var st = document.getElementById("stage-" + currentStage);
-    if (!st) return 0;
-    var total = st.querySelectorAll(".col-cards > .card").length;
-    return total ? colCards(st, "done") / total : 0;
+    // A split stage spans several pages — roll the whole RIBA stage together.
+    var slides = board.querySelectorAll('.stage-slide[data-stage="' + currentStage + '"]');
+    if (!slides.length) return 0;
+    var total = 0, done = 0;
+    slides.forEach(function (st) {
+      total += st.querySelectorAll(".col-cards > .card").length;
+      done += colCards(st, "done");
+    });
+    return total ? done / total : 0;
   }
   function evaluateNudge() {
     var target = null, s;
@@ -182,13 +227,10 @@
     var r = await api("/api/projects/" + projectId + "/current_stage", { stage: n });
     if (!r) return;
     currentStage = n; board.dataset.currentStage = n;
-    document.querySelectorAll(".titleblock .spine-cell").forEach(function (cell, i) {
-      cell.classList.remove("is-current", "is-past", "is-future");
-      cell.classList.add(i < n ? "is-past" : (i === n ? "is-current" : "is-future"));
-    });
-    var csn = document.querySelector(".compact-stage-num"); if (csn) csn.textContent = n;
-    document.getElementById("nudge").hidden = true;
-    gotoStage(n);      // also refreshes the focused-stage name + star via updateNav
+    var nudge = document.getElementById("nudge"); if (nudge) nudge.hidden = true;
+    var p = firstPageOfStage(n);
+    if (p != null) { lastActive = p; gotoPage(p); }   // lands on the stage's first page, refreshes the ★ via updateNav
+    else updateNav();
     evaluateNudge();
   }
 
@@ -260,7 +302,7 @@
       var r = await api("/api/sections/" + id, { title: val });
       if (!r) { titleEl.textContent = text; return; }
       titleEl.textContent = val;
-      var stageEl = document.getElementById("stage-" + activeStage());
+      var stageEl = currentSlide();
       if (stageEl) {
         stageEl.querySelectorAll('.bubble[data-section="' + id + '"] .bubble-name').forEach(function (n) { n.textContent = val; });
         stageEl.querySelectorAll('.sec-chip[data-section="' + id + '"] .sec-chip-name').forEach(function (n) { n.textContent = val; });
@@ -289,16 +331,18 @@
     var bubble = document.createElement("div");
     bubble.className = "bubble"; bubble.dataset.section = sec; bubble.dataset.pos = pos;
     var head = document.createElement("div"); head.className = "bubble-head";
-    head.draggable = true; head.title = "Drag this section to another status";
+    head.title = "Click to collapse / expand";
     var chev = document.createElement("button"); chev.type = "button"; chev.className = "bubble-collapse";
     chev.dataset.action = "toggle-bubble"; chev.setAttribute("aria-label", "Collapse section");
     chev.innerHTML = '<span class="chevron">▾</span>';
     var nm = document.createElement("span"); nm.className = "bubble-name"; nm.textContent = sectionTitle(stageEl, sec);
     var ct = document.createElement("span"); ct.className = "bubble-count"; ct.textContent = "0";
-    head.appendChild(chev); head.appendChild(nm); head.appendChild(ct);
+    var grip = document.createElement("span"); grip.className = "bubble-grip"; grip.draggable = true;
+    grip.setAttribute("aria-hidden", "true"); grip.title = "Drag to move this section to another status"; grip.textContent = "⠿";
+    head.appendChild(chev); head.appendChild(nm); head.appendChild(ct); head.appendChild(grip);
     var cards = document.createElement("div");
     cards.className = "col-cards bubble-cards";
-    cards.dataset.stage = colBody.dataset.stage; cards.dataset.status = colBody.dataset.status; cards.dataset.section = sec;
+    cards.dataset.stage = colBody.dataset.stage; cards.dataset.part = colBody.dataset.part; cards.dataset.status = colBody.dataset.status; cards.dataset.section = sec;
     bubble.appendChild(head); bubble.appendChild(cards);
     if (loadBubbles().has(sec)) bubble.classList.add("is-collapsed");
     var loose = colBody.querySelector(".loose-cards"), ref = null;
@@ -432,10 +476,12 @@
       updateDecOther(card);
     }
     setDecisionOutcome(card, r.outcome);
-    if (r.status) {   // auto-moved to Done on the server — reflect it on the board
-      applyCardStatus(card, r.status);
+    if (r.status) {   // auto-moved to Done on the server — fly it across to reflect it
       var stageEl = stageOf(card), destCol = stageEl.querySelector('.col-body[data-status="' + r.status + '"]');
-      if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
+      transportCard(card, function () {
+        applyCardStatus(card, r.status);
+        if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
+      });
       recountStageFull(stageEl); registerActivity(card.dataset.stage, card.dataset.taskId);
       maybePromptRationale(card);
     }
@@ -443,13 +489,19 @@
   async function clearDecision(card) {
     var r = await api("/api/tasks/" + card.dataset.taskId + "/unconfirm", {});
     if (!r) return;
-    setDecisionOutcome(card, "");
-    if (r.status) {   // reopened -> back to To Do on the server; reflect it
-      applyCardStatus(card, r.status);
+    if (r.status) {   // reopened -> back to To Do on the server; fly it back out of Done
       var stageEl = stageOf(card), destCol = stageEl.querySelector('.col-body[data-status="' + r.status + '"]');
-      if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
+      transportCard(card, function () {
+        setDecisionOutcome(card, "");        // drop the outcome banner (the card grows back)
+        applyCardStatus(card, r.status);
+        if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
+      });
       recountStageFull(stageEl); registerActivity(card.dataset.stage, card.dataset.taskId);
+    } else {
+      setDecisionOutcome(card, "");
     }
+    // Tasks were spawned from this (now-unmade) decision — offer to revise/remove them.
+    if (r.linked && r.linked.length) openUnmade(card, r.linked);
   }
   function setDecisionOutcome(card, outcome) {
     var block = decBlock(card); if (!block) return;
@@ -522,59 +574,194 @@
     closeRationale();
   }
 
+  // ---- "decision unmade": revise/remove the tasks it spawned -------------
+  function openUnmade(decisionCard, linked) {
+    var modal = document.getElementById("unmade-modal"); if (!modal) return;
+    var forEl = modal.querySelector(".unmade-for"); if (forEl) forEl.textContent = cardTitle(decisionCard);
+    var list = modal.querySelector(".unmade-list"); list.innerHTML = "";
+    linked.forEach(function (t) { list.appendChild(unmadeRow(t.id, t.title)); });
+    modal.hidden = false;
+  }
+  function unmadeRow(id, title) {
+    var li = document.createElement("li"); li.className = "unmade-item"; li.dataset.taskId = id;
+    var nm = document.createElement("span"); nm.className = "unmade-name"; nm.textContent = title;
+    nm.title = "Click to rename"; nm.setAttribute("role", "button"); nm.tabIndex = 0;
+    nm.addEventListener("click", function () { renameUnmade(nm, id); });
+    var del = document.createElement("button"); del.type = "button"; del.className = "unmade-del";
+    del.setAttribute("aria-label", "Delete this task"); del.title = "Delete this task"; del.textContent = "×";
+    del.addEventListener("click", function () { deleteUnmade(li, id); });
+    li.appendChild(nm); li.appendChild(del); return li;
+  }
+  function renameUnmade(nm, id) {
+    var cur = nm.textContent.trim();
+    editInline(nm, cur, async function (val, changed) {
+      if (val === null || !changed || !val) { nm.textContent = cur; return; }
+      var r = await api("/api/tasks/" + id, { title: val });
+      nm.textContent = (r && val) || cur;
+      if (r) {                                            // mirror the rename onto the board card
+        var c = board.querySelector('.card[data-task-id="' + id + '"]');
+        var tt = c && c.querySelector(".task-title"); if (tt) tt.textContent = val;
+      }
+    });
+  }
+  async function deleteUnmade(li, id) {
+    var r = await api("/api/tasks/" + id + "/delete", {});
+    if (!r) return;
+    var c = board.querySelector('.card[data-task-id="' + id + '"]');   // remove from the board too
+    if (c) { var st = stageOf(c); c.remove(); if (st) recountStageFull(st); }
+    li.remove();
+    var list = document.getElementById("unmade-modal").querySelector(".unmade-list");
+    if (list && !list.children.length) closeUnmade();                  // nothing left to manage
+  }
+  function closeUnmade() { var m = document.getElementById("unmade-modal"); if (m) m.hidden = true; }
+
+  // ---- email a task schedule (.eml, meeting-minutes style) --------------
+  function openEmail() {
+    var m = document.getElementById("email-modal"); if (!m) return;
+    var n = Number(currentSlide().dataset.stage);   // pre-tick the focused RIBA stage
+    m.querySelectorAll(".email-stage-cb").forEach(function (cb) { cb.checked = Number(cb.value) === n; });
+    m.hidden = false;
+  }
+  function closeEmail() { var m = document.getElementById("email-modal"); if (m) m.hidden = true; }
+  function emailDownload() {
+    var m = document.getElementById("email-modal"); if (!m) return;
+    var stages = [].slice.call(m.querySelectorAll(".email-stage-cb:checked")).map(function (cb) { return cb.value; });
+    if (!stages.length) { alert("Pick at least one stage to include."); return; }
+    window.location.href = "/projects/" + encodeURIComponent(projectUid) + "/email.eml?stages=" + stages.join(",");
+    closeEmail();
+  }
+
+  // ---- roles (managed assignees) ----------------------------------------
+  function addRoleRow(id, name) {
+    var list = document.querySelector(".roles-list"); if (!list) return null;
+    var row = document.createElement("div"); row.className = "role-row"; row.dataset.role = id;
+    var nm = document.createElement("span"); nm.className = "role-name"; nm.dataset.action = "rename-role";
+    nm.setAttribute("role", "button"); nm.tabIndex = 0; nm.title = "Rename"; nm.textContent = name;
+    var del = document.createElement("button"); del.type = "button"; del.className = "role-del";
+    del.dataset.action = "delete-role"; del.dataset.role = id; del.setAttribute("aria-label", "Delete role"); del.title = "Delete role"; del.textContent = "×";
+    row.appendChild(nm); row.appendChild(del); list.appendChild(row); return row;
+  }
+  function ensureAssigneeOption(val) {
+    var dl = document.getElementById("assignee-suggestions"); if (!dl || !val) return;
+    var has = Array.prototype.some.call(dl.options, function (o) { return o.value.toLowerCase() === val.toLowerCase(); });
+    if (!has) { var o = document.createElement("option"); o.value = val; dl.appendChild(o); }
+  }
+  function removeAssigneeOption(val) {
+    var dl = document.getElementById("assignee-suggestions"); if (!dl) return;
+    Array.prototype.slice.call(dl.options).forEach(function (o) { if (o.value.toLowerCase() === (val || "").toLowerCase()) o.remove(); });
+  }
+  function relabelAssignee(oldName, newName) {
+    board.querySelectorAll(".awaiting-text").forEach(function (t) {
+      if (!t.classList.contains("is-empty") && t.textContent.trim() === oldName) renderAwaiting(t, newName);
+    });
+  }
+  async function addRolePop(form) {
+    var input = form.querySelector('input[name="name"]'); var name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    var r = await api("/api/projects/" + projectId + "/roles", { name: name });
+    if (!r) return;
+    addRoleRow(r.role.id, r.role.name); ensureAssigneeOption(r.role.name);
+    input.value = ""; input.focus();
+  }
+  function renameRole(nameEl) {
+    var row = nameEl.closest(".role-row"); var id = row.dataset.role, old = nameEl.textContent.trim();
+    editInline(nameEl, old, async function (val, changed) {
+      if (val === null || !changed || !val) { nameEl.textContent = old; return; }
+      var res, json = {};
+      try { res = await fetch("/api/roles/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: val }) }); }
+      catch (e) { alert("Could not reach the app. Is it still running?"); nameEl.textContent = old; return; }
+      try { json = await res.json(); } catch (e) {}
+      if (!res.ok || !json.ok) { alert((json && json.error) || "Could not rename the role."); nameEl.textContent = old; return; }
+      nameEl.textContent = val; removeAssigneeOption(old); ensureAssigneeOption(val); relabelAssignee(old, val);
+    });
+  }
+  async function deleteRole(btn) {
+    var row = btn.closest(".role-row"); if (!row) return;
+    var id = btn.dataset.role || row.dataset.role, name = row.querySelector(".role-name").textContent.trim();
+    var res, json = {};
+    try { res = await fetch("/api/roles/" + id + "/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }); }
+    catch (e) { alert("Could not reach the app. Is it still running?"); return; }
+    try { json = await res.json(); } catch (e) {}
+    if (res.status === 409 && json.in_use) { openReassign(id, name, json.in_use); return; }   // must reassign first
+    if (!res.ok || !json.ok) { alert((json && json.error) || "Could not delete the role."); return; }
+    row.remove(); removeAssigneeOption(name);
+  }
+  var reassignCtx = null;
+  function openReassign(id, name, count) {
+    var m = document.getElementById("role-reassign-modal"); if (!m) return;
+    reassignCtx = { id: id, name: name };
+    m.querySelector(".rr-role").textContent = name;
+    m.querySelector(".rr-count").textContent = count + (count === 1 ? " task" : " tasks");
+    var sel = m.querySelector(".rr-select"); sel.innerHTML = "";
+    document.querySelectorAll(".roles-list .role-row").forEach(function (r) {
+      if (r.dataset.role === String(id)) return;
+      var o = document.createElement("option"); o.value = r.querySelector(".role-name").textContent.trim(); o.textContent = o.value; sel.appendChild(o);
+    });
+    var nw = document.createElement("option"); nw.value = "__new__"; nw.textContent = "＋ New role…"; sel.appendChild(nw);
+    var ni = m.querySelector(".rr-new"); ni.value = ""; ni.hidden = sel.value !== "__new__";
+    m.hidden = false; sel.focus();
+  }
+  function reassignSelectChanged(sel) {
+    var ni = document.getElementById("role-reassign-modal").querySelector(".rr-new");
+    ni.hidden = sel.value !== "__new__"; if (!ni.hidden) ni.focus();
+  }
+  async function reassignConfirm() {
+    if (!reassignCtx) return;
+    var m = document.getElementById("role-reassign-modal"), sel = m.querySelector(".rr-select");
+    var target = sel.value === "__new__" ? m.querySelector(".rr-new").value.trim() : sel.value;
+    if (!target) { alert("Choose or type a role to move the tasks to."); return; }
+    var r = await api("/api/roles/" + reassignCtx.id + "/delete", { reassign_to: target });
+    if (!r) return;
+    location.reload();          // simplest resync of roles + the board after a reassign
+  }
+  function closeReassign() { var m = document.getElementById("role-reassign-modal"); if (m) m.hidden = true; reassignCtx = null; }
+
+  function ctxSep(menu) { var s = document.createElement("div"); s.className = "ctx-sep"; menu.appendChild(s); }
+  function ctxHead(menu, text) { var h = document.createElement("div"); h.className = "ctx-head"; h.textContent = text; menu.appendChild(h); }
+  function appendUndo(menu) {
+    var last = undoStack[undoStack.length - 1];
+    menu.appendChild(ctxItem("Undo", last ? function () { closeMenu(); runUndo(); } : null, !last));
+  }
+  // Right-click a card: the task's own actions. Section options appear only when
+  // the stage actually has sections to move between.
   function openSectionMenu(card, x, y) {
     closeMenu();
     var stageEl = stageOf(card), cur = card.dataset.section || "";
-    var menu = document.createElement("div"); menu.className = "ctx-menu";
-    if (card.dataset.type === "decision") {       // confirm-choice section first
-      var dh = document.createElement("div"); dh.className = "ctx-head"; dh.textContent = "Confirm decision"; menu.appendChild(dh);
+    var menu = document.createElement("div"); menu.className = "ctx-menu"; var has = false;
+    if (card.dataset.type === "decision") {
+      ctxHead(menu, "Confirm decision");
       var outcome = decOutcome(card);
       card.querySelectorAll(".dec-option .dec-option-text").forEach(function (span) {
         var text = span.textContent.trim();
-        var it = document.createElement("div"); it.className = "ctx-item" + (text === outcome ? " is-current" : "");
-        var s = document.createElement("span"); s.textContent = text; it.appendChild(s);
-        if (text !== outcome) it.addEventListener("click", function () { confirmDecision(card, text, false); closeMenu(); });
+        var it = ctxItem(text, text === outcome ? null : function () { confirmDecision(card, text, false); closeMenu(); });
+        if (text === outcome) it.classList.add("is-current");
         menu.appendChild(it);
       });
-      var other = document.createElement("div"); other.className = "ctx-item";
-      var os = document.createElement("span"); os.textContent = "Other…"; other.appendChild(os);
-      other.addEventListener("click", function () { closeMenu(); startAddOption(card, true); });
-      menu.appendChild(other);
-      if (outcome) {
-        var clr = document.createElement("div"); clr.className = "ctx-item";
-        var cs = document.createElement("span"); cs.textContent = "Clear decision"; clr.appendChild(cs);
-        clr.addEventListener("click", function () { clearDecision(card); closeMenu(); });
-        menu.appendChild(clr);
-      }
-      var sep = document.createElement("div"); sep.className = "ctx-sep"; menu.appendChild(sep);
+      menu.appendChild(ctxItem("Other…", function () { closeMenu(); startAddOption(card, true); }));
+      if (outcome) menu.appendChild(ctxItem("Clear decision", function () { clearDecision(card); closeMenu(); }));
+      has = true;
     }
-    var head = document.createElement("div"); head.className = "ctx-head"; head.textContent = "Move to section"; menu.appendChild(head);
-    [{ id: "", title: "General (no section)" }].concat(stageSections(stageEl)).forEach(function (it) {
-      var el = document.createElement("div");
-      el.className = "ctx-item" + (it.id === cur ? " is-current" : "");
-      var s = document.createElement("span"); s.textContent = it.title; el.appendChild(s);
-      if (it.id !== cur) el.addEventListener("click", function () { assignCardToSection(card, it.id); closeMenu(); });
-      menu.appendChild(el);
-    });
-    document.body.appendChild(menu);
-    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
-    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
-    ctxMenu = menu;
+    var sections = stageSections(stageEl);
+    if (sections.length) {
+      if (has) ctxSep(menu);
+      ctxHead(menu, "Move to section");
+      [{ id: "", title: "General (no section)" }].concat(sections).forEach(function (it) {
+        var el = ctxItem(it.title, it.id === cur ? null : function () { assignCardToSection(card, it.id); closeMenu(); });
+        if (it.id === cur) el.classList.add("is-current");
+        menu.appendChild(el);
+      });
+      has = true;
+    }
+    if (has) ctxSep(menu);
+    appendUndo(menu);
+    placeMenu(menu, x, y);
   }
+  // Right-click empty board space: just Undo.
   function openActionsMenu(x, y) {
     closeMenu();
     var menu = document.createElement("div"); menu.className = "ctx-menu";
-    var head = document.createElement("div"); head.className = "ctx-head"; head.textContent = "Actions"; menu.appendChild(head);
-    var last = undoStack[undoStack.length - 1];
-    var item = document.createElement("div");
-    item.className = "ctx-item" + (last ? "" : " is-disabled");
-    var s = document.createElement("span"); s.textContent = last ? ("Undo " + last.label) : "Nothing to undo"; item.appendChild(s);
-    if (last) item.addEventListener("click", function () { closeMenu(); runUndo(); });
-    menu.appendChild(item);
-    document.body.appendChild(menu);
-    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
-    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
-    ctxMenu = menu;
+    appendUndo(menu);
+    placeMenu(menu, x, y);
   }
 
   // ---- task mutations ----------------------------------------------------
@@ -596,12 +783,14 @@
     var prev = card.dataset.status, sec = card.dataset.section || "", id = card.dataset.taskId, title = cardTitle(card);
     var r = await api("/api/tasks/" + id, { status: newStatus });
     if (!r) return;
-    applyCardStatus(card, newStatus);
-    if (newStatus === "done" && prev !== "done") maybePromptRationale(card);
-    pushUndo("move of “" + title + "”", function () { return undoMove(id, prev, sec); });
     var stageEl = stageOf(card);
     var destCol = stageEl.querySelector('.col-body[data-status="' + newStatus + '"]');
-    if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
+    transportCard(card, function () {
+      applyCardStatus(card, newStatus);
+      if (destCol) ensureContainer(destCol, card.dataset.section || "").appendChild(card);
+    });
+    if (newStatus === "done" && prev !== "done") maybePromptRationale(card);
+    pushUndo("move of “" + title + "”", function () { return undoMove(id, prev, sec); });
     recountStageFull(stageEl); registerActivity(card.dataset.stage, card.dataset.taskId);
   }
   async function toggleUrgent(btn) {
@@ -648,7 +837,7 @@
     if (!confirm("Delete this section? Its tasks move to General.")) return;
     var r = await api("/api/sections/" + id + "/delete", {});
     if (!r) return;
-    var stageEl = document.getElementById("stage-" + activeStage());
+    var stageEl = currentSlide();
     if (stageEl) {
       stageEl.querySelectorAll(".col-body").forEach(function (colBody) {
         var bubble = colBody.querySelector('.bubble[data-section="' + id + '"]');
@@ -690,19 +879,18 @@
   }
   function openSections() {
     var pop = document.getElementById("sections-pop"); if (!pop) return;
-    var n = activeStage(), stageEl = document.getElementById("stage-" + n);
-    var lbl = pop.querySelector(".sections-stage"); if (lbl) lbl.textContent = "Stage " + n + " · " + RIBA[n];
+    var stageEl = currentSlide(), panel = panelAt(activePage());
+    var lbl = pop.querySelector(".sections-stage"); if (lbl) lbl.textContent = "Stage " + panel.label + " · " + RIBA[panel.stage];
     renderSectionsList(stageEl);
     closePops("sections-pop"); pop.hidden = false;
     var ti = pop.querySelector(".sections-add input"); if (ti) ti.value = "";
   }
   async function addSectionPop(form) {
-    var stage = activeStage();
+    var stageEl = currentSlide(), stage = Number(stageEl.dataset.stage), substage = Number(stageEl.dataset.part || 0);
     var input = form.querySelector('input[name="title"]');
     var title = input.value.trim(); if (!title) { input.focus(); return; }
-    var r = await api("/api/projects/" + projectId + "/sections", { stage: stage, title: title });
+    var r = await api("/api/projects/" + projectId + "/sections", { stage: stage, substage: substage, title: title });
     if (!r) return;
-    var stageEl = document.getElementById("stage-" + stage);
     if (stageEl) {
       var reg = stageEl.querySelector(".section-reg");
       var pos = stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").length;
@@ -730,7 +918,7 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   // ---- titleblock popovers (filters / more / scope / create) ------------
-  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop", "search-pop"];
+  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop", "search-pop", "roles-pop"];
   function closePops(except) {
     POP_IDS.forEach(function (id) { if (id === except) return; var el = document.getElementById(id); if (el) el.hidden = true; });
   }
@@ -775,7 +963,7 @@
     var card = board.querySelector('.card[data-task-id="' + id + '"]'); if (!card) return;
     closePops();
     var collapsed = card.closest(".bubble.is-collapsed"); if (collapsed) collapsed.classList.remove("is-collapsed");
-    var stage = Number(card.dataset.stage); lastActive = stage; gotoStage(stage);
+    var p = pageForStagePart(card.dataset.stage, card.dataset.part); lastActive = p; gotoPage(p);
     setTimeout(function () {
       card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center", inline: "nearest" });
       card.classList.remove("is-found"); void card.offsetWidth; card.classList.add("is-found");
@@ -786,9 +974,9 @@
   // ---- create-task widget -----------------------------------------------
   function openCreate() {
     var pop = document.getElementById("create-pop"); if (!pop) return;
-    var n = activeStage(), stageEl = document.getElementById("stage-" + n);
-    pop.dataset.stage = n;
-    var lbl = pop.querySelector(".create-stage"); if (lbl) lbl.textContent = "Stage " + n + " · " + RIBA[n];
+    var stageEl = currentSlide(), panel = panelAt(activePage());
+    pop.dataset.stage = panel.stage; pop.dataset.part = panel.part; pop.dataset.page = panel.page;
+    var lbl = pop.querySelector(".create-stage"); if (lbl) lbl.textContent = "Stage " + panel.label + " · " + RIBA[panel.stage];
     var secSel = pop.querySelector(".create-section");
     secSel.innerHTML = '<option value="">General</option>';
     if (stageEl) stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").forEach(function (ch) {
@@ -803,14 +991,14 @@
     var pop = document.getElementById("create-pop"); if (!pop) return;
     var ti = pop.querySelector(".create-title"), title = ti.value.trim();
     if (!title) { if (closeAfter) pop.hidden = true; else ti.focus(); return; }
-    var stage = Number(pop.dataset.stage);
+    var stage = Number(pop.dataset.stage), substage = Number(pop.dataset.part || 0);
     var type = pop.querySelector(".create-type").value;
     var status = pop.querySelector(".create-status").value;
     var section = pop.querySelector(".create-section").value;
     var r = await api("/api/projects/" + projectId + "/tasks",
-      { stage: stage, title: title, type: type, status: status, section_id: section });
+      { stage: stage, substage: substage, title: title, type: type, status: status, section_id: section });
     if (!r) return;
-    var stageEl = document.getElementById("stage-" + stage);
+    var stageEl = document.getElementById("stage-" + pop.dataset.page);
     if (stageEl) {
       var destCol = stageEl.querySelector('.col-body[data-status="' + status + '"]');
       if (destCol) {
@@ -850,17 +1038,65 @@
   // the in-context "Add to scope" affordance on a disabled-stage placeholder.
   function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
 
+  // Split the focused stage into sub-stages (parts >= 2) or merge it back (parts <= 1).
+  // A full reload is the simplest resync — the page list, ids and indices all shift.
+  function splitStage(parts) {
+    var panel = panelAt(activePage());
+    if (parts > 1 && !panel.enabled) return;   // only an in-scope stage can be split
+    if (parts <= 1 && !confirm("Merge Stage " + panel.stage + " back into one page? Every sub-stage's tasks move onto Stage " + panel.stage + ".")) return;
+    // Reload onto the affected stage by name — page indices shift when the split
+    // shape changes, so a bare reload could land on the wrong page.
+    api("/api/projects/" + projectId + "/split", { stage: panel.stage, parts: parts })
+      .then(function (r) { if (r) location.href = location.pathname + "?stage=" + panel.stage; });
+  }
+
   // collapse section bubbles (grouped) — folds a whole section across columns, persisted
   var LS_BUBBLES = "arckanban-bubbles-" + projectId;
   function loadBubbles() { try { return new Set(JSON.parse(localStorage.getItem(LS_BUBBLES)) || []); } catch (e) { return new Set(); } }
   function applyBubbles() { var s = loadBubbles(); document.querySelectorAll(".bubble").forEach(function (b) { if (s.has(b.dataset.section)) b.classList.add("is-collapsed"); }); }
-  function toggleBubble(btn) {
-    var bubble = btn.closest(".bubble"); if (!bubble) return;
+  function toggleBubble(el) {
+    var bubble = el.closest(".bubble"); if (!bubble) return;
     var sec = bubble.dataset.section; if (!sec) return;
-    var collapsed = !bubble.classList.contains("is-collapsed");
-    stageOf(btn).querySelectorAll('.bubble[data-section="' + sec + '"]').forEach(function (b) { b.classList.toggle("is-collapsed", collapsed); });
-    var s = loadBubbles(); if (collapsed) s.add(sec); else s.delete(sec);
+    var collapse = !bubble.classList.contains("is-collapsed");
+    stageOf(el).querySelectorAll('.bubble[data-section="' + sec + '"]').forEach(function (b) { animateBubble(b, collapse); });
+    var s = loadBubbles(); if (collapse) s.add(sec); else s.delete(sec);
     localStorage.setItem(LS_BUBBLES, JSON.stringify(Array.from(s)));
+  }
+  // Animate a section open/closed: the card area expands/contracts while its
+  // cards stagger in from the left (and slide back out to the left on close).
+  function animateBubble(bubble, collapse) {
+    var cards = bubble.querySelector(".bubble-cards");
+    if (!cards || reduceMotion || !cards.animate) { bubble.classList.toggle("is-collapsed", collapse); return; }
+    var kids = [].slice.call(cards.children);
+    cards.getAnimations().forEach(function (a) { a.cancel(); });
+    kids.forEach(function (c) { c.getAnimations().forEach(function (a) { a.cancel(); }); });
+    var stagger = Math.min(34, 150 / Math.max(1, kids.length));
+    cards.style.overflow = "hidden";
+    if (collapse) {
+      var h = cards.getBoundingClientRect().height;
+      bubble.classList.add("is-collapsing");                       // rotates the chevron now
+      kids.forEach(function (c, i) {                               // last card leaves first
+        c.animate([{ opacity: 1, transform: "translateX(0)" }, { opacity: 0, transform: "translateX(-16px)" }],
+          { duration: 150, delay: (kids.length - 1 - i) * stagger, easing: "cubic-bezier(.4,0,1,1)", fill: "forwards" });
+      });
+      var a = cards.animate([{ height: h + "px", opacity: 1 }, { height: "0px", opacity: 0 }],
+        { duration: Math.min(360, 150 + kids.length * 22), delay: 40, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" });
+      a.onfinish = function () {
+        bubble.classList.remove("is-collapsing"); bubble.classList.add("is-collapsed");
+        cards.style.overflow = ""; cards.style.height = "";
+        a.cancel(); kids.forEach(function (c) { c.getAnimations().forEach(function (x) { x.cancel(); }); });
+      };
+    } else {
+      bubble.classList.remove("is-collapsed");
+      var target = cards.getBoundingClientRect().height;          // natural height once shown
+      var ha = cards.animate([{ height: "0px", opacity: 0 }, { height: target + "px", opacity: 1 }],
+        { duration: Math.min(380, 160 + kids.length * 24), easing: "cubic-bezier(.2,.7,.3,1)" });
+      ha.onfinish = function () { cards.style.overflow = ""; cards.style.height = ""; };
+      kids.forEach(function (c, i) {
+        c.animate([{ opacity: 0, transform: "translateX(-16px)" }, { opacity: 1, transform: "translateX(0)" }],
+          { duration: 200, delay: 30 + i * stagger, easing: "cubic-bezier(.2,.7,.3,1)" });
+      });
+    }
   }
 
   // ---- native drag -------------------------------------------------------
@@ -897,6 +1133,35 @@
       c._flip.onfinish = function () { c._flip = null; };
     });
   }
+  // Fly a card from where it is to wherever `mutate` moves it, settling (and
+  // gently compressing) into its new size — used when a decision passes its gate
+  // into Done, the inverse when it's reopened, and for the ‹ › status steps.
+  function transportCard(card, mutate) {
+    var scope = stageOf(card);
+    if (reduceMotion || !card.animate || !scope) { mutate(); return; }
+    var others = [].slice.call(scope.querySelectorAll(".card")).filter(function (c) { return c !== card; });
+    var firstO = others.map(function (c) { return c.getBoundingClientRect(); });
+    var first = card.getBoundingClientRect();
+    mutate();
+    var last = card.getBoundingClientRect();
+    others.forEach(function (c, i) {            // siblings slide to make room / close the gap
+      if (c._flip) { c._flip.cancel(); c._flip = null; }
+      var l = c.getBoundingClientRect(), dx = firstO[i].left - l.left, dy = firstO[i].top - l.top;
+      if (!dx && !dy) return;
+      c._flip = c.animate([{ transform: "translate(" + dx + "px," + dy + "px)" }, { transform: "translate(0,0)" }],
+        { duration: 300, easing: "cubic-bezier(.2,.7,.3,1)" });
+      c._flip.onfinish = function () { c._flip = null; };
+    });
+    var dx2 = first.left - last.left, dy2 = first.top - last.top;
+    var sy = last.height ? Math.max(1, Math.min(first.height / last.height, 1.2)) : 1;   // cap so text never grossly stretches
+    if (!dx2 && !dy2 && sy < 1.02) return;
+    card.style.transformOrigin = "top left"; card.style.zIndex = "6";
+    var a = card.animate(
+      [{ transform: "translate(" + dx2 + "px," + dy2 + "px) scaleY(" + sy + ")", opacity: 0.75 },
+       { transform: "translate(0,0) scaleY(1)", opacity: 1 }],
+      { duration: 440, easing: "cubic-bezier(.34,1.06,.4,1)" });
+    a.onfinish = function () { card.style.transformOrigin = ""; card.style.zIndex = ""; };
+  }
   function maybePlace(container, y) {
     var after = getDragAfterElement(container, y);
     if (draggingCard.parentElement === container && after === draggingCard.nextElementSibling) return;
@@ -916,9 +1181,9 @@
       try { e.dataTransfer.setData("text/plain", card.dataset.taskId); } catch (_) {}
       return;
     }
-    var head = e.target.closest(".bubble-head");
-    if (head && !e.target.closest(".bubble-collapse")) {
-      draggingBubble = head.closest(".bubble"); draggingBubble.classList.add("dragging-bubble");
+    var grip = e.target.closest(".bubble-grip");
+    if (grip) {
+      draggingBubble = grip.closest(".bubble"); draggingBubble.classList.add("dragging-bubble");
       e.dataTransfer.effectAllowed = "move";
       try { e.dataTransfer.setData("text/plain", "bubble"); } catch (_) {}
     }
@@ -1018,6 +1283,10 @@
         case "rationale-chip": rationaleChip(el); break;
         case "rationale-save": saveRationale(); break;
         case "rationale-skip": closeRationale(); break;
+        case "unmade-done": closeUnmade(); break;
+        case "open-email": openEmail(); break;
+        case "email-close": closeEmail(); break;
+        case "email-download": emailDownload(); break;
         case "edit-title": editTitle(el); break;
         case "edit-awaiting": editAwaiting(el); break;
         case "edit-project-number": editProjectField(el, "number"); break;
@@ -1026,15 +1295,23 @@
         case "delete-section": deleteSection(el); break;
         case "toggle-bubble": toggleBubble(el); break;
         case "set-current": setCurrentStage(el.dataset.stage); break;
-        case "star-current": setCurrentStage(activeStage()); break;
-        case "goto-stage": { var gs = Number(el.dataset.stage); if (isEnabled(gs)) { lastActive = gs; gotoStage(gs); } break; }
-        case "nav-prev": { var pe = nextEnabled(activeStage(), -1); if (pe != null) { lastActive = pe; gotoStage(pe); } break; }
-        case "nav-next": { var ne = nextEnabled(activeStage(), +1); if (ne != null) { lastActive = ne; gotoStage(ne); } break; }
+        case "star-current": setCurrentStage(Number(currentSlide().dataset.stage)); break;
+        case "goto-stage": { var gp = firstPageOfStage(Number(el.dataset.stage)); if (gp != null) { lastActive = gp; gotoPage(gp); } break; }
+        case "nav-prev": { var pe = nextEnabledPage(activePage(), -1); if (pe != null) { lastActive = pe; gotoPage(pe); } break; }
+        case "nav-next": { var ne = nextEnabledPage(activePage(), +1); if (ne != null) { lastActive = ne; gotoPage(ne); } break; }
+        case "split-stage": splitStage(2); break;
+        case "addpart-stage": splitStage(panelAt(activePage()).parts + 1); break;
+        case "merge-stage": splitStage(1); break;
         case "create-open": openCreate(); break;
         case "create-save": createSave(false); break;
         case "create-close": createSave(true); break;
         case "toggle-filters": togglePop("filter-pop"); break;
         case "toggle-more": togglePop("more-pop"); break;
+        case "toggle-roles": togglePop("roles-pop"); break;
+        case "rename-role": renameRole(el); break;
+        case "delete-role": deleteRole(el); break;
+        case "rr-cancel": closeReassign(); break;
+        case "rr-confirm": reassignConfirm(); break;
         case "toggle-search": { var spp = document.getElementById("search-pop"); if (spp.hidden) openSearch(); else spp.hidden = true; break; }
         case "search-jump": jumpToTask(el.dataset.taskId); break;
         case "toggle-sections": { var secp = document.getElementById("sections-pop"); if (secp.hidden) openSections(); else secp.hidden = true; break; }
@@ -1053,16 +1330,79 @@
       }
       return;
     }
+    var bhead = e.target.closest(".bubble-head");                 // click the header (not the grip/buttons) to collapse/expand
+    if (bhead && !e.target.closest(".bubble-grip, button, a, input, select, textarea")) { toggleBubble(bhead); return; }
     var card = e.target.closest(".card");
     if (card && !e.target.closest("button, select, input, textarea, a, .task-title, .awaiting-on, [contenteditable]")) selectCard(card);
     else if (!card) clearSelection();
   });
-  document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); });
+  document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); else if (e.target.matches(".rr-select")) reassignSelectChanged(e.target); });
   document.addEventListener("input", function (e) { if (e.target.classList.contains("search-input")) renderSearch(e.target.value); });
+  // ---- right-click a column / section: create here ----------------------
+  function ctxItem(label, onClick, disabled) {
+    var el = document.createElement("div");
+    el.className = "ctx-item" + (disabled ? " is-disabled" : "");
+    var s = document.createElement("span"); s.textContent = label; el.appendChild(s);
+    if (!disabled && onClick) el.addEventListener("click", onClick);
+    return el;
+  }
+  function placeMenu(menu, x, y) {
+    document.body.appendChild(menu);
+    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
+    ctxMenu = menu;
+  }
+  function openColumnMenu(colBody, sec, x, y) {
+    closeMenu();
+    var stageEl = stageOf(colBody), status = colBody.dataset.status;
+    var menu = document.createElement("div"); menu.className = "ctx-menu";
+    if (sec) {                                   // inside a section → section context
+      ctxHead(menu, sectionTitle(stageEl, sec));
+      menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(colBody, sec); }));
+      menu.appendChild(ctxItem("Rename section", function () {
+        closeMenu();
+        var b = stageEl.querySelector('.bubble[data-section="' + sec + '"]');
+        var nm = b && b.querySelector(".bubble-name"); if (nm) renameSection(nm);
+      }));
+      menu.appendChild(ctxItem("Delete section", function () {
+        closeMenu();
+        var b = stageEl.querySelector('.bubble[data-section="' + sec + '"]'); if (b) deleteSection(b);
+      }));
+    } else {                                     // empty column area → create context
+      ctxHead(menu, STATUS_LABELS[status] || status);
+      menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(colBody, ""); }));
+      menu.appendChild(ctxItem("New section…", function () { closeMenu(); openSections(); }));   // already on this page
+    }
+    ctxSep(menu);
+    appendUndo(menu);
+    placeMenu(menu, x, y);
+  }
+  async function quickCreateTask(colBody, sec) {
+    var stage = Number(colBody.dataset.stage), substage = Number(colBody.dataset.part || 0), status = colBody.dataset.status;
+    var r = await api("/api/projects/" + projectId + "/tasks",
+      { stage: stage, substage: substage, title: "New task", type: "recommended", status: status, section_id: sec || "" });
+    if (!r) return;
+    var stageEl = stageOf(colBody);
+    var cont = ensureContainer(colBody, sec || "");
+    cont.insertAdjacentHTML("beforeend", r.html);
+    var card = cont.lastElementChild;
+    recountStageFull(stageEl);
+    var newId = r.task.id;
+    pushUndo("add of “New task”", async function () { var rr = await api("/api/tasks/" + newId + "/delete", {}); if (rr) location.reload(); });
+    registerActivity(stage, newId);
+    if (card) { card.scrollIntoView({ block: "nearest" }); var t = card.querySelector(".task-title"); if (t) editTitle(t); }
+  }
   document.addEventListener("contextmenu", function (e) {
     var card = e.target.closest(".card");
     if (card) { e.preventDefault(); openSectionMenu(card, e.clientX, e.clientY); return; }
     if (e.target.closest("input, textarea, select")) return;   // keep the native menu on fields
+    var colBody = e.target.closest(".col-body");
+    if (colBody) {
+      e.preventDefault();
+      var bubble = e.target.closest(".bubble");
+      openColumnMenu(colBody, bubble ? (bubble.dataset.section || "") : "", e.clientX, e.clientY);
+      return;
+    }
     e.preventDefault(); openActionsMenu(e.clientX, e.clientY);
   });
   document.addEventListener("click", function (e) {
@@ -1075,8 +1415,15 @@
   track.addEventListener("scroll", closeMenu);
   var ratModal = document.getElementById("rationale-modal");
   if (ratModal) ratModal.addEventListener("click", function (e) { if (e.target === ratModal) closeRationale(); });
+  var unmadeModal = document.getElementById("unmade-modal");
+  if (unmadeModal) unmadeModal.addEventListener("click", function (e) { if (e.target === unmadeModal) closeUnmade(); });
+  var emailModal = document.getElementById("email-modal");
+  if (emailModal) emailModal.addEventListener("click", function (e) { if (e.target === emailModal) closeEmail(); });
+  var rrModal = document.getElementById("role-reassign-modal");
+  if (rrModal) rrModal.addEventListener("click", function (e) { if (e.target === rrModal) closeReassign(); });
   document.addEventListener("submit", function (e) {
     var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); }
+    var rolep = e.target.closest('[data-action="add-role-pop"]'); if (rolep) { e.preventDefault(); addRolePop(rolep); }
   });
   document.addEventListener("keydown", function (e) {
     var t = e.target;
@@ -1086,14 +1433,14 @@
     }
     if (e.key === "/" && !t.matches("input, select, textarea, [contenteditable]")) { e.preventDefault(); openSearch(); return; }
     if (e.key === "Enter" || e.key === " ") {
-      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .sec-row-name")) { e.preventDefault(); t.click(); }
+      if (t.matches(".task-title, .tb-cell, .awaiting-on, .sec-row-name, .role-name")) { e.preventDefault(); t.click(); }
       return;
     }
-    if (e.key === "Escape") { closeRationale(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
+    if (e.key === "Escape") { closeRationale(); closeUnmade(); closeEmail(); closeReassign(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
-      var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);
-      if (te != null) { lastActive = te; gotoStage(te); }
+      var te = nextEnabledPage(activePage(), e.key === "ArrowRight" ? 1 : -1);
+      if (te != null) { lastActive = te; gotoPage(te); }
     }
   });
 
@@ -1103,8 +1450,8 @@
   updateUrgentTally();
   // Auto-hide dock: default ON (conceal the bar for maximum board real estate)
   // unless the user has pinned it open before. Hover the handle / bar to reveal.
-  var savedDock = null; try { savedDock = localStorage.getItem(LS_DOCK); } catch (e) {}
-  setDockMode(savedDock === null ? true : savedDock === "1");
+  // The top bar stays pinned in place (no auto-hide / expand-contract).
+  setDockMode(false);
   var tbEl = document.getElementById("titleblock"), dhEl = document.querySelector(".dock-handle");
   if (tbEl) {
     tbEl.addEventListener("mouseenter", dockEnter);
@@ -1117,20 +1464,22 @@
   if (drEl) { drEl.addEventListener("mouseenter", dockEnter); drEl.addEventListener("mouseleave", dockLeave); }
   var qStage = null; try { qStage = new URLSearchParams(location.search).get("stage"); } catch (e) {}
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
-  var startN;
-  if (qStage != null && qStage !== "" && isEnabled(Number(qStage))) {
-    startN = Number(qStage);   // explicit return-to-stage (e.g. coming back from the decision register)
+  var startP;
+  if (qStage != null && qStage !== "" && isEnabled(Number(qStage)) && firstPageOfStage(Number(qStage)) != null) {
+    startP = firstPageOfStage(Number(qStage));   // explicit return-to-stage (e.g. from the decision register)
     try { history.replaceState({}, "", location.pathname); } catch (e) {}   // keep the URL clean
-  } else if (saved != null && saved !== "" && isEnabled(Number(saved))) {
-    startN = Number(saved);
+  } else if (saved != null && saved !== "" && Number(saved) >= 0 && Number(saved) < pageCount && panels[Number(saved)].enabled) {
+    startP = Number(saved);      // remembered page (invalidated automatically if the split shape changed)
   } else {
-    startN = currentStage;
-    // Fresh project (no remembered stage): if the current stage is empty — e.g.
-    // a template whose tasks sit in later stages — open on the first enabled
-    // stage that actually has cards, so the board never looks empty.
-    if (!stageHasCards(startN)) {
-      for (var si = 0; si <= 7; si++) { if (isEnabled(si) && stageHasCards(si)) { startN = si; break; } }
+    startP = firstPageOfStage(currentStage);
+    if (startP == null) startP = 0;
+    // Fresh project (no remembered page): if that page is empty — e.g. a template
+    // whose tasks sit in later stages — open on the first enabled page that
+    // actually has cards, so the board never opens onto an empty page.
+    if (!pageHasCards(startP)) {
+      for (var si = 0; si < pageCount; si++) { if (panels[si].enabled && pageHasCards(si)) { startP = si; break; } }
     }
   }
-  gotoStage(startN, true);
+  lastActive = startP; currentPage = startP;
+  gotoPage(startP, true);
 })();
