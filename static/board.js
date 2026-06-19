@@ -1177,10 +1177,62 @@
   });
   document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); });
   document.addEventListener("input", function (e) { if (e.target.classList.contains("search-input")) renderSearch(e.target.value); });
+  // ---- right-click a column / section: create here ----------------------
+  function ctxItem(label, onClick, disabled) {
+    var el = document.createElement("div");
+    el.className = "ctx-item" + (disabled ? " is-disabled" : "");
+    var s = document.createElement("span"); s.textContent = label; el.appendChild(s);
+    if (!disabled && onClick) el.addEventListener("click", onClick);
+    return el;
+  }
+  function placeMenu(menu, x, y) {
+    document.body.appendChild(menu);
+    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
+    ctxMenu = menu;
+  }
+  function openColumnMenu(colBody, sec, x, y) {
+    closeMenu();
+    var stageEl = stageOf(colBody), status = colBody.dataset.status, stage = Number(colBody.dataset.stage);
+    var menu = document.createElement("div"); menu.className = "ctx-menu";
+    var head = document.createElement("div"); head.className = "ctx-head";
+    head.textContent = (STATUS_LABELS[status] || status) + (sec ? " · " + sectionTitle(stageEl, sec) : "");
+    menu.appendChild(head);
+    menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(stage, status, sec); }));
+    menu.appendChild(ctxItem("New section…", function () { closeMenu(); lastActive = stage; gotoStage(stage); openSections(); }));
+    var sep = document.createElement("div"); sep.className = "ctx-sep"; menu.appendChild(sep);
+    var last = undoStack[undoStack.length - 1];
+    menu.appendChild(ctxItem(last ? "Undo " + last.label : "Nothing to undo",
+                             last ? function () { closeMenu(); runUndo(); } : null, !last));
+    placeMenu(menu, x, y);
+  }
+  async function quickCreateTask(stage, status, sec) {
+    var r = await api("/api/projects/" + projectId + "/tasks",
+      { stage: stage, title: "New task", type: "recommended", status: status, section_id: sec || "" });
+    if (!r) return;
+    var stageEl = document.getElementById("stage-" + stage);
+    var destCol = stageEl && stageEl.querySelector('.col-body[data-status="' + status + '"]');
+    if (!destCol) { location.reload(); return; }
+    var cont = ensureContainer(destCol, sec || "");
+    cont.insertAdjacentHTML("beforeend", r.html);
+    var card = cont.lastElementChild;
+    recountStageFull(stageEl);
+    var newId = r.task.id;
+    pushUndo("add of “New task”", async function () { var rr = await api("/api/tasks/" + newId + "/delete", {}); if (rr) location.reload(); });
+    registerActivity(stage, newId);
+    if (card) { card.scrollIntoView({ block: "nearest" }); var t = card.querySelector(".task-title"); if (t) editTitle(t); }
+  }
   document.addEventListener("contextmenu", function (e) {
     var card = e.target.closest(".card");
     if (card) { e.preventDefault(); openSectionMenu(card, e.clientX, e.clientY); return; }
     if (e.target.closest("input, textarea, select")) return;   // keep the native menu on fields
+    var colBody = e.target.closest(".col-body");
+    if (colBody) {
+      e.preventDefault();
+      var bubble = e.target.closest(".bubble");
+      openColumnMenu(colBody, bubble ? (bubble.dataset.section || "") : "", e.clientX, e.clientY);
+      return;
+    }
     e.preventDefault(); openActionsMenu(e.clientX, e.clientY);
   });
   document.addEventListener("click", function (e) {
