@@ -3,10 +3,11 @@ ArcKanban — a project tracker for a sole-trader architectural practice.
 
 Single-file Flask app over SQLite. Local-first, no cloud, no build step.
 See REQUIREMENTS.md for the full specification. This module covers projects,
-templates, the horizontally-paged RIBA board, section swimlanes, the four-column
-per-stage Kanban, the urgent flag, awaiting-on notes, triage filters, the
+templates, the horizontally-paged RIBA board (stages can be split into
+sub-stages — 4a/4b… — each its own page), section swimlanes, the per-stage
+Kanban, the urgent flag, awaiting-on notes, triage filters, the
 stage-advancement nudge, status moves via the steppers, and drag (within a
-stage, across sections and status columns).
+page, across sections and status columns).
 
 Parent/child task nesting arrives in the next increment.
 """
@@ -123,12 +124,14 @@ def init_db():
             name          TEXT NOT NULL,
             template      TEXT,
             current_stage INTEGER NOT NULL DEFAULT 0,
+            splits        TEXT,
             created_at    TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS sections (
             id         INTEGER PRIMARY KEY,
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             stage      INTEGER NOT NULL,
+            substage   INTEGER NOT NULL DEFAULT 0,
             title      TEXT NOT NULL,
             position   INTEGER NOT NULL DEFAULT 0
         );
@@ -136,6 +139,7 @@ def init_db():
             id          INTEGER PRIMARY KEY,
             project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             stage       INTEGER NOT NULL,
+            substage    INTEGER NOT NULL DEFAULT 0,
             title       TEXT NOT NULL,
             status      TEXT NOT NULL DEFAULT 'todo',
             type        TEXT NOT NULL DEFAULT 'recommended',
@@ -161,6 +165,12 @@ def init_db():
             text       TEXT NOT NULL,
             position   INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS roles (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name       TEXT NOT NULL,
+            position   INTEGER NOT NULL DEFAULT 0
         );
         """
     )
@@ -191,6 +201,12 @@ def init_db():
     # register and captured when a decision lands in Done. Not mandatory.
     _ensure_column(db, "tasks", "rationale", "rationale TEXT")
     _ensure_column(db, "tasks", "from_decision_id", "from_decision_id INTEGER REFERENCES tasks(id)")
+    # Sub-stages: a RIBA stage can be split into parts (4a/4b…), each its own board
+    # page. substage is the part index (0=a, 1=b…); 0 for an unsplit stage. The
+    # split shape lives on the project as JSON {stage: part_count}.
+    _ensure_column(db, "tasks", "substage", "substage INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "sections", "substage", "substage INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "projects", "splits", "splits TEXT")
     # Projects use a short (6-hex) URL-friendly uid; sections/tasks keep a long
     # one (not user-facing). Project uids are assigned with a uniqueness check,
     # so even the short length never collides; this also normalises any earlier
@@ -424,12 +440,13 @@ def task_update_event(db, row, data):
     return None, False
 
 
-def next_position(db, project_id, stage, status, section_id, parent_id=None):
-    """Next sort position at the end of one list (project, stage, section, status)."""
+def next_position(db, project_id, stage, substage, status, section_id, parent_id=None):
+    """Next sort position at the end of one list (project, stage, sub-stage,
+    section, status). A split stage's parts are independent lists."""
     row = db.execute(
         """SELECT COALESCE(MAX(position) + 1, 0) AS p FROM tasks
-           WHERE project_id=? AND stage=? AND status=? AND section_id IS ? AND parent_id IS ?""",
-        (project_id, stage, status, section_id, parent_id),
+           WHERE project_id=? AND stage=? AND substage=? AND status=? AND section_id IS ? AND parent_id IS ?""",
+        (project_id, stage, substage, status, section_id, parent_id),
     ).fetchone()
     return row["p"]
 
@@ -440,6 +457,7 @@ def task_to_dict(row):
         "id": row["id"],
         "uid": row["uid"],
         "stage": row["stage"],
+        "substage": (row["substage"] if "substage" in keys else 0) or 0,
         "title": row["title"],
         "status": row["status"],
         "type": row["type"],
@@ -459,13 +477,14 @@ def task_to_dict(row):
     return d
 
 
-def section_in_stage(db, section_id, project_id, stage):
-    """True if section_id is None, or a section of this project in this stage."""
+def section_in_stage(db, section_id, project_id, stage, substage=0):
+    """True if section_id is None, or a section of this project on this exact
+    page (stage + sub-stage). Sections never cross a sub-stage boundary."""
     if section_id is None:
         return True
     row = db.execute(
-        "SELECT 1 FROM sections WHERE id=? AND project_id=? AND stage=?",
-        (section_id, project_id, stage),
+        "SELECT 1 FROM sections WHERE id=? AND project_id=? AND stage=? AND substage=?",
+        (section_id, project_id, stage, substage),
     ).fetchone()
     return row is not None
 
@@ -480,6 +499,43 @@ def enabled_stages(project_row):
     except ValueError:
         return set(range(8))
     return out or set(range(8))
+
+
+def project_splits(project_row):
+    """Map of {stage: part_count} for stages split into sub-stages (4a/4b…).
+    Only counts >= 2 are kept; everything else is a single, unsplit stage."""
+    raw = project_row["splits"] if "splits" in project_row.keys() else None
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return {int(k): int(v) for k, v in data.items()
+                if 0 <= int(k) <= 7 and 2 <= int(v) <= 6}
+    except (ValueError, TypeError, AttributeError):
+        return {}
+
+
+def parts_for(splits, stage):
+    """How many parts a stage has (1 when unsplit)."""
+    return splits.get(stage, 1)
+
+
+def part_label(stage, part, count):
+    """Display label for a (stage, part): '4' when unsplit, else '4a', '4b'…"""
+    if count <= 1:
+        return str(stage)
+    return "%d%s" % (stage, chr(ord("a") + part))
+
+
+def clamp_substage(project_row, stage, raw):
+    """Coerce a requested sub-stage part to a valid index for this stage
+    (0..parts-1). Missing / out-of-range falls back to 0 (the first part)."""
+    count = parts_for(project_splits(project_row), stage)
+    try:
+        part = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return part if 0 <= part < count else 0
 
 
 def get_project_or_404(db, project_id):
@@ -511,57 +567,73 @@ def unique_project_uid(db):
             return u
 
 
-def build_stages(db, project_id):
-    """Build the status-primary layout per stage: the five status columns, each
-    grouping cards into section bubbles + a loose 'General' area, with a
-    per-section roll-up and the stage's status/urgent counts."""
+def _panel_content(stage_rows, secs):
+    """Status-primary layout for one page: the status columns (each grouping
+    cards into section bubbles + a loose 'General' area), the per-section
+    roll-up for the Sections popup, and the page's status/urgent counts."""
+    pos_of = {s["id"]: i for i, s in enumerate(secs)}
+    grouped = {}
+    for st in STATUSES:
+        bubbles = []
+        for s in secs:
+            tl = [task_to_dict(r) for r in stage_rows
+                  if r["section_id"] == s["id"] and r["status"] == st]
+            if tl:
+                bubbles.append({"id": s["id"], "title": s["title"],
+                                "pos": pos_of[s["id"]], "tasks": tl})
+        loose = [task_to_dict(r) for r in stage_rows
+                 if r["section_id"] is None and r["status"] == st]
+        grouped[st] = {"bubbles": bubbles, "loose": loose,
+                       "count": len(loose) + sum(len(b["tasks"]) for b in bubbles)}
+
+    sec_meta = []
+    for i, s in enumerate(secs):
+        st_rows = [r for r in stage_rows if r["section_id"] == s["id"]]
+        sec_meta.append({"id": s["id"], "title": s["title"], "pos": i,
+                         "total": len(st_rows),
+                         "done": sum(1 for r in st_rows if r["status"] == "done")})
+
+    counts = {st: grouped[st]["count"] for st in STATUSES}
+    counts["urgent"] = sum(1 for r in stage_rows if r["urgent"])
+    return grouped, sec_meta, counts
+
+
+def build_panels(db, project_id, project_row):
+    """Build the horizontally-paged board as a flat list of panels (pages). A
+    stage in scope contributes one panel, or several when split into sub-stages
+    (4a/4b…), each its own independent board; an out-of-scope stage contributes
+    a single disabled placeholder. `page` is the panel's index in the pager —
+    navigation keys off it, since it no longer equals the RIBA stage number."""
+    en = enabled_stages(project_row)
+    splits = project_splits(project_row)
     sections = db.execute(
-        "SELECT * FROM sections WHERE project_id=? ORDER BY stage, position, id",
+        "SELECT * FROM sections WHERE project_id=? ORDER BY stage, substage, position, id",
         (project_id,),
     ).fetchall()
     rows = db.execute(
         """SELECT * FROM tasks WHERE project_id=? AND parent_id IS NULL
-           ORDER BY stage, position, id""",
+           ORDER BY stage, substage, position, id""",
         (project_id,),
     ).fetchall()
-    by_stage = {}
-    for s in sections:
-        by_stage.setdefault(s["stage"], []).append(s)
 
-    stages = []
+    panels, page = [], 0
     for idx, name in enumerate(RIBA_STAGES):
-        stage_rows = [r for r in rows if r["stage"] == idx]
-        secs = by_stage.get(idx, [])
-
-        # Status columns, each grouping cards into section bubbles + a loose area.
-        pos_of = {s["id"]: i for i, s in enumerate(secs)}
-        grouped = {}
-        for st in STATUSES:
-            bubbles = []
-            for s in secs:
-                tl = [task_to_dict(r) for r in stage_rows
-                      if r["section_id"] == s["id"] and r["status"] == st]
-                if tl:
-                    bubbles.append({"id": s["id"], "title": s["title"],
-                                    "pos": pos_of[s["id"]], "tasks": tl})
-            loose = [task_to_dict(r) for r in stage_rows
-                     if r["section_id"] is None and r["status"] == st]
-            grouped[st] = {"bubbles": bubbles, "loose": loose,
-                           "count": len(loose) + sum(len(b["tasks"]) for b in bubbles)}
-
-        # Section meta (for the Sections popup registry): per-section roll-up.
-        sec_meta = []
-        for i, s in enumerate(secs):
-            st_rows = [r for r in stage_rows if r["section_id"] == s["id"]]
-            sec_meta.append({"id": s["id"], "title": s["title"], "pos": i,
-                             "total": len(st_rows),
-                             "done": sum(1 for r in st_rows if r["status"] == "done")})
-
-        counts = {st: grouped[st]["count"] for st in STATUSES}
-        counts["urgent"] = sum(1 for r in stage_rows if r["urgent"])
-        stages.append({"idx": idx, "name": name, "grouped": grouped,
-                       "sections": sec_meta, "counts": counts})
-    return stages
+        if idx not in en:
+            panels.append({"page": page, "idx": idx, "part": 0, "parts": 1,
+                           "label": str(idx), "name": name, "enabled": False})
+            page += 1
+            continue
+        count = parts_for(splits, idx)
+        for part in range(count):
+            stage_rows = [r for r in rows if r["stage"] == idx and (r["substage"] or 0) == part]
+            secs = [s for s in sections if s["stage"] == idx and (s["substage"] or 0) == part]
+            grouped, sec_meta, counts = _panel_content(stage_rows, secs)
+            panels.append({"page": page, "idx": idx, "part": part, "parts": count,
+                           "label": part_label(idx, part, count), "name": name,
+                           "enabled": True, "grouped": grouped,
+                           "sections": sec_meta, "counts": counts})
+            page += 1
+    return panels
 
 
 def build_template_export(db, project_id, name="Untitled template"):
@@ -685,6 +757,90 @@ def create_project():
     return redirect(url_for("board", project_uid=puid))
 
 
+def project_roles(db, project_id):
+    """The project's managed roles (decision-makers / responsible parties). Seeds
+    once from the standard parties + any names already used on tasks."""
+    rows = db.execute("SELECT id, name FROM roles WHERE project_id=? ORDER BY position, id", (project_id,)).fetchall()
+    if not rows:
+        names = list(STANDARD_ASSIGNEES)
+        for r in db.execute("SELECT DISTINCT awaiting_on FROM tasks WHERE project_id=? "
+                            "AND awaiting_on IS NOT NULL AND awaiting_on<>''", (project_id,)):
+            if r["awaiting_on"] not in names:
+                names.append(r["awaiting_on"])
+        for i, nm in enumerate(names):
+            db.execute("INSERT INTO roles (project_id, name, position) VALUES (?,?,?)", (project_id, nm, i))
+        db.commit()
+        rows = db.execute("SELECT id, name FROM roles WHERE project_id=? ORDER BY position, id", (project_id,)).fetchall()
+    return [{"id": r["id"], "name": r["name"]} for r in rows]
+
+
+def _ensure_role(db, project_id, name):
+    """Add a role for this project if that name isn't already one (so one-off
+    typed assignees join the managed list). Returns the role id."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    ex = db.execute("SELECT id FROM roles WHERE project_id=? AND name=? COLLATE NOCASE", (project_id, name)).fetchone()
+    if ex:
+        return ex["id"]
+    pos = db.execute("SELECT COALESCE(MAX(position)+1,0) p FROM roles WHERE project_id=?", (project_id,)).fetchone()["p"]
+    cur = db.execute("INSERT INTO roles (project_id, name, position) VALUES (?,?,?)", (project_id, name, pos))
+    return cur.lastrowid
+
+
+@app.route("/api/projects/<int:project_id>/roles", methods=["POST"])
+def api_add_role(project_id):
+    db = get_db()
+    get_project_or_404(db, project_id)
+    name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="A role needs a name."), 400
+    if db.execute("SELECT id FROM roles WHERE project_id=? AND name=? COLLATE NOCASE", (project_id, name)).fetchone():
+        return jsonify(ok=False, error="That role already exists."), 400
+    rid = _ensure_role(db, project_id, name)
+    db.commit()
+    return jsonify(ok=True, role={"id": rid, "name": name})
+
+
+@app.route("/api/roles/<int:role_id>", methods=["POST"])
+def api_rename_role(role_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such role."), 404
+    name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="A role needs a name."), 400
+    if db.execute("SELECT id FROM roles WHERE project_id=? AND name=? COLLATE NOCASE AND id<>?",
+                  (row["project_id"], name, role_id)).fetchone():
+        return jsonify(ok=False, error="Another role already has that name."), 400
+    db.execute("UPDATE roles SET name=? WHERE id=?", (name, role_id))
+    db.execute("UPDATE tasks SET awaiting_on=? WHERE project_id=? AND awaiting_on=?",
+               (name, row["project_id"], row["name"]))   # keep tasks in step
+    db.commit()
+    return jsonify(ok=True, name=name, old=row["name"])
+
+
+@app.route("/api/roles/<int:role_id>/delete", methods=["POST"])
+def api_delete_role(role_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such role."), 404
+    n = db.execute("SELECT COUNT(*) c FROM tasks WHERE project_id=? AND awaiting_on=?",
+                   (row["project_id"], row["name"])).fetchone()["c"]
+    reassign = ((request.get_json(silent=True) or {}).get("reassign_to") or "").strip()
+    if n and not reassign:                       # caller must choose where the tasks go
+        return jsonify(ok=False, in_use=n, role=row["name"], error="In use"), 409
+    if n:
+        _ensure_role(db, row["project_id"], reassign)
+        db.execute("UPDATE tasks SET awaiting_on=? WHERE project_id=? AND awaiting_on=?",
+                   (reassign, row["project_id"], row["name"]))
+    db.execute("DELETE FROM roles WHERE id=?", (role_id,))
+    db.commit()
+    return jsonify(ok=True, reassigned=n)
+
+
 @app.route("/projects/<project_uid>")
 def board(project_uid):
     db = get_db()
@@ -692,9 +848,7 @@ def board(project_uid):
     project_id = p["id"]
     layout = "grouped"  # status-primary is the only layout
     en = enabled_stages(p)
-    stages = build_stages(db, project_id)
-    for s in stages:
-        s["enabled"] = s["idx"] in en
+    stages = build_panels(db, project_id, p)   # flat list of pages (split stages → 4a/4b…)
     ev_rows = db.execute(
         # Curated narrative only: tasks added (anywhere), status set to Awaiting
         # or Done, and decisions made. (The verb filter also tidies legacy events
@@ -704,13 +858,9 @@ def board(project_uid):
         "  OR (verb='set' AND (detail LIKE '%Awaiting%' OR detail LIKE '%Done%'))"
         ") ORDER BY id DESC LIMIT 200", (project_id,)
     ).fetchall()
-    # Autocomplete for "decision by?" / awaiting: standard roles + any names this
-    # project has already used (remembered per-project, deduped case-insensitively).
-    used = [r["awaiting_on"] for r in db.execute(
-        "SELECT DISTINCT awaiting_on FROM tasks WHERE project_id=? AND awaiting_on IS NOT NULL "
-        "AND awaiting_on<>'' ORDER BY awaiting_on", (project_id,))]
-    _seen = {a.lower() for a in STANDARD_ASSIGNEES}
-    assignees = STANDARD_ASSIGNEES + [a for a in used if a.lower() not in _seen]
+    # Managed roles for "decision by?" / awaiting — feeds the autocomplete + Roles popup.
+    roles = project_roles(db, project_id)
+    assignees = [r["name"] for r in roles]
     resp = make_response(render_template(
         "board.html",
         project={
@@ -729,6 +879,7 @@ def board(project_uid):
         enabled=sorted(en),
         riba=RIBA_STAGES,
         assignees=assignees,
+        roles=roles,
     ))
     return resp
 
@@ -803,9 +954,29 @@ def decisions_page(project_uid):
     p = get_project_by_uid_or_404(db, project_uid)
     return render_template(
         "decisions.html",
-        project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"]},
-        decisions=build_decisions(db, p["id"]), riba=RIBA_STAGES,
+        project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"],
+                 "current_stage": p["current_stage"]},
+        decisions=build_decisions(db, p["id"]), riba=RIBA_STAGES, enabled=sorted(enabled_stages(p)),
     )
+
+
+@app.route("/projects/<project_uid>/decisions.eml")
+def email_decisions(project_uid):
+    """Email a decisions table (meeting-minutes style) for the chosen stages
+    (all stages when none are given)."""
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    stages = _parse_stages(request.args.get("stages"))
+    decisions = build_decisions(db, p["id"])
+    if stages:
+        decisions = [d for d in decisions if d["stage"] in stages]
+    by_stage = {}
+    for d in decisions:
+        by_stage.setdefault(d["stage"], []).append(d)
+    groups = [{"idx": s, "name": RIBA_STAGES[s], "decisions": by_stage[s]} for s in sorted(by_stage)]
+    subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
+    html = render_template("email_decisions.html", subtitle=subtitle, date=fmt_day(now_iso()), groups=groups)
+    return _eml_response("%s — Decisions" % subtitle, html, (_slugify(subtitle) or "report") + "-decisions.eml")
 
 
 @app.route("/projects/<project_uid>/decisions.json")
@@ -829,6 +1000,81 @@ def export_decisions(project_uid):
     resp.headers["Content-Type"] = "application/json"
     resp.headers["Content-Disposition"] = 'attachment; filename="arckanban-decisions.json"'
     return resp
+
+
+def build_email_schedule(db, project_id, stage_indices):
+    """Group a project's tasks (for the chosen stages) by stage → status →
+    section, for the emailed meeting-minutes-style task schedule."""
+    out = []
+    for idx in stage_indices:
+        secs = db.execute(
+            "SELECT id, title FROM sections WHERE project_id=? AND stage=? ORDER BY position, id",
+            (project_id, idx)).fetchall()
+        sec_order = [(s["id"], s["title"]) for s in secs]
+        statuses = []
+        for status in STATUSES:
+            rows = db.execute(
+                "SELECT title, type, urgent, section_id, outcome, rationale FROM tasks "
+                "WHERE project_id=? AND stage=? AND status=? ORDER BY position, id",
+                (project_id, idx, status)).fetchall()
+            if not rows:
+                continue
+            by_sec = {}
+            for r in rows:
+                note = ""
+                if r["type"] == "decision":
+                    if (r["outcome"] or "").strip():
+                        note = "Decided: " + r["outcome"].strip()
+                        if (r["rationale"] or "").strip():
+                            note += " — " + r["rationale"].strip()
+                    else:
+                        note = "Pending"
+                by_sec.setdefault(r["section_id"], []).append(
+                    {"title": r["title"], "type_label": TYPE_LABELS.get(r["type"], r["type"]),
+                     "urgent": bool(r["urgent"]), "note": note})
+            groups = [{"section": title, "rows": by_sec[sid]} for sid, title in sec_order if sid in by_sec]
+            if None in by_sec:
+                groups.append({"section": "General", "rows": by_sec[None]})
+            statuses.append({"label": STATUS_LABELS[status], "groups": groups})
+        out.append({"idx": idx, "name": RIBA_STAGES[idx], "statuses": statuses})
+    return out
+
+
+def _eml_response(subject, html, filename):
+    """Wrap an HTML body as a downloadable .eml (RFC 822) message."""
+    from email.message import EmailMessage
+    from email.utils import formatdate
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = "ArcKanban <arckanban@localhost>"
+    msg["To"] = ""
+    msg["Date"] = formatdate(localtime=True)
+    msg.set_content("This schedule is best viewed in an HTML-capable mail client.")
+    msg.add_alternative(html, subtype="html")
+    resp = make_response(msg.as_bytes())
+    resp.headers["Content-Type"] = "message/rfc822"
+    resp.headers["Content-Disposition"] = 'attachment; filename="%s"' % filename
+    return resp
+
+
+def _parse_stages(raw):
+    try:
+        return sorted({int(x) for x in (raw or "").split(",") if x.strip() != "" and 0 <= int(x) <= 7})
+    except ValueError:
+        return []
+
+
+@app.route("/projects/<project_uid>/email.eml")
+def email_schedule(project_uid):
+    """Download a meeting-minutes-style task schedule (grouped by stage → status →
+    section) as an .eml the user can open straight in their mail app."""
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    stages = _parse_stages(request.args.get("stages")) or [p["current_stage"]]
+    subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
+    html = render_template("email_schedule.html", subtitle=subtitle, kind="Progress report",
+                           date=fmt_day(now_iso()), stages=build_email_schedule(db, p["id"], stages))
+    return _eml_response("%s — Progress report" % subtitle, html, (_slugify(subtitle) or "report") + "-progress.eml")
 
 
 @app.route("/projects/<project_uid>/scope", methods=["POST"])
@@ -962,10 +1208,49 @@ def api_set_stages(project_id):
     return jsonify(ok=True, stages=stages, current_stage=new_current, event=ev)
 
 
+@app.route("/api/projects/<int:project_id>/split", methods=["POST"])
+def api_set_split(project_id):
+    """Split a RIBA stage into sub-stages — separate board pages, 4a/4b… — or
+    merge it back to one. parts >= 2 splits; parts <= 1 merges (collapsing every
+    sub-stage's tasks + sections back into the single stage). Splitting leaves
+    the existing work on the first part (4a); the new part(s) start empty."""
+    db = get_db()
+    p = get_project_or_404(db, project_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        stage = int(data.get("stage"))
+        parts = int(data.get("parts"))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="Invalid split."), 400
+    if not 0 <= stage <= 7:
+        return jsonify(ok=False, error="Stage out of range."), 400
+    parts = max(1, min(parts, 6))
+    splits = project_splits(p)
+    if parts <= 1:
+        splits.pop(stage, None)
+        # Merge: everything in this stage collapses back into part 0 (4a → 4).
+        db.execute("UPDATE tasks SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))
+        db.execute("UPDATE sections SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))
+        verb, detail = "merged sub-stages", "Stage %d" % stage
+    else:
+        # Narrowing the split: fold any now-orphaned parts into the new last one.
+        db.execute("UPDATE tasks SET substage=? WHERE project_id=? AND stage=? AND substage>?",
+                   (parts - 1, project_id, stage, parts - 1))
+        db.execute("UPDATE sections SET substage=? WHERE project_id=? AND stage=? AND substage>?",
+                   (parts - 1, project_id, stage, parts - 1))
+        splits[stage] = parts
+        verb, detail = "split into sub-stages", "Stage %d → %d parts" % (stage, parts)
+    db.execute("UPDATE projects SET splits=? WHERE id=?",
+               (json.dumps({str(k): v for k, v in splits.items()}) if splits else None, project_id))
+    log_event(db, project_id, verb, None, detail, important=False)
+    db.commit()
+    return jsonify(ok=True, stage=stage, parts=parts)
+
+
 @app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])
 def api_add_task(project_id):
     db = get_db()
-    get_project_or_404(db, project_id)
+    p = get_project_or_404(db, project_id)
     data = request.get_json(silent=True) or {}
     title = (data.get("title") or "").strip()
     if not title:
@@ -976,6 +1261,7 @@ def api_add_task(project_id):
         return jsonify(ok=False, error="Invalid stage."), 400
     if not 0 <= stage <= 7:
         return jsonify(ok=False, error="Stage out of range."), 400
+    substage = clamp_substage(p, stage, data.get("substage"))
     ttype = data.get("type", "recommended")
     if ttype not in TYPES:
         ttype = "recommended"
@@ -988,13 +1274,13 @@ def api_add_task(project_id):
             section_id = int(section_id)
         except (TypeError, ValueError):
             return jsonify(ok=False, error="Invalid section."), 400
-        if not section_in_stage(db, section_id, project_id, stage):
+        if not section_in_stage(db, section_id, project_id, stage, substage):
             return jsonify(ok=False, error="Section not in this stage."), 400
-    pos = next_position(db, project_id, stage, status, section_id)
+    pos = next_position(db, project_id, stage, substage, status, section_id)
     cur = db.execute(
-        "INSERT INTO tasks (project_id, stage, title, status, type, position, section_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (project_id, stage, title, status, ttype, pos, section_id),
+        "INSERT INTO tasks (project_id, stage, substage, title, status, type, position, section_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, stage, substage, title, status, ttype, pos, section_id),
     )
     ev = log_event(db, project_id, "added", title, "to " + STATUS_LABELS[status], task_id=cur.lastrowid)
     db.commit()
@@ -1072,7 +1358,7 @@ def api_confirm_decision(task_id):
         option = {"id": existing["id"], "text": text} if existing else _add_option(db, task_id, text)
     when = now_iso()
     # Confirm + stamp + auto-move to Done (a decided decision is a done decision).
-    pos = next_position(db, row["project_id"], row["stage"], "done", row["section_id"])
+    pos = next_position(db, row["project_id"], row["stage"], row["substage"], "done", row["section_id"])
     db.execute("UPDATE tasks SET outcome=?, decided_at=?, status='done', position=? WHERE id=?",
                (text, when, pos, task_id))
     ev = log_event(db, row["project_id"], "decided", row["title"], "→ " + text,
@@ -1098,7 +1384,7 @@ def api_clear_decision(task_id):
         prior.append("was “%s”" % row["outcome"].strip())
     if (row["rationale"] or "").strip():
         prior.append("rationale: " + row["rationale"].strip())
-    pos = next_position(db, row["project_id"], row["stage"], "todo", row["section_id"])
+    pos = next_position(db, row["project_id"], row["stage"], row["substage"], "todo", row["section_id"])
     db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL, rationale=NULL, status='todo', position=? WHERE id=?",
                (pos, task_id))
     ev = log_event(db, row["project_id"], "reopened decision", row["title"],
@@ -1120,12 +1406,12 @@ def api_add_task_from_decision(task_id):
     title = ((request.get_json(silent=True) or {}).get("title") or "").strip()
     if not title:
         return jsonify(ok=False, error="A task needs a title."), 400
-    stage = dec["stage"]
-    pos = next_position(db, dec["project_id"], stage, "todo", None)
+    stage, substage = dec["stage"], dec["substage"]
+    pos = next_position(db, dec["project_id"], stage, substage, "todo", None)
     cur = db.execute(
-        "INSERT INTO tasks (project_id, stage, title, status, type, position, from_decision_id) "
-        "VALUES (?, ?, ?, 'todo', 'process', ?, ?)",
-        (dec["project_id"], stage, title, pos, task_id),
+        "INSERT INTO tasks (project_id, stage, substage, title, status, type, position, from_decision_id) "
+        "VALUES (?, ?, ?, ?, 'todo', 'process', ?, ?)",
+        (dec["project_id"], stage, substage, title, pos, task_id),
     )
     log_event(db, dec["project_id"], "added", title, "from decision “%s”" % dec["title"], task_id=cur.lastrowid)
     db.commit()
@@ -1136,7 +1422,7 @@ def api_add_task_from_decision(task_id):
 def api_restore_task(project_id):
     """Re-create a deleted task from its captured fields (used by Undo)."""
     db = get_db()
-    get_project_or_404(db, project_id)
+    p = get_project_or_404(db, project_id)
     d = request.get_json(silent=True) or {}
     title = (d.get("title") or "").strip()
     try:
@@ -1145,6 +1431,7 @@ def api_restore_task(project_id):
         return jsonify(ok=False, error="Invalid stage."), 400
     if not title or not 0 <= stage <= 7:
         return jsonify(ok=False, error="Nothing to restore."), 400
+    substage = clamp_substage(p, stage, d.get("substage"))
     ttype = d.get("type") if d.get("type") in TYPES else "recommended"
     status = d.get("status") if d.get("status") in STATUSES else "todo"
     urgent = 1 if d.get("urgent") else 0
@@ -1155,13 +1442,13 @@ def api_restore_task(project_id):
             section_id = int(section_id)
         except (TypeError, ValueError):
             section_id = None
-        if section_id is not None and not section_in_stage(db, section_id, project_id, stage):
+        if section_id is not None and not section_in_stage(db, section_id, project_id, stage, substage):
             section_id = None
-    pos = next_position(db, project_id, stage, status, section_id)
+    pos = next_position(db, project_id, stage, substage, status, section_id)
     cur = db.execute(
-        "INSERT INTO tasks (project_id, stage, title, status, type, urgent, awaiting_on, position, section_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (project_id, stage, title, status, ttype, urgent, awaiting_on, pos, section_id),
+        "INSERT INTO tasks (project_id, stage, substage, title, status, type, urgent, awaiting_on, position, section_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (project_id, stage, substage, title, status, ttype, urgent, awaiting_on, pos, section_id),
     )
     ev = log_event(db, project_id, "restored", title, task_id=cur.lastrowid, important=False)
     db.commit()
@@ -1197,8 +1484,11 @@ def api_update_task(task_id):
         values.append(1 if data["urgent"] else 0)
 
     if "awaiting_on" in data:
+        val = (data["awaiting_on"] or "").strip() or None
         fields.append("awaiting_on=?")
-        values.append((data["awaiting_on"] or "").strip() or None)
+        values.append(val)
+        if val:
+            _ensure_role(db, row["project_id"], val)   # typed names join the managed roles
 
     if "rationale" in data:
         fields.append("rationale=?")
@@ -1218,13 +1508,13 @@ def api_update_task(task_id):
                 sid = int(sid)
             except (TypeError, ValueError):
                 return jsonify(ok=False, error="Invalid section."), 400
-            if not section_in_stage(db, sid, row["project_id"], row["stage"]):
+            if not section_in_stage(db, sid, row["project_id"], row["stage"], row["substage"]):
                 return jsonify(ok=False, error="Section not in this stage."), 400
         new_section = sid
         fields.append("section_id=?"); values.append(new_section); reposition = True
     if reposition:
         fields.append("position=?")
-        values.append(next_position(db, row["project_id"], row["stage"], new_status, new_section))
+        values.append(next_position(db, row["project_id"], row["stage"], row["substage"], new_status, new_section))
     # A decision dragged/stepped out of Done is no longer decided — unconfirm it
     # (and drop its now-stale rationale, consistent with an explicit reopen).
     if row["type"] == "decision" and row["status"] == "done" and new_status != "done":
@@ -1258,8 +1548,8 @@ def api_move_task(task_id):
             section_id = int(section_id)
         except (TypeError, ValueError):
             return jsonify(ok=False, error="Invalid section."), 400
-    # Sections live within a stage — a task never moves stage by drag.
-    if not section_in_stage(db, section_id, row["project_id"], row["stage"]):
+    # Sections live within a page — a task never moves stage/sub-stage by drag.
+    if not section_in_stage(db, section_id, row["project_id"], row["stage"], row["substage"]):
         return jsonify(ok=False, error="Section not in this stage."), 400
     try:
         index = int(data.get("index", 0))
@@ -1272,9 +1562,9 @@ def api_move_task(task_id):
     if row["type"] == "decision" and row["status"] == "done" and status != "done":
         db.execute("UPDATE tasks SET outcome=NULL, decided_at=NULL, rationale=NULL WHERE id=?", (task_id,))
     siblings = [r["id"] for r in db.execute(
-        """SELECT id FROM tasks WHERE project_id=? AND stage=? AND status=? AND section_id IS ?
+        """SELECT id FROM tasks WHERE project_id=? AND stage=? AND substage=? AND status=? AND section_id IS ?
            AND parent_id IS NULL AND id<>? ORDER BY position, id""",
-        (row["project_id"], row["stage"], status, section_id, task_id),
+        (row["project_id"], row["stage"], row["substage"], status, section_id, task_id),
     )]
     index = max(0, min(index, len(siblings)))
     siblings.insert(index, task_id)
@@ -1297,7 +1587,7 @@ def api_move_task(task_id):
 @app.route("/api/projects/<int:project_id>/sections", methods=["POST"])
 def api_add_section(project_id):
     db = get_db()
-    get_project_or_404(db, project_id)
+    proj = get_project_or_404(db, project_id)
     data = request.get_json(silent=True) or {}
     title = (data.get("title") or "").strip()
     if not title:
@@ -1308,17 +1598,18 @@ def api_add_section(project_id):
         return jsonify(ok=False, error="Invalid stage."), 400
     if not 0 <= stage <= 7:
         return jsonify(ok=False, error="Stage out of range."), 400
-    p = db.execute(
-        "SELECT COALESCE(MAX(position)+1,0) AS p FROM sections WHERE project_id=? AND stage=?",
-        (project_id, stage),
+    substage = clamp_substage(proj, stage, data.get("substage"))
+    pos = db.execute(
+        "SELECT COALESCE(MAX(position)+1,0) AS p FROM sections WHERE project_id=? AND stage=? AND substage=?",
+        (project_id, stage, substage),
     ).fetchone()["p"]
     cur = db.execute(
-        "INSERT INTO sections (project_id, stage, title, position) VALUES (?, ?, ?, ?)",
-        (project_id, stage, title, p),
+        "INSERT INTO sections (project_id, stage, substage, title, position) VALUES (?, ?, ?, ?, ?)",
+        (project_id, stage, substage, title, pos),
     )
     ev = log_event(db, project_id, "created section", title, important=False)
     db.commit()
-    return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "title": title}, event=ev)
+    return jsonify(ok=True, section={"id": cur.lastrowid, "stage": stage, "substage": substage, "title": title}, event=ev)
 
 
 @app.route("/api/sections/<int:section_id>", methods=["POST"])

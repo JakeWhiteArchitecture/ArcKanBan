@@ -1,41 +1,103 @@
 /* ArcKanban — decision register page.
-   Each row can spawn a task that "feeds from" that decision; the link is stored
-   server-side (from_decision_id) and logged, so the connection is recoverable
-   later (process analysis / AI). No reload — the new task is appended in place. */
+   Shares the board's header. Pages the register by RIBA stage (‹ ›), defaults to
+   the current stage, toggles to "All stages", and can email a decisions table.
+   Each decision row can still spawn a linked task, and the rationale is editable
+   inline — both unchanged. No reload anywhere. */
 (function () {
   "use strict";
 
-  // Return to the same board stage you were viewing (board.js saves it per project).
-  var back = document.querySelector(".dr-back");
-  if (back && back.dataset.projectId) {
-    var n = null; try { n = localStorage.getItem("arckanban-stage-" + back.dataset.projectId); } catch (e) {}
-    if (n != null && n !== "") back.href = back.href.split("?")[0] + "?stage=" + encodeURIComponent(n);
+  var RIBA = [
+    "Strategic Definition", "Preparation and Briefing", "Concept Design",
+    "Spatial Coordination", "Technical Design", "Manufacturing and Construction",
+    "Handover", "Use",
+  ];
+
+  var tb = document.getElementById("titleblock");
+  var projectUid = tb ? tb.dataset.projectUid : "";
+  var current = tb ? Number(tb.dataset.currentStage) : 0;
+  var enabled = ((tb && tb.dataset.stages) || "0,1,2,3,4,5,6,7").split(",").map(Number);
+  function isEnabled(n) { return enabled.indexOf(Number(n)) >= 0; }
+  function nextEnabled(from, dir) { for (var i = Number(from) + dir; i >= 0 && i <= 7; i += dir) if (isEnabled(i)) return i; return null; }
+
+  var rows = [].slice.call(document.querySelectorAll(".dr-row"));
+  var none = document.querySelector(".dr-none");
+  var LS = "arckanban-dr-stage-" + projectUid;
+  function stageHasDecisions(n) { return rows.some(function (r) { return Number(r.dataset.stage) === n; }); }
+
+  // Start on the remembered view, else the current stage; if that stage has no
+  // decisions, jump to the first enabled stage that does.
+  var view = current;          // a stage number, or "all"
+  try { var s = localStorage.getItem(LS); if (s === "all") view = "all"; else if (s !== null && s !== "" && isEnabled(Number(s))) view = Number(s); } catch (e) {}
+  if (view !== "all" && rows.length && !stageHasDecisions(view)) {
+    for (var i = 0; i <= 7; i++) { if (isEnabled(i) && stageHasDecisions(i)) { view = i; break; } }
   }
+  var lastStage = (view === "all") ? current : view;
 
-  var table = document.querySelector(".dr-table");
-  if (!table) return;
+  function apply() {
+    var all = view === "all", anyVisible = false;
+    rows.forEach(function (r) { var show = all || Number(r.dataset.stage) === view; r.hidden = !show; if (show) anyVisible = true; });
+    var table = document.querySelector(".dr-table");
+    if (table) table.hidden = rows.length > 0 && !anyVisible;     // hide the header-only table on an empty stage
+    if (none) none.hidden = anyVisible || rows.length === 0;
 
+    var num = document.querySelector(".tb-stage-num"), nm = document.querySelector(".tb-stage-name");
+    var prev = document.querySelector(".tb-pager.prev"), next = document.querySelector(".tb-pager.next");
+    var toggle = document.querySelector('[data-action="dr-toggle-all"]');
+    if (all) {
+      if (num) num.textContent = "·"; if (nm) nm.textContent = "All stages";
+      if (prev) prev.disabled = true; if (next) next.disabled = true;
+      if (toggle) toggle.textContent = "Show stage " + lastStage;
+    } else {
+      if (num) num.textContent = view; if (nm) nm.textContent = RIBA[view];
+      if (prev) prev.disabled = nextEnabled(view, -1) === null;
+      if (next) next.disabled = nextEnabled(view, +1) === null;
+      if (toggle) toggle.textContent = "Show all stages";
+    }
+    var bl = document.querySelector(".dr-board");
+    if (bl) { var base = bl.getAttribute("href").split("?")[0]; bl.setAttribute("href", all ? base : base + "?stage=" + view); }
+    try { localStorage.setItem(LS, all ? "all" : String(view)); } catch (e) {}
+  }
+  function goStage(n) { if (n == null) return; view = n; lastStage = n; apply(); }
+  function toggleAll() { if (view === "all") goStage(isEnabled(lastStage) ? lastStage : current); else { view = "all"; apply(); } }
+
+  document.addEventListener("click", function (e) {
+    var el = e.target.closest("[data-action]"); if (!el) return;
+    switch (el.dataset.action) {
+      case "dr-prev": goStage(nextEnabled(view === "all" ? lastStage : view, -1)); break;
+      case "dr-next": goStage(nextEnabled(view === "all" ? lastStage : view, +1)); break;
+      case "dr-toggle-all": toggleAll(); break;
+      case "dr-email": {
+        var url = "/projects/" + encodeURIComponent(projectUid) + "/decisions.eml";
+        if (view !== "all") url += "?stages=" + view;
+        window.location.href = url; break;
+      }
+    }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.target.matches("input, textarea, select, [contenteditable]")) return;
+    if (e.key === "ArrowLeft") goStage(nextEnabled(view === "all" ? lastStage : view, -1));
+    else if (e.key === "ArrowRight") goStage(nextEnabled(view === "all" ? lastStage : view, +1));
+  });
+
+  apply();
+
+  // ---- spawn a task from a decision (linked via from_decision_id) ---------
   document.addEventListener("submit", async function (e) {
-    var form = e.target.closest(".dr-addtask");
-    if (!form) return;
+    var form = e.target.closest(".dr-addtask"); if (!form) return;
     e.preventDefault();
-    var input = form.querySelector('input[name="title"]');
-    var title = input.value.trim();
+    var input = form.querySelector('input[name="title"]'); var title = input.value.trim();
     if (!title) { input.focus(); return; }
-    var did = form.dataset.decisionId;
     var res, json = {};
     try {
-      res = await fetch("/api/decisions/" + did + "/tasks", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title }),
+      res = await fetch("/api/decisions/" + form.dataset.decisionId + "/tasks", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: title }),
       });
     } catch (err) { alert("Could not reach the app. Is it still running?"); return; }
     try { json = await res.json(); } catch (err) {}
     if (!res.ok || !json.ok) { alert((json && json.error) || "Could not add the task."); return; }
-    var ul = form.parentElement.querySelector(".dr-linked");
     var li = document.createElement("li"); li.className = "dr-linked-item"; li.textContent = json.task.title;
-    ul.appendChild(li);
-    input.value = ""; input.focus();   // keep adding
+    form.parentElement.querySelector(".dr-linked").appendChild(li);
+    input.value = ""; input.focus();
   });
 
   // ---- inline rationale editing (the optional "why" column) --------------
@@ -45,24 +107,20 @@
   });
   function renderRationale(cell, val) {
     cell.dataset.value = val;
-    if (val) cell.textContent = val;
-    else cell.innerHTML = '<span class="dr-empty">— add rationale</span>';
+    if (val) cell.textContent = val; else cell.innerHTML = '<span class="dr-empty">— add rationale</span>';
   }
   function startRationaleEdit(cell) {
     var id = cell.dataset.decisionId;
-    var current = "value" in cell.dataset ? cell.dataset.value
-                : (cell.querySelector(".dr-empty") ? "" : cell.textContent.trim());
-    var ta = document.createElement("textarea");
-    ta.className = "dr-rationale-input"; ta.rows = 3; ta.value = current;
+    var current = "value" in cell.dataset ? cell.dataset.value : (cell.querySelector(".dr-empty") ? "" : cell.textContent.trim());
+    var ta = document.createElement("textarea"); ta.className = "dr-rationale-input"; ta.rows = 3; ta.value = current;
     cell.textContent = ""; cell.appendChild(ta); ta.focus();
     var done = false;
     function finish(commit) {
       if (done) return; done = true;
-      if (commit) saveRationale(id, ta.value.trim(), cell);
-      else renderRationale(cell, current);
+      if (commit) saveRationale(id, ta.value.trim(), cell); else renderRationale(cell, current);
     }
     ta.addEventListener("keydown", function (ev) {
-      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); finish(true); }   // Shift+Enter = newline
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); finish(true); }
       else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
     });
     ta.addEventListener("blur", function () { finish(true); });
@@ -70,8 +128,7 @@
   async function saveRationale(id, val, cell) {
     var res, json = {};
     try {
-      res = await fetch("/api/tasks/" + id, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rationale: val }) });
+      res = await fetch("/api/tasks/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rationale: val }) });
     } catch (err) { alert("Could not reach the app. Is it still running?"); renderRationale(cell, val); return; }
     try { json = await res.json(); } catch (err) {}
     if (!res.ok || !json.ok) alert((json && json.error) || "Could not save the rationale.");
