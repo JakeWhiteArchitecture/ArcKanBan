@@ -51,9 +51,6 @@
 
 <div class="tb-pop more-pop" id="more-pop" hidden aria-label="More actions">
   <button type="button" class="more-item" data-action="toggle-roles">Roles…</button>
-  <button type="button" class="more-item more-split" data-action="split-stage" hidden>Split this stage…</button>
-  <button type="button" class="more-item more-addpart" data-action="addpart-stage" hidden>Add a sub-stage</button>
-  <button type="button" class="more-item more-merge" data-action="merge-stage" hidden>Merge sub-stages</button>
   <a class="more-item" href="{{ url_for('export_template', project_uid=project.uid) }}" download>Save as template</a>
   <a class="more-item" href="{{ url_for('export_activity', project_uid=project.uid) }}" download
      title="Every event, including the minor moves hidden from the drawer">Export full log</a>

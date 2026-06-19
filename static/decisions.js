@@ -66,6 +66,7 @@
       case "dr-prev": goStage(nextEnabled(view === "all" ? lastStage : view, -1)); break;
       case "dr-next": goStage(nextEnabled(view === "all" ? lastStage : view, +1)); break;
       case "dr-toggle-all": toggleAll(); break;
+      case "dr-substage": toggleSubstage(); break;
       case "dr-email": {
         var url = "/projects/" + encodeURIComponent(projectUid) + "/decisions.eml";
         if (view !== "all") url += "?stages=" + view;
@@ -80,6 +81,26 @@
   });
 
   apply();
+
+  // ---- "sub-stage aware": tag each decision's stage chip 4a/4b/4c ----------
+  // Paging stays by whole stage; the toggle only relabels the Stage column.
+  var LS_SUB = "arckanban-dr-substage-" + projectUid;
+  var subOn = false; try { subOn = localStorage.getItem(LS_SUB) === "1"; } catch (e) {}
+  function applySubstage() {
+    document.querySelectorAll(".dr-stage").forEach(function (chip) {
+      var label = chip.dataset.label || chip.dataset.stage;
+      chip.textContent = subOn ? label : chip.dataset.stage;
+      chip.classList.toggle("is-sub", subOn && label !== chip.dataset.stage);
+    });
+    var btn = document.querySelector('[data-action="dr-substage"]');
+    if (btn) { btn.setAttribute("aria-pressed", subOn ? "true" : "false"); btn.classList.toggle("has-active", subOn); }
+  }
+  function toggleSubstage() {
+    subOn = !subOn;
+    try { localStorage.setItem(LS_SUB, subOn ? "1" : "0"); } catch (e) {}
+    applySubstage();
+  }
+  applySubstage();
 
   // ---- spawn a task from a decision (linked via from_decision_id) ---------
   document.addEventListener("submit", async function (e) {

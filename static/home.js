@@ -30,6 +30,16 @@
     });
   });
 
+  // Sub-stage tickboxes (Config): parts are contiguous — c needs b.
+  document.addEventListener("change", function (e) {
+    var cb = e.target;
+    if (!cb.matches || !cb.matches('input[name="subpart"]')) return;
+    var row = cb.closest(".substage-row"); if (!row) return;
+    var b = row.querySelector('input[value$="b"]'), c = row.querySelector('input[value$="c"]');
+    if (cb === c && c.checked && b) b.checked = true;     // ticking c auto-ticks b
+    if (cb === b && !b.checked && c) c.checked = false;   // unticking b drops c
+  });
+
   var select = document.getElementById("template-select");
   var fileInput = document.getElementById("tpl-file");
   var modal = document.getElementById("upload-modal");

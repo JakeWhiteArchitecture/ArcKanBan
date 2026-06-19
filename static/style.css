@@ -231,6 +231,16 @@ a { color: var(--blue); text-decoration: none; }
 .scope-chip .scope-num { font-family: var(--font-mono); color: var(--c, var(--ink-soft)); width: 1.1em; text-align: center; font-weight: 700; }
 .scope-chip .scope-nm { color: var(--ink); }
 .scope-form .btn { margin-top: 7px; }
+/* Sub-stage tickboxes (Config) — split stages 3 & 4 into 3a/3b/3c. */
+.config-subhead { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); margin-top: 9px; }
+.substage-config { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+.substage-row { display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 6px; }
+.substage-stage { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.66rem; background: var(--c, var(--blue)); }
+.substage-name { color: var(--ink-soft); font-size: 0.76rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.substage-parts { display: flex; gap: 4px; flex-shrink: 0; }
+.subpart { display: inline-flex; align-items: center; gap: 3px; font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink); cursor: pointer; }
+.subpart input { accent-color: var(--blue); margin: 0; }
+.subpart.is-base { color: var(--ink-dim); cursor: default; }
 .config-links { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--hairline); padding-top: 7px; }
 .config-item { display: block; padding: 6px 8px; border-radius: 6px; color: var(--ink); font-size: 0.84rem; text-decoration: none; }
 .config-item:hover { background: var(--glass); }
@@ -888,7 +898,7 @@ body.page-decisions { padding-top: var(--tb-h); }
 /* Stage column: the number sits ABOVE the name (stacked) to keep the column
    narrow — the name wraps to the longest word, freeing width for other columns. */
 .dr-c-stage { color: var(--ink-soft); font-size: 0.82rem; width: 1%; }
-.dr-stage { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.74rem; background: var(--c, var(--blue)); margin-bottom: 5px; }
+.dr-stage { display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 4px; box-sizing: border-box; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.74rem; background: var(--c, var(--blue)); margin-bottom: 5px; }
 .dr-stage-name { display: block; line-height: 1.25; }
 .dr-c-tasks { min-width: 240px; }
 .dr-linked { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
