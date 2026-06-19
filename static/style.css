@@ -802,7 +802,9 @@ body.page-decisions { padding-top: var(--tb-h); }
 .dr-row[hidden] { display: none; }
 .dr-none { color: var(--ink-soft); font-style: italic; padding: calc(var(--u) * 3) 0; text-align: center; }
 
-.register-page { max-width: min(1640px, 96vw); margin: 0 auto; padding: calc(var(--u) * 4) calc(var(--u) * 2); }
+.register-page { max-width: min(1840px, 96vw); margin: 0 auto; padding: calc(var(--u) * 4) calc(var(--u) * 2); }
+/* Page title, centred under the header (replaces the small "Decisions" header tag). */
+.dr-page-title { text-align: center; font-size: 1.35rem; font-weight: 600; letter-spacing: 0.01em; color: var(--ink); margin: 0 0 calc(var(--u) * 2.5); }
 .dr-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--u); margin-bottom: calc(var(--u) * 2); padding-bottom: calc(var(--u) * 1.5); border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
 .dr-id { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .dr-back { font-size: 0.85rem; color: var(--ink-soft); }
@@ -811,7 +813,9 @@ body.page-decisions { padding-top: var(--tb-h); }
 .dr-no { font-family: var(--font-mono); color: var(--blue); font-size: 1.05rem; }
 .dr-sub { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft); }
 
-.dr-wrap { border: 1px solid var(--glass-border); border-radius: var(--radius); overflow: hidden; background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--shadow); }
+/* overflow-x auto: on a narrow screen the table scrolls rather than clipping the
+   last column (rounded corners still clip the content edge). */
+.dr-wrap { border: 1px solid var(--glass-border); border-radius: var(--radius); overflow-x: auto; background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); box-shadow: var(--shadow); }
 .dr-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 .dr-table thead th { text-align: left; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--glass-border); background: rgba(255, 255, 255, 0.02); white-space: nowrap; }
 .dr-table tbody td { padding: 11px 12px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
@@ -824,13 +828,13 @@ body.page-decisions { padding-top: var(--tb-h); }
 .dr-empty, .dr-pending { color: var(--ink-dim); font-style: italic; }
 .dr-outcome { color: var(--sage); font-weight: 600; }
 /* Outcome + Options + Rationale get the room — they're often short paragraphs. */
-.dr-c-out { min-width: 200px; }
+.dr-c-out { min-width: 170px; }
 .dr-outcome { display: inline-block; line-height: 1.4; }
-.dr-c-opts { min-width: 240px; font-size: 0.82rem; }
+.dr-c-opts { min-width: 210px; font-size: 0.82rem; }
 .dr-optlist, .dr-dismissed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.4; }
 .dr-optlist li { color: var(--ink-soft); }
 .dr-dismissed li { color: var(--ink-dim); text-decoration: line-through; }
-.dr-c-rat { min-width: 280px; }
+.dr-c-rat { min-width: 240px; }
 .dr-rationale { cursor: text; color: var(--ink-soft); white-space: pre-wrap; line-height: 1.45; border-radius: 6px; padding: 3px 5px; margin: -3px -5px; min-height: 1.3em; }
 .dr-rationale:hover { background: var(--glass); }
 .dr-rationale-input { width: 100%; font: inherit; font-size: 0.84rem; background: var(--glass-deep); color: var(--ink); border: 1px solid var(--blue); border-radius: 6px; padding: 5px 7px; resize: vertical; }
@@ -881,8 +885,11 @@ body.page-decisions { padding-top: var(--tb-h); }
 .rr-select, .rr-new { width: 100%; font: inherit; font-size: 0.92rem; padding: 8px 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--glass-deep); color: var(--ink); }
 .rr-select option { background: var(--bg-2); color: var(--ink); }
 .dr-c-date { font-family: var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
-.dr-c-stage { color: var(--ink-soft); white-space: nowrap; font-size: 0.82rem; }
-.dr-stage { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.7rem; background: var(--c, var(--blue)); }
+/* Stage column: the number sits ABOVE the name (stacked) to keep the column
+   narrow — the name wraps to the longest word, freeing width for other columns. */
+.dr-c-stage { color: var(--ink-soft); font-size: 0.82rem; width: 1%; }
+.dr-stage { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.74rem; background: var(--c, var(--blue)); margin-bottom: 5px; }
+.dr-stage-name { display: block; line-height: 1.25; }
 .dr-c-tasks { min-width: 240px; }
 .dr-linked { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .dr-linked:empty { margin: 0; }

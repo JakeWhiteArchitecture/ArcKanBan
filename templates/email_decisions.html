@@ -15,7 +15,9 @@
   td.em-out { font-weight: 700; color: #1f7a44; }
   td.em-out.pending { color: #999; font-weight: 400; font-style: italic; }
   .em-empty { color: #999; font-style: italic; font-size: 12px; margin: 4px 0 8px; }
-  ul.em-tasks { margin: 0; padding-left: 16px; }
+  ul.em-tasks, ul.em-opts { margin: 0; padding-left: 16px; }
+  ul.em-opts li.chosen { font-weight: 700; color: #1f7a44; }
+  ul.em-opts li.dismissed { color: #999; text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -29,11 +31,12 @@
         <thead>
           <tr>
             <th style="width:4%">#</th>
-            <th style="width:24%">Decision</th>
-            <th style="width:13%">Decision by</th>
-            <th style="width:17%">Outcome</th>
-            <th style="width:22%">Rationale</th>
-            <th>Tasks from it</th>
+            <th style="width:20%">Decision</th>
+            <th style="width:11%">Decision by</th>
+            <th style="width:13%">Outcome</th>
+            <th style="width:17%">Options considered</th>
+            <th style="width:18%">Rationale</th>
+            <th>Tasks generated</th>
           </tr>
         </thead>
         <tbody>
@@ -43,6 +46,9 @@
             <td>{{ d.title }}</td>
             <td>{{ d.assignee or '—' }}</td>
             {% if d.outcome %}<td class="em-out">{{ d.outcome }}</td>{% else %}<td class="em-out pending">Pending</td>{% endif %}
+            <td>
+              {% if d.options %}<ul class="em-opts">{% for o in d.options %}<li class="{% if d.confirmed %}{{ 'chosen' if o == d.outcome else 'dismissed' }}{% endif %}">{{ o }}</li>{% endfor %}</ul>{% else %}—{% endif %}
+            </td>
             <td>{{ d.rationale or '' }}</td>
             <td>
               {% if d.linked %}<ul class="em-tasks">{% for t in d.linked %}<li>{{ t.title }}</li>{% endfor %}</ul>{% endif %}

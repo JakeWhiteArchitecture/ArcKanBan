@@ -1004,24 +1004,32 @@ def export_decisions(project_uid):
     return resp
 
 
-def build_email_schedule(db, project_id, stage_indices):
+def build_email_schedule(db, project_id, stage_indices, splits=None):
     """Group a project's tasks (for the chosen stages) by stage → status →
-    section, for the emailed meeting-minutes-style task schedule."""
+    section, for the emailed meeting-minutes-style task schedule. When a stage is
+    split, the sub-stage (4a/4b/4c…) is noted in the section label rather than
+    breaking the stage into separate tables."""
+    splits = splits or {}
     out = []
     for idx in stage_indices:
+        parts = parts_for(splits, idx)
+
+        def tag(title, sub):   # prefix the section label with the sub-stage when split
+            return ("%s · %s" % (part_label(idx, sub, parts), title)) if parts > 1 else title
+
         secs = db.execute(
-            "SELECT id, title FROM sections WHERE project_id=? AND stage=? ORDER BY position, id",
+            "SELECT id, title, substage FROM sections WHERE project_id=? AND stage=? ORDER BY substage, position, id",
             (project_id, idx)).fetchall()
-        sec_order = [(s["id"], s["title"]) for s in secs]
+        sec_order = [(s["id"], tag(s["title"], s["substage"] or 0)) for s in secs]
         statuses = []
         for status in STATUSES:
             rows = db.execute(
-                "SELECT title, type, urgent, section_id, outcome, rationale FROM tasks "
-                "WHERE project_id=? AND stage=? AND status=? ORDER BY position, id",
+                "SELECT title, type, urgent, section_id, substage, outcome, rationale FROM tasks "
+                "WHERE project_id=? AND stage=? AND status=? ORDER BY substage, position, id",
                 (project_id, idx, status)).fetchall()
             if not rows:
                 continue
-            by_sec = {}
+            by_sec = {}   # section id, or ('loose', substage) for the General lane of each part
             for r in rows:
                 note = ""
                 if r["type"] == "decision":
@@ -1031,12 +1039,15 @@ def build_email_schedule(db, project_id, stage_indices):
                             note += " — " + r["rationale"].strip()
                     else:
                         note = "Pending"
-                by_sec.setdefault(r["section_id"], []).append(
+                key = r["section_id"] if r["section_id"] is not None else ("loose", r["substage"] or 0)
+                by_sec.setdefault(key, []).append(
                     {"title": r["title"], "type_label": TYPE_LABELS.get(r["type"], r["type"]),
                      "urgent": bool(r["urgent"]), "note": note})
             groups = [{"section": title, "rows": by_sec[sid]} for sid, title in sec_order if sid in by_sec]
-            if None in by_sec:
-                groups.append({"section": "General", "rows": by_sec[None]})
+            for part in range(parts):   # the loose General lane, one per sub-stage
+                k = ("loose", part)
+                if k in by_sec:
+                    groups.append({"section": tag("General", part), "rows": by_sec[k]})
             statuses.append({"label": STATUS_LABELS[status], "groups": groups})
         out.append({"idx": idx, "name": RIBA_STAGES[idx], "statuses": statuses})
     return out
@@ -1075,7 +1086,7 @@ def email_schedule(project_uid):
     stages = _parse_stages(request.args.get("stages")) or [p["current_stage"]]
     subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
     html = render_template("email_schedule.html", subtitle=subtitle, kind="Progress report",
-                           date=fmt_day(now_iso()), stages=build_email_schedule(db, p["id"], stages))
+                           date=fmt_day(now_iso()), stages=build_email_schedule(db, p["id"], stages, project_splits(p)))
     return _eml_response("%s — Progress report" % subtitle, html, (_slugify(subtitle) or "report") + "-progress.eml")
 
 
@@ -1230,9 +1241,24 @@ def api_set_split(project_id):
     splits = project_splits(p)
     if parts <= 1:
         splits.pop(stage, None)
-        # Merge: everything in this stage collapses back into part 0 (4a → 4).
-        db.execute("UPDATE tasks SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))
-        db.execute("UPDATE sections SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))
+        # Merge: collapse every part onto the stage, renumbering each section and
+        # each status/section lane so the parts stay in order (4a's items first,
+        # then 4b's) instead of colliding at the same positions.
+        secs = db.execute(
+            "SELECT id FROM sections WHERE project_id=? AND stage=? ORDER BY substage, position, id",
+            (project_id, stage)).fetchall()
+        for i, s in enumerate(secs):
+            db.execute("UPDATE sections SET substage=0, position=? WHERE id=?", (i, s["id"]))
+        rows = db.execute(
+            "SELECT id, status, section_id FROM tasks WHERE project_id=? AND stage=? AND parent_id IS NULL "
+            "ORDER BY status, section_id IS NOT NULL, section_id, substage, position, id",
+            (project_id, stage)).fetchall()
+        lane = {}
+        for t in rows:
+            key = (t["status"], t["section_id"])
+            n = lane.get(key, 0); lane[key] = n + 1
+            db.execute("UPDATE tasks SET substage=0, position=? WHERE id=?", (n, t["id"]))
+        db.execute("UPDATE tasks SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))  # any children too
         verb, detail = "merged sub-stages", "Stage %d" % stage
     else:
         # Narrowing the split: fold any now-orphaned parts into the new last one.
