@@ -859,6 +859,21 @@ body.dock-mode:not(.dock-open) .log-drawer { top: 12px; }   /* header tucked awa
 .email-stage:hover { background: var(--glass); }
 .email-stage input { accent-color: var(--blue); }
 .email-stage-num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; font-family: var(--font-mono); font-weight: 700; font-size: 0.72rem; color: #07101f; background: var(--c, var(--blue)); }
+
+/* Roles popup (managed assignees) + the reassign-on-delete modal. */
+.roles-pop { width: 280px; gap: 6px; }
+.roles-list { display: flex; flex-direction: column; gap: 3px; max-height: 50vh; overflow-y: auto; scrollbar-width: thin; }
+.roles-list::-webkit-scrollbar { width: 6px; } .roles-list::-webkit-scrollbar-thumb { background: var(--glass-bright); border-radius: 3px; }
+.role-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 7px; }
+.role-row:hover { background: var(--glass); }
+.role-name { flex: 1; min-width: 0; padding: 2px 4px; border-radius: 5px; cursor: text; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-name:hover { background: var(--glass-raised); }
+.role-del { width: 20px; height: 20px; border: none; background: transparent; color: var(--ink-dim); cursor: pointer; border-radius: 50%; font-size: 1rem; line-height: 1; }
+.role-del:hover { color: var(--redline); background: var(--redline-tint); }
+.roles-add { display: flex; gap: 6px; margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--hairline); }
+.roles-add input { flex: 1; font-family: var(--font-ui); font-size: 0.88rem; padding: 6px 9px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--glass-deep); color: var(--ink); }
+.rr-select, .rr-new { width: 100%; font: inherit; font-size: 0.92rem; padding: 8px 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--glass-deep); color: var(--ink); }
+.rr-select option { background: var(--bg-2); color: var(--ink); }
 .dr-c-date { font-family: var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 .dr-c-stage { color: var(--ink-soft); white-space: nowrap; font-size: 0.82rem; }
 .dr-stage { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700; font-size: 0.7rem; background: var(--c, var(--blue)); }

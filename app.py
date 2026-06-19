@@ -162,6 +162,12 @@ def init_db():
             position   INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS roles (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name       TEXT NOT NULL,
+            position   INTEGER NOT NULL DEFAULT 0
+        );
         """
     )
     # Additive migrations for an existing v0.1-shaped database (see REQUIREMENTS §6).
@@ -685,6 +691,90 @@ def create_project():
     return redirect(url_for("board", project_uid=puid))
 
 
+def project_roles(db, project_id):
+    """The project's managed roles (decision-makers / responsible parties). Seeds
+    once from the standard parties + any names already used on tasks."""
+    rows = db.execute("SELECT id, name FROM roles WHERE project_id=? ORDER BY position, id", (project_id,)).fetchall()
+    if not rows:
+        names = list(STANDARD_ASSIGNEES)
+        for r in db.execute("SELECT DISTINCT awaiting_on FROM tasks WHERE project_id=? "
+                            "AND awaiting_on IS NOT NULL AND awaiting_on<>''", (project_id,)):
+            if r["awaiting_on"] not in names:
+                names.append(r["awaiting_on"])
+        for i, nm in enumerate(names):
+            db.execute("INSERT INTO roles (project_id, name, position) VALUES (?,?,?)", (project_id, nm, i))
+        db.commit()
+        rows = db.execute("SELECT id, name FROM roles WHERE project_id=? ORDER BY position, id", (project_id,)).fetchall()
+    return [{"id": r["id"], "name": r["name"]} for r in rows]
+
+
+def _ensure_role(db, project_id, name):
+    """Add a role for this project if that name isn't already one (so one-off
+    typed assignees join the managed list). Returns the role id."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    ex = db.execute("SELECT id FROM roles WHERE project_id=? AND name=? COLLATE NOCASE", (project_id, name)).fetchone()
+    if ex:
+        return ex["id"]
+    pos = db.execute("SELECT COALESCE(MAX(position)+1,0) p FROM roles WHERE project_id=?", (project_id,)).fetchone()["p"]
+    cur = db.execute("INSERT INTO roles (project_id, name, position) VALUES (?,?,?)", (project_id, name, pos))
+    return cur.lastrowid
+
+
+@app.route("/api/projects/<int:project_id>/roles", methods=["POST"])
+def api_add_role(project_id):
+    db = get_db()
+    get_project_or_404(db, project_id)
+    name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="A role needs a name."), 400
+    if db.execute("SELECT id FROM roles WHERE project_id=? AND name=? COLLATE NOCASE", (project_id, name)).fetchone():
+        return jsonify(ok=False, error="That role already exists."), 400
+    rid = _ensure_role(db, project_id, name)
+    db.commit()
+    return jsonify(ok=True, role={"id": rid, "name": name})
+
+
+@app.route("/api/roles/<int:role_id>", methods=["POST"])
+def api_rename_role(role_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such role."), 404
+    name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="A role needs a name."), 400
+    if db.execute("SELECT id FROM roles WHERE project_id=? AND name=? COLLATE NOCASE AND id<>?",
+                  (row["project_id"], name, role_id)).fetchone():
+        return jsonify(ok=False, error="Another role already has that name."), 400
+    db.execute("UPDATE roles SET name=? WHERE id=?", (name, role_id))
+    db.execute("UPDATE tasks SET awaiting_on=? WHERE project_id=? AND awaiting_on=?",
+               (name, row["project_id"], row["name"]))   # keep tasks in step
+    db.commit()
+    return jsonify(ok=True, name=name, old=row["name"])
+
+
+@app.route("/api/roles/<int:role_id>/delete", methods=["POST"])
+def api_delete_role(role_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such role."), 404
+    n = db.execute("SELECT COUNT(*) c FROM tasks WHERE project_id=? AND awaiting_on=?",
+                   (row["project_id"], row["name"])).fetchone()["c"]
+    reassign = ((request.get_json(silent=True) or {}).get("reassign_to") or "").strip()
+    if n and not reassign:                       # caller must choose where the tasks go
+        return jsonify(ok=False, in_use=n, role=row["name"], error="In use"), 409
+    if n:
+        _ensure_role(db, row["project_id"], reassign)
+        db.execute("UPDATE tasks SET awaiting_on=? WHERE project_id=? AND awaiting_on=?",
+                   (reassign, row["project_id"], row["name"]))
+    db.execute("DELETE FROM roles WHERE id=?", (role_id,))
+    db.commit()
+    return jsonify(ok=True, reassigned=n)
+
+
 @app.route("/projects/<project_uid>")
 def board(project_uid):
     db = get_db()
@@ -704,13 +794,9 @@ def board(project_uid):
         "  OR (verb='set' AND (detail LIKE '%Awaiting%' OR detail LIKE '%Done%'))"
         ") ORDER BY id DESC LIMIT 200", (project_id,)
     ).fetchall()
-    # Autocomplete for "decision by?" / awaiting: standard roles + any names this
-    # project has already used (remembered per-project, deduped case-insensitively).
-    used = [r["awaiting_on"] for r in db.execute(
-        "SELECT DISTINCT awaiting_on FROM tasks WHERE project_id=? AND awaiting_on IS NOT NULL "
-        "AND awaiting_on<>'' ORDER BY awaiting_on", (project_id,))]
-    _seen = {a.lower() for a in STANDARD_ASSIGNEES}
-    assignees = STANDARD_ASSIGNEES + [a for a in used if a.lower() not in _seen]
+    # Managed roles for "decision by?" / awaiting — feeds the autocomplete + Roles popup.
+    roles = project_roles(db, project_id)
+    assignees = [r["name"] for r in roles]
     resp = make_response(render_template(
         "board.html",
         project={
@@ -729,6 +815,7 @@ def board(project_uid):
         enabled=sorted(en),
         riba=RIBA_STAGES,
         assignees=assignees,
+        roles=roles,
     ))
     return resp
 
@@ -1264,8 +1351,11 @@ def api_update_task(task_id):
         values.append(1 if data["urgent"] else 0)
 
     if "awaiting_on" in data:
+        val = (data["awaiting_on"] or "").strip() or None
         fields.append("awaiting_on=?")
-        values.append((data["awaiting_on"] or "").strip() or None)
+        values.append(val)
+        if val:
+            _ensure_role(db, row["project_id"], val)   # typed names join the managed roles
 
     if "rationale" in data:
         fields.append("rationale=?")

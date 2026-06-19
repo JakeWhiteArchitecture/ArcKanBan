@@ -587,6 +587,91 @@
     closeEmail();
   }
 
+  // ---- roles (managed assignees) ----------------------------------------
+  function addRoleRow(id, name) {
+    var list = document.querySelector(".roles-list"); if (!list) return null;
+    var row = document.createElement("div"); row.className = "role-row"; row.dataset.role = id;
+    var nm = document.createElement("span"); nm.className = "role-name"; nm.dataset.action = "rename-role";
+    nm.setAttribute("role", "button"); nm.tabIndex = 0; nm.title = "Rename"; nm.textContent = name;
+    var del = document.createElement("button"); del.type = "button"; del.className = "role-del";
+    del.dataset.action = "delete-role"; del.dataset.role = id; del.setAttribute("aria-label", "Delete role"); del.title = "Delete role"; del.textContent = "×";
+    row.appendChild(nm); row.appendChild(del); list.appendChild(row); return row;
+  }
+  function ensureAssigneeOption(val) {
+    var dl = document.getElementById("assignee-suggestions"); if (!dl || !val) return;
+    var has = Array.prototype.some.call(dl.options, function (o) { return o.value.toLowerCase() === val.toLowerCase(); });
+    if (!has) { var o = document.createElement("option"); o.value = val; dl.appendChild(o); }
+  }
+  function removeAssigneeOption(val) {
+    var dl = document.getElementById("assignee-suggestions"); if (!dl) return;
+    Array.prototype.slice.call(dl.options).forEach(function (o) { if (o.value.toLowerCase() === (val || "").toLowerCase()) o.remove(); });
+  }
+  function relabelAssignee(oldName, newName) {
+    board.querySelectorAll(".awaiting-text").forEach(function (t) {
+      if (!t.classList.contains("is-empty") && t.textContent.trim() === oldName) renderAwaiting(t, newName);
+    });
+  }
+  async function addRolePop(form) {
+    var input = form.querySelector('input[name="name"]'); var name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    var r = await api("/api/projects/" + projectId + "/roles", { name: name });
+    if (!r) return;
+    addRoleRow(r.role.id, r.role.name); ensureAssigneeOption(r.role.name);
+    input.value = ""; input.focus();
+  }
+  function renameRole(nameEl) {
+    var row = nameEl.closest(".role-row"); var id = row.dataset.role, old = nameEl.textContent.trim();
+    editInline(nameEl, old, async function (val, changed) {
+      if (val === null || !changed || !val) { nameEl.textContent = old; return; }
+      var res, json = {};
+      try { res = await fetch("/api/roles/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: val }) }); }
+      catch (e) { alert("Could not reach the app. Is it still running?"); nameEl.textContent = old; return; }
+      try { json = await res.json(); } catch (e) {}
+      if (!res.ok || !json.ok) { alert((json && json.error) || "Could not rename the role."); nameEl.textContent = old; return; }
+      nameEl.textContent = val; removeAssigneeOption(old); ensureAssigneeOption(val); relabelAssignee(old, val);
+    });
+  }
+  async function deleteRole(btn) {
+    var row = btn.closest(".role-row"); if (!row) return;
+    var id = btn.dataset.role || row.dataset.role, name = row.querySelector(".role-name").textContent.trim();
+    var res, json = {};
+    try { res = await fetch("/api/roles/" + id + "/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }); }
+    catch (e) { alert("Could not reach the app. Is it still running?"); return; }
+    try { json = await res.json(); } catch (e) {}
+    if (res.status === 409 && json.in_use) { openReassign(id, name, json.in_use); return; }   // must reassign first
+    if (!res.ok || !json.ok) { alert((json && json.error) || "Could not delete the role."); return; }
+    row.remove(); removeAssigneeOption(name);
+  }
+  var reassignCtx = null;
+  function openReassign(id, name, count) {
+    var m = document.getElementById("role-reassign-modal"); if (!m) return;
+    reassignCtx = { id: id, name: name };
+    m.querySelector(".rr-role").textContent = name;
+    m.querySelector(".rr-count").textContent = count + (count === 1 ? " task" : " tasks");
+    var sel = m.querySelector(".rr-select"); sel.innerHTML = "";
+    document.querySelectorAll(".roles-list .role-row").forEach(function (r) {
+      if (r.dataset.role === String(id)) return;
+      var o = document.createElement("option"); o.value = r.querySelector(".role-name").textContent.trim(); o.textContent = o.value; sel.appendChild(o);
+    });
+    var nw = document.createElement("option"); nw.value = "__new__"; nw.textContent = "＋ New role…"; sel.appendChild(nw);
+    var ni = m.querySelector(".rr-new"); ni.value = ""; ni.hidden = sel.value !== "__new__";
+    m.hidden = false; sel.focus();
+  }
+  function reassignSelectChanged(sel) {
+    var ni = document.getElementById("role-reassign-modal").querySelector(".rr-new");
+    ni.hidden = sel.value !== "__new__"; if (!ni.hidden) ni.focus();
+  }
+  async function reassignConfirm() {
+    if (!reassignCtx) return;
+    var m = document.getElementById("role-reassign-modal"), sel = m.querySelector(".rr-select");
+    var target = sel.value === "__new__" ? m.querySelector(".rr-new").value.trim() : sel.value;
+    if (!target) { alert("Choose or type a role to move the tasks to."); return; }
+    var r = await api("/api/roles/" + reassignCtx.id + "/delete", { reassign_to: target });
+    if (!r) return;
+    location.reload();          // simplest resync of roles + the board after a reassign
+  }
+  function closeReassign() { var m = document.getElementById("role-reassign-modal"); if (m) m.hidden = true; reassignCtx = null; }
+
   function ctxSep(menu) { var s = document.createElement("div"); s.className = "ctx-sep"; menu.appendChild(s); }
   function ctxHead(menu, text) { var h = document.createElement("div"); h.className = "ctx-head"; h.textContent = text; menu.appendChild(h); }
   function appendUndo(menu) {
@@ -790,7 +875,7 @@
   function loadFilters() { try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || {}; } catch (e) { return {}; } }
   function toggleFilter(name) { var s = loadFilters(); s[name] = !s[name]; localStorage.setItem(LS_FILTERS, JSON.stringify(s)); applyFilters(s); }
   // ---- titleblock popovers (filters / more / scope / create) ------------
-  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop", "search-pop"];
+  var POP_IDS = ["filter-pop", "more-pop", "create-pop", "sections-pop", "search-pop", "roles-pop"];
   function closePops(except) {
     POP_IDS.forEach(function (id) { if (id === except) return; var el = document.getElementById(id); if (el) el.hidden = true; });
   }
@@ -1164,6 +1249,11 @@
         case "create-close": createSave(true); break;
         case "toggle-filters": togglePop("filter-pop"); break;
         case "toggle-more": togglePop("more-pop"); break;
+        case "toggle-roles": togglePop("roles-pop"); break;
+        case "rename-role": renameRole(el); break;
+        case "delete-role": deleteRole(el); break;
+        case "rr-cancel": closeReassign(); break;
+        case "rr-confirm": reassignConfirm(); break;
         case "toggle-search": { var spp = document.getElementById("search-pop"); if (spp.hidden) openSearch(); else spp.hidden = true; break; }
         case "search-jump": jumpToTask(el.dataset.taskId); break;
         case "toggle-sections": { var secp = document.getElementById("sections-pop"); if (secp.hidden) openSections(); else secp.hidden = true; break; }
@@ -1188,7 +1278,7 @@
     if (card && !e.target.closest("button, select, input, textarea, a, .task-title, .awaiting-on, [contenteditable]")) selectCard(card);
     else if (!card) clearSelection();
   });
-  document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); });
+  document.addEventListener("change", function (e) { if (e.target.matches(".type-select")) changeType(e.target); else if (e.target.matches(".rr-select")) reassignSelectChanged(e.target); });
   document.addEventListener("input", function (e) { if (e.target.classList.contains("search-input")) renderSearch(e.target.value); });
   // ---- right-click a column / section: create here ----------------------
   function ctxItem(label, onClick, disabled) {
@@ -1272,8 +1362,11 @@
   if (unmadeModal) unmadeModal.addEventListener("click", function (e) { if (e.target === unmadeModal) closeUnmade(); });
   var emailModal = document.getElementById("email-modal");
   if (emailModal) emailModal.addEventListener("click", function (e) { if (e.target === emailModal) closeEmail(); });
+  var rrModal = document.getElementById("role-reassign-modal");
+  if (rrModal) rrModal.addEventListener("click", function (e) { if (e.target === rrModal) closeReassign(); });
   document.addEventListener("submit", function (e) {
     var secp = e.target.closest('[data-action="add-section-pop"]'); if (secp) { e.preventDefault(); addSectionPop(secp); }
+    var rolep = e.target.closest('[data-action="add-role-pop"]'); if (rolep) { e.preventDefault(); addRolePop(rolep); }
   });
   document.addEventListener("keydown", function (e) {
     var t = e.target;
@@ -1283,10 +1376,10 @@
     }
     if (e.key === "/" && !t.matches("input, select, textarea, [contenteditable]")) { e.preventDefault(); openSearch(); return; }
     if (e.key === "Enter" || e.key === " ") {
-      if (t.matches(".spine-cell, .task-title, .tb-cell, .awaiting-on, .sec-row-name")) { e.preventDefault(); t.click(); }
+      if (t.matches(".task-title, .tb-cell, .awaiting-on, .sec-row-name, .role-name")) { e.preventDefault(); t.click(); }
       return;
     }
-    if (e.key === "Escape") { closeRationale(); closeUnmade(); closeEmail(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
+    if (e.key === "Escape") { closeRationale(); closeUnmade(); closeEmail(); closeReassign(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
       var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);

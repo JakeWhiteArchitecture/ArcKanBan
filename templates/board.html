@@ -50,9 +50,26 @@
 </div>
 
 <div class="tb-pop more-pop" id="more-pop" hidden aria-label="More actions">
+  <button type="button" class="more-item" data-action="toggle-roles">Roles…</button>
   <a class="more-item" href="{{ url_for('export_template', project_uid=project.uid) }}" download>Save as template</a>
   <a class="more-item" href="{{ url_for('export_activity', project_uid=project.uid) }}" download
      title="Every event, including the minor moves hidden from the drawer">Export full log</a>
+</div>
+
+<div class="tb-pop roles-pop" id="roles-pop" hidden aria-label="Roles">
+  <div class="pop-head">Roles</div>
+  <div class="roles-list">
+    {% for r in roles %}
+    <div class="role-row" data-role="{{ r.id }}">
+      <span class="role-name" data-action="rename-role" role="button" tabindex="0" title="Rename">{{ r.name }}</span>
+      <button type="button" class="role-del" data-action="delete-role" data-role="{{ r.id }}" aria-label="Delete role" title="Delete role">×</button>
+    </div>
+    {% endfor %}
+  </div>
+  <form class="roles-add" data-action="add-role-pop">
+    <input type="text" name="name" placeholder="+ New role…" autocomplete="off" aria-label="New role">
+    <button type="submit" class="btn-quiet btn-sm">Add</button>
+  </form>
 </div>
 
 <div class="tb-pop create-pop" id="create-pop" hidden aria-label="Create a task">
@@ -137,6 +154,19 @@
     <ul class="unmade-list" aria-label="Tasks from this decision"></ul>
     <div class="modal-actions">
       <button type="button" class="btn btn-primary" data-action="unmade-done">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="role-reassign-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rr-title">
+    <h2 class="modal-title" id="rr-title">Reassign tasks</h2>
+    <p class="modal-sub"><strong class="rr-role"></strong> is on <strong class="rr-count"></strong>. Move those tasks to:</p>
+    <select class="rr-select" aria-label="Reassign to"></select>
+    <input type="text" class="rr-new" placeholder="New role name…" autocomplete="off" hidden>
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet" data-action="rr-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" data-action="rr-confirm">Reassign &amp; delete</button>
     </div>
   </div>
 </div>
