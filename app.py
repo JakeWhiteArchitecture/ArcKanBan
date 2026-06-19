@@ -35,7 +35,9 @@ from flask import (
 # --------------------------------------------------------------------------- #
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(APP_DIR, "arckanban.db")
+# DB lives next to the app by default; override with ARCKANBAN_DB (e.g. to point
+# at a mounted volume when running in a container, so data survives rebuilds).
+DB_PATH = os.environ.get("ARCKANBAN_DB") or os.path.join(APP_DIR, "arckanban.db")
 TEMPLATES_LIB = os.path.join(APP_DIR, "templates_lib")
 
 # The eight stages of the RIBA Plan of Work 2020 (fixed, index 0..7).
