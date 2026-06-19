@@ -67,6 +67,21 @@
                           </label>
                         {% endfor %}
                       </div>
+                      <div class="config-subhead">Sub-stages</div>
+                      <div class="substage-config">
+                        {% for st in [3, 4] %}
+                          {% set pc = p.splits.get(st, 1) %}
+                          <div class="substage-row">
+                            <span class="substage-stage" style="--c: var(--riba-{{ st }})">{{ st }}</span>
+                            <span class="substage-name">{{ riba[st] }}</span>
+                            <span class="substage-parts">
+                              <label class="subpart is-base"><input type="checkbox" checked disabled><span>{{ st }}a</span></label>
+                              <label class="subpart"><input type="checkbox" name="subpart" value="{{ st }}b" {% if pc >= 2 %}checked{% endif %}><span>{{ st }}b</span></label>
+                              <label class="subpart"><input type="checkbox" name="subpart" value="{{ st }}c" {% if pc >= 3 %}checked{% endif %}><span>{{ st }}c</span></label>
+                            </span>
+                          </div>
+                        {% endfor %}
+                      </div>
                       <button type="submit" class="btn btn-primary btn-sm">Apply scope</button>
                     </form>
                     <div class="config-links">

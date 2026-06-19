@@ -699,6 +699,7 @@ def index():
                 "current_stage_name": RIBA_STAGES[r["current_stage"]],
                 "spine": mini_spine(r["current_stage"]),
                 "enabled": sorted(enabled_stages(r)),
+                "splits": project_splits(r),   # {stage: parts} for the Config sub-stage tickboxes
             }
         )
     return render_template("index.html", projects=projects, templates=list_templates(),
@@ -924,9 +925,11 @@ def export_activity(project_uid):
     return resp
 
 
-def build_decisions(db, project_id):
+def build_decisions(db, project_id, splits=None):
     """The decision register: every decision (numbered by creation order) with
-    its options, confirmed outcome + date, and the tasks spawned from it."""
+    its options, confirmed outcome + date, and the tasks spawned from it.
+    `stage_label` carries the sub-stage (4a/4b…) when the stage is split."""
+    splits = splits or {}
     rows = db.execute(
         "SELECT * FROM tasks WHERE project_id=? AND type='decision' ORDER BY id",
         (project_id,),
@@ -938,8 +941,10 @@ def build_decisions(db, project_id):
         linked = [{"id": t["id"], "title": t["title"], "status": t["status"], "stage": t["stage"]}
                   for t in db.execute(
                       "SELECT id, title, status, stage FROM tasks WHERE from_decision_id=? ORDER BY id", (r["id"],))]
+        sub = r["substage"] or 0
         out.append({
             "n": i, "id": r["id"], "uid": r["uid"], "stage": r["stage"], "stage_name": RIBA_STAGES[r["stage"]],
+            "substage": sub, "stage_label": part_label(r["stage"], sub, parts_for(splits, r["stage"])),
             "title": r["title"], "status": r["status"], "assignee": r["awaiting_on"] or "",
             "options": opts, "outcome": r["outcome"] or "", "confirmed": bool(r["outcome"]),
             "rationale": r["rationale"] or "",
@@ -954,11 +959,13 @@ def decisions_page(project_uid):
     """The decision register, as a styled page (a second view of the project)."""
     db = get_db()
     p = get_project_by_uid_or_404(db, project_uid)
+    splits = project_splits(p)
     return render_template(
         "decisions.html",
         project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"],
                  "current_stage": p["current_stage"]},
-        decisions=build_decisions(db, p["id"]), riba=RIBA_STAGES, enabled=sorted(enabled_stages(p)),
+        decisions=build_decisions(db, p["id"], splits), riba=RIBA_STAGES, enabled=sorted(enabled_stages(p)),
+        has_splits=bool(splits),
     )
 
 
@@ -969,7 +976,7 @@ def email_decisions(project_uid):
     db = get_db()
     p = get_project_by_uid_or_404(db, project_uid)
     stages = _parse_stages(request.args.get("stages"))
-    decisions = build_decisions(db, p["id"])
+    decisions = build_decisions(db, p["id"], project_splits(p))
     if stages:
         decisions = [d for d in decisions if d["stage"] in stages]
     by_stage = {}
@@ -988,7 +995,7 @@ def export_decisions(project_uid):
     db = get_db()
     p = get_project_by_uid_or_404(db, project_uid)
     project_id = p["id"]
-    decisions = build_decisions(db, project_id)
+    decisions = build_decisions(db, project_id, project_splits(p))
     data = {"project_uid": p["uid"], "exported_at": now_iso(),
             "count": len(decisions), "confirmed": sum(1 for d in decisions if d["confirmed"]),
             "decisions": [{
@@ -1111,6 +1118,17 @@ def set_scope(project_uid):
         db.execute("UPDATE projects SET current_stage=? WHERE id=?", (new_current, project_id))
     db.execute("UPDATE projects SET stages=? WHERE id=?",
                (",".join(str(s) for s in stages), project_id))
+    # Sub-stages (Config is the only place these are set). Tickboxes per stage 3
+    # and 4: "Nb" → 2 parts, "Nb"+"Nc" → 3. "Nc" alone is ignored (needs Nb).
+    subparts = set(request.form.getlist("subpart"))
+    splits = project_splits(p)
+    for st in (3, 4):
+        has_b = ("%db" % st) in subparts
+        has_c = ("%dc" % st) in subparts
+        want = 3 if (has_b and has_c) else (2 if has_b else 1)
+        apply_stage_parts(db, project_id, splits, st, want)
+    db.execute("UPDATE projects SET splits=? WHERE id=?",
+               (json.dumps({str(k): v for k, v in splits.items()}) if splits else None, project_id))
     log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages), important=False)
     db.commit()
     flash("Appointment scope updated.")
@@ -1221,58 +1239,39 @@ def api_set_stages(project_id):
     return jsonify(ok=True, stages=stages, current_stage=new_current, event=ev)
 
 
-@app.route("/api/projects/<int:project_id>/split", methods=["POST"])
-def api_set_split(project_id):
-    """Split a RIBA stage into sub-stages — separate board pages, 4a/4b… — or
-    merge it back to one. parts >= 2 splits; parts <= 1 merges (collapsing every
-    sub-stage's tasks + sections back into the single stage). Splitting leaves
-    the existing work on the first part (4a); the new part(s) start empty."""
-    db = get_db()
-    p = get_project_or_404(db, project_id)
-    data = request.get_json(silent=True) or {}
-    try:
-        stage = int(data.get("stage"))
-        parts = int(data.get("parts"))
-    except (TypeError, ValueError):
-        return jsonify(ok=False, error="Invalid split."), 400
-    if not 0 <= stage <= 7:
-        return jsonify(ok=False, error="Stage out of range."), 400
-    parts = max(1, min(parts, 6))
-    splits = project_splits(p)
+def apply_stage_parts(db, project_id, splits, stage, parts):
+    """Set how many parts a stage has (1 = unsplit, up to 3 = a/b/c), migrating
+    the tasks and sections. Mutates `splits` in place (caller persists it). Items
+    in parts that no longer exist fold into the new last part; every section and
+    status/section lane is renumbered in part order (a, then b, then c) so nothing
+    collides. Reads the pre-change sub-stage to keep that ordering."""
+    parts = max(1, min(int(parts), 3))
+    if parts == parts_for(splits, stage):
+        return splits
     if parts <= 1:
         splits.pop(stage, None)
-        # Merge: collapse every part onto the stage, renumbering each section and
-        # each status/section lane so the parts stay in order (4a's items first,
-        # then 4b's) instead of colliding at the same positions.
-        secs = db.execute(
-            "SELECT id FROM sections WHERE project_id=? AND stage=? ORDER BY substage, position, id",
-            (project_id, stage)).fetchall()
-        for i, s in enumerate(secs):
-            db.execute("UPDATE sections SET substage=0, position=? WHERE id=?", (i, s["id"]))
-        rows = db.execute(
-            "SELECT id, status, section_id FROM tasks WHERE project_id=? AND stage=? AND parent_id IS NULL "
-            "ORDER BY status, section_id IS NOT NULL, section_id, substage, position, id",
-            (project_id, stage)).fetchall()
-        lane = {}
-        for t in rows:
-            key = (t["status"], t["section_id"])
-            n = lane.get(key, 0); lane[key] = n + 1
-            db.execute("UPDATE tasks SET substage=0, position=? WHERE id=?", (n, t["id"]))
-        db.execute("UPDATE tasks SET substage=0 WHERE project_id=? AND stage=?", (project_id, stage))  # any children too
-        verb, detail = "merged sub-stages", "Stage %d" % stage
     else:
-        # Narrowing the split: fold any now-orphaned parts into the new last one.
-        db.execute("UPDATE tasks SET substage=? WHERE project_id=? AND stage=? AND substage>?",
-                   (parts - 1, project_id, stage, parts - 1))
-        db.execute("UPDATE sections SET substage=? WHERE project_id=? AND stage=? AND substage>?",
-                   (parts - 1, project_id, stage, parts - 1))
         splits[stage] = parts
-        verb, detail = "split into sub-stages", "Stage %d → %d parts" % (stage, parts)
-    db.execute("UPDATE projects SET splits=? WHERE id=?",
-               (json.dumps({str(k): v for k, v in splits.items()}) if splits else None, project_id))
-    log_event(db, project_id, verb, None, detail, important=False)
-    db.commit()
-    return jsonify(ok=True, stage=stage, parts=parts)
+    last = parts - 1
+    # Sections: clamp the part, renumber sequentially within each part.
+    spos = {}
+    for s in db.execute("SELECT id, substage FROM sections WHERE project_id=? AND stage=? "
+                        "ORDER BY substage, position, id", (project_id, stage)):
+        sub = min(s["substage"] or 0, last)
+        n = spos.get(sub, 0); spos[sub] = n + 1
+        db.execute("UPDATE sections SET substage=?, position=? WHERE id=?", (sub, n, s["id"]))
+    # Tasks: clamp the part, renumber within each (part, status, section) lane.
+    lane = {}
+    for t in db.execute("SELECT id, substage, status, section_id FROM tasks WHERE project_id=? AND stage=? "
+                        "AND parent_id IS NULL ORDER BY substage, status, section_id IS NOT NULL, section_id, position, id",
+                        (project_id, stage)):
+        sub = min(t["substage"] or 0, last)
+        key = (sub, t["status"], t["section_id"])
+        n = lane.get(key, 0); lane[key] = n + 1
+        db.execute("UPDATE tasks SET substage=?, position=? WHERE id=?", (sub, n, t["id"]))
+    db.execute("UPDATE tasks SET substage=? WHERE project_id=? AND stage=? AND substage>?",
+               (last, project_id, stage, last))   # any child tasks too
+    return splits
 
 
 @app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])

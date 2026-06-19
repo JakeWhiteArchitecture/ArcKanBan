@@ -116,7 +116,6 @@
     var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[panel.stage];
     var star = document.querySelector(".tb-star");
     if (star) { var cur = panel.stage === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
-    updateMoreMenu(panel);
   }
   function gotoPage(p, instant) {
     p = Math.max(0, Math.min(pageCount - 1, Number(p)));
@@ -124,16 +123,6 @@
     try { localStorage.setItem(LS_STAGE, String(p)); } catch (e) {}
     track.scrollTo({ left: p * track.clientWidth, behavior: (instant || reduceMotion) ? "auto" : "smooth" });
     updateNav(p);
-  }
-  // Keep the ⋯ menu's split / merge items in step with the focused page.
-  function partLetter(n) { return String.fromCharCode(97 + n); }   // 0→a, 1→b…
-  function updateMoreMenu(panel) {
-    panel = panel || panelAt(activePage());
-    var sp = document.querySelector(".more-split"), ap = document.querySelector(".more-addpart"), mg = document.querySelector(".more-merge");
-    var split = panel.enabled && panel.parts > 1;
-    if (sp) { sp.hidden = !(panel.enabled && panel.parts <= 1); sp.textContent = "Split Stage " + panel.stage + " into " + panel.stage + "a / " + panel.stage + "b…"; }
-    if (ap) { ap.hidden = !(split && panel.parts < 6); ap.textContent = "Add a sub-stage to Stage " + panel.stage + " (→ " + panel.stage + partLetter(panel.parts) + ")"; }
-    if (mg) { mg.hidden = !split; mg.textContent = "Merge Stage " + panel.stage + " sub-stages"; }
   }
   var ticking = false;
   track.addEventListener("scroll", function () {
@@ -1038,18 +1027,6 @@
   // the in-context "Add to scope" affordance on a disabled-stage placeholder.
   function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
 
-  // Split the focused stage into sub-stages (parts >= 2) or merge it back (parts <= 1).
-  // A full reload is the simplest resync — the page list, ids and indices all shift.
-  function splitStage(parts) {
-    var panel = panelAt(activePage());
-    if (parts > 1 && !panel.enabled) return;   // only an in-scope stage can be split
-    if (parts <= 1 && !confirm("Merge Stage " + panel.stage + " back into one page? Every sub-stage's tasks move onto Stage " + panel.stage + ".")) return;
-    // Reload onto the affected stage by name — page indices shift when the split
-    // shape changes, so a bare reload could land on the wrong page.
-    api("/api/projects/" + projectId + "/split", { stage: panel.stage, parts: parts })
-      .then(function (r) { if (r) location.href = location.pathname + "?stage=" + panel.stage; });
-  }
-
   // collapse section bubbles (grouped) — folds a whole section across columns, persisted
   var LS_BUBBLES = "arckanban-bubbles-" + projectId;
   function loadBubbles() { try { return new Set(JSON.parse(localStorage.getItem(LS_BUBBLES)) || []); } catch (e) { return new Set(); } }
@@ -1299,9 +1276,6 @@
         case "goto-stage": { var gp = firstPageOfStage(Number(el.dataset.stage)); if (gp != null) { lastActive = gp; gotoPage(gp); } break; }
         case "nav-prev": { var pe = nextEnabledPage(activePage(), -1); if (pe != null) { lastActive = pe; gotoPage(pe); } break; }
         case "nav-next": { var ne = nextEnabledPage(activePage(), +1); if (ne != null) { lastActive = ne; gotoPage(ne); } break; }
-        case "split-stage": splitStage(2); break;
-        case "addpart-stage": splitStage(panelAt(activePage()).parts + 1); break;
-        case "merge-stage": splitStage(1); break;
         case "create-open": openCreate(); break;
         case "create-save": createSave(false); break;
         case "create-close": createSave(true); break;

@@ -30,6 +30,7 @@
   <div class="tb-right">
     <a class="tb-btn dr-board" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
     <button type="button" class="tb-btn" data-action="dr-toggle-all">Show all stages</button>
+    {% if has_splits %}<button type="button" class="tb-btn" data-action="dr-substage" aria-pressed="false" title="Show the sub-stage (4a/4b…) each decision belongs to">Sub-stages</button>{% endif %}
     <button type="button" class="tb-btn tb-icon-btn" data-action="dr-email" aria-label="Email decisions" title="Email a decisions table">✉</button>
     <a class="tb-btn" href="{{ url_for('export_decisions', project_uid=project.uid) }}" download title="Download the register as JSON">JSON</a>
   </div>
@@ -69,7 +70,7 @@
             {% else %}<span class="dr-empty">—</span>{% endif %}
           </td>
           <td class="dr-c-date">{{ d.decided_day or '—' }}</td>
-          <td class="dr-c-stage"><span class="dr-stage" style="--c: var(--riba-{{ d.stage }})">{{ d.stage }}</span><span class="dr-stage-name">{{ d.stage_name }}</span></td>
+          <td class="dr-c-stage"><span class="dr-stage" data-stage="{{ d.stage }}" data-label="{{ d.stage_label }}" style="--c: var(--riba-{{ d.stage }})">{{ d.stage }}</span><span class="dr-stage-name">{{ d.stage_name }}</span></td>
           <td class="dr-c-rat">
             <div class="dr-rationale" data-decision-id="{{ d.id }}" data-action="edit-rationale" role="button" tabindex="0"
                  title="Click to edit the rationale">{% if d.rationale %}{{ d.rationale }}{% else %}<span class="dr-empty">— add rationale</span>{% endif %}</div>
