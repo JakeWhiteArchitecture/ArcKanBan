@@ -350,6 +350,16 @@ def fmt_day(iso):
         return iso
 
 
+def fmt_ymd(iso):
+    """ISO timestamp → YYYY-MM-DD (to prefill a <input type=date>)."""
+    if not iso:
+        return ""
+    try:
+        return datetime.fromisoformat(iso).strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return ""
+
+
 def format_event(e):
     """Render one event row/dict as a plain-English line + timestamp."""
     parts = [e["actor"], e["verb"]]
@@ -700,10 +710,17 @@ def index():
                 "spine": mini_spine(r["current_stage"]),
                 "enabled": sorted(enabled_stages(r)),
                 "splits": project_splits(r),   # {stage: parts} for the Config sub-stage tickboxes
+                "decisions": [   # confirmed decisions, for the Config backdating tool
+                    {"id": dr["id"], "title": dr["title"], "day": fmt_day(dr["decided_at"]), "ymd": fmt_ymd(dr["decided_at"])}
+                    for dr in db.execute(
+                        "SELECT id, title, decided_at FROM tasks WHERE project_id=? AND type='decision' "
+                        "AND outcome IS NOT NULL AND outcome<>'' ORDER BY id", (r["id"],))
+                ],
             }
         )
     return render_template("index.html", projects=projects, templates=list_templates(),
-                           riba=RIBA_STAGES, selected_template=request.args.get("tpl", ""))
+                           riba=RIBA_STAGES, selected_template=request.args.get("tpl", ""),
+                           today=datetime.now(timezone.utc).date().isoformat())
 
 
 @app.route("/projects", methods=["POST"])
@@ -965,7 +982,7 @@ def decisions_page(project_uid):
         project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"],
                  "current_stage": p["current_stage"]},
         decisions=build_decisions(db, p["id"], splits), riba=RIBA_STAGES, enabled=sorted(enabled_stages(p)),
-        has_splits=bool(splits),
+        has_splits=bool(splits), assignees=[r["name"] for r in project_roles(db, p["id"])],
     )
 
 
@@ -1166,6 +1183,19 @@ def delete_project(project_uid):
     db.execute("DELETE FROM projects WHERE id=?", (project_id,))
     db.commit()
     flash("Project deleted.")
+    return redirect(url_for("index"))
+
+
+@app.route("/projects/<project_uid>/reset-log", methods=["POST"])
+def reset_log(project_uid):
+    """Clear a project's activity log (the audit trail). Reached only from ⚙ Config
+    behind a confirm — it can't be undone. Tasks, decisions and the register stay."""
+    db = get_db()
+    project_id = get_project_by_uid_or_404(db, project_uid)["id"]
+    n = db.execute("SELECT COUNT(*) c FROM events WHERE project_id=?", (project_id,)).fetchone()["c"]
+    db.execute("DELETE FROM events WHERE project_id=?", (project_id,))
+    db.commit()
+    flash("Activity log reset (%d event%s cleared)." % (n, "" if n == 1 else "s"))
     return redirect(url_for("index"))
 
 
@@ -1420,6 +1450,32 @@ def api_clear_decision(task_id):
         "SELECT id, title FROM tasks WHERE from_decision_id=? ORDER BY id", (task_id,))]
     db.commit()
     return jsonify(ok=True, status="todo", event=ev, linked=linked)
+
+
+@app.route("/api/tasks/<int:task_id>/decided-date", methods=["POST"])
+def api_set_decided_date(task_id):
+    """Backdate (or correct) a confirmed decision's date — for recording older
+    decisions on live projects. Deliberately reached only from a project's ⚙ Config
+    backdating tool, not the register, and the decision must already be confirmed."""
+    db = get_db()
+    row, err = _decision_or_error(db, task_id)
+    if err:
+        return err
+    if not (row["outcome"] or "").strip():
+        return jsonify(ok=False, error="Confirm the decision before setting its date."), 400
+    data = request.get_json(silent=True) or {}
+    try:
+        d = datetime.strptime((data.get("date") or "").strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify(ok=False, error="Use a valid date."), 400
+    if d > datetime.now(timezone.utc).date():
+        return jsonify(ok=False, error="A decision date can't be in the future."), 400
+    iso = datetime(d.year, d.month, d.day, 12, tzinfo=timezone.utc).isoformat(timespec="seconds")
+    db.execute("UPDATE tasks SET decided_at=? WHERE id=?", (iso, task_id))
+    ev = log_event(db, row["project_id"], "dated decision", row["title"], fmt_day(iso),
+                   task_id=task_id, important=False)
+    db.commit()
+    return jsonify(ok=True, decided_at=iso, decided_day=fmt_day(iso), ymd=d.isoformat(), event=ev)
 
 
 @app.route("/api/decisions/<int:task_id>/tasks", methods=["POST"])

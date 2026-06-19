@@ -88,10 +88,31 @@
                       <a class="config-item" href="{{ url_for('export_template', project_uid=p.uid) }}" download>Save as template</a>
                       <a class="config-item" href="{{ url_for('decisions_page', project_uid=p.uid) }}">Decision register</a>
                     </div>
-                    <form class="config-danger" method="post" action="{{ url_for('delete_project', project_uid=p.uid) }}"
-                          onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks? This cannot be undone.');">
-                      <button type="submit" class="config-del">Delete project</button>
-                    </form>
+                    <div class="config-subhead">Backdate a decision</div>
+                    {% if p.decisions %}
+                      <div class="backdate" data-project-uid="{{ p.uid }}">
+                        <select class="backdate-pick" aria-label="Decision to date">
+                          {% for d in p.decisions %}<option value="{{ d.id }}" data-ymd="{{ d.ymd }}">{{ d.title }} — {{ d.day }}</option>{% endfor %}
+                        </select>
+                        <div class="backdate-row">
+                          <input type="date" class="backdate-date" aria-label="Decision date" value="{{ p.decisions[0].ymd }}" max="{{ today }}">
+                          <button type="button" class="btn-quiet btn-sm backdate-set">Set date</button>
+                        </div>
+                        <span class="backdate-note" aria-live="polite"></span>
+                      </div>
+                    {% else %}
+                      <p class="config-muted">No confirmed decisions yet.</p>
+                    {% endif %}
+                    <div class="config-danger">
+                      <form method="post" action="{{ url_for('reset_log', project_uid=p.uid) }}"
+                            onsubmit="return confirm('Reset the activity log for “{{ p.name }}”? The audit trail is cleared — tasks and decisions stay. This cannot be undone.');">
+                        <button type="submit" class="config-del config-reset">Reset activity log</button>
+                      </form>
+                      <form method="post" action="{{ url_for('delete_project', project_uid=p.uid) }}"
+                            onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks? This cannot be undone.');">
+                        <button type="submit" class="config-del">Delete project</button>
+                      </form>
+                    </div>
                   </div>
                 </details>
               </span>

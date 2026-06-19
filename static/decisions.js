@@ -67,6 +67,8 @@
       case "dr-next": goStage(nextEnabled(view === "all" ? lastStage : view, +1)); break;
       case "dr-toggle-all": toggleAll(); break;
       case "dr-substage": toggleSubstage(); break;
+      case "edit-dr-assignee": startAssigneeEdit(el); break;
+      case "dr-confirm": { var rc = el.closest(".dr-row"); confirmDecision(rc, el.dataset.text, false); break; }
       case "dr-email": {
         var url = "/projects/" + encodeURIComponent(projectUid) + "/decisions.eml";
         if (view !== "all") url += "?stages=" + view;
@@ -101,6 +103,15 @@
     applySubstage();
   }
   applySubstage();
+
+  // ---- confirm a decision from the register (a typed "Other…" outcome) ----
+  document.addEventListener("submit", function (e) {
+    var other = e.target.closest(".dr-other"); if (!other) return;
+    e.preventDefault();
+    var input = other.querySelector('input[name="other"]'); var text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    confirmDecision(other.closest(".dr-row"), text, true);
+  });
 
   // ---- spawn a task from a decision (linked via from_decision_id) ---------
   document.addEventListener("submit", async function (e) {
@@ -154,5 +165,59 @@
     try { json = await res.json(); } catch (err) {}
     if (!res.ok || !json.ok) alert((json && json.error) || "Could not save the rationale.");
     renderRationale(cell, val);
+  }
+
+  // ---- inline "Decision by" editing (with role autocomplete) -------------
+  function renderAssignee(cell, val) {
+    if (val) cell.textContent = val; else cell.innerHTML = '<span class="dr-empty">— not set</span>';
+  }
+  function startAssigneeEdit(cell) {
+    if (cell.querySelector("input")) return;
+    var id = cell.dataset.decisionId;
+    var current = cell.querySelector(".dr-empty") ? "" : cell.textContent.trim();
+    var inp = document.createElement("input");
+    inp.type = "text"; inp.className = "dr-by-input"; inp.value = current; inp.autocomplete = "off";
+    inp.setAttribute("list", "dr-assignee-suggestions");
+    cell.textContent = ""; cell.appendChild(inp); inp.focus(); inp.select();
+    var done = false;
+    function finish(commit) {
+      if (done) return; done = true;
+      if (commit) saveAssignee(id, inp.value.trim(), cell); else renderAssignee(cell, current);
+    }
+    inp.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+      else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+    });
+    inp.addEventListener("blur", function () { finish(true); });
+  }
+  async function saveAssignee(id, val, cell) {
+    var res, json = {};
+    try {
+      res = await fetch("/api/tasks/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ awaiting_on: val }) });
+    } catch (err) { alert("Could not reach the app. Is it still running?"); renderAssignee(cell, val); return; }
+    try { json = await res.json(); } catch (err) {}
+    if (!res.ok || !json.ok) alert((json && json.error) || "Could not save the decision-maker.");
+    renderAssignee(cell, val);
+  }
+
+  // ---- confirm a decision (mirrors the board: decision-maker required) ----
+  async function confirmDecision(row, text, addOption) {
+    if (!row || !text) return;
+    var by = row.querySelector(".dr-by-edit"), input = by && by.querySelector("input");
+    var maker = input ? input.value.trim() : (by && !by.querySelector(".dr-empty") ? by.textContent.trim() : "");
+    if (!maker) {
+      alert("Set the decision-maker (“Decision by”) before confirming.");
+      if (by) startAssigneeEdit(by); return;
+    }
+    var res, json = {};
+    try {
+      res = await fetch("/api/tasks/" + row.dataset.decisionId + "/confirm", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text, add_option: !!addOption }),
+      });
+    } catch (err) { alert("Could not reach the app. Is it still running?"); return; }
+    try { json = await res.json(); } catch (err) {}
+    if (!res.ok || !json.ok) { alert((json && json.error) || "Could not confirm the decision."); return; }
+    location.reload();   // re-render the row as decided (outcome, date, dismissed options)
   }
 })();

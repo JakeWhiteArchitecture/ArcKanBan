@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.11 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.12 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.12):** the **decision register** becomes a working surface, not just a read-out — you can **confirm** a decision inline (tick a listed option or type an "Other…" outcome) and **set the decision-maker** inline (role autocomplete); confirming still requires a decision-maker, mirroring the board. A **confirmed decision's options are now read-only on the board** (no hover/click affordance). **⚙ Config** gains two deliberately-gated tools: a **backdating tool** (set a confirmed decision's date — for recording older decisions on live projects; never in the future) and **Reset activity log** (clears the audit trail behind a confirm). New: `POST /api/tasks/<id>/decided-date`, `POST /projects/<uid>/reset-log`. Full deltas in §11.
 
 > **Revision note (v0.11):** sub-stage management moves to the project's **⚙ Config** (the board's ⋯ Split menu is removed): stages **3 and 4** can be split into up to **3 parts** via **3a/3b/3c tickboxes** (`set_scope` saves `projects.splits`; parts are contiguous and migrate the tasks/sections). The **decision register** gains a **"Sub-stages" toggle** that tags each decision's stage as 4a/4b/4c (paging stays by whole stage). The **progress report** notes the sub-stage in the section column (one stage heading, not separate tables) and the **decisions email** gains the **Options considered** column. Full deltas in §11.
 
@@ -459,6 +461,13 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 52. **Sub-stage management moves to ⚙ Config** — the board's ⋯ Split/Add/Merge menu and `POST /api/projects/<id>/split` are removed. Stages **3 and 4** are split via **3a/3b/3c tickboxes** in the project's Config popover (the appointment-scope `set_scope` form now also saves `projects.splits`). Parts are **contiguous** (c needs b, enforced client- and server-side) and capped at **3**. Changing the split runs `apply_stage_parts`, which migrates tasks/sections — folding any removed part into the new last one and renumbering each section + status/section lane in part order (no position collisions).
 53. **Decision register "Sub-stages" toggle** — tags each decision's Stage chip as 4a/4b/4c (`build_decisions` carries `substage` + `stage_label`); paging stays by whole stage. The toggle is shown only when the project has splits and persists per project.
 54. **Reports are sub-stage aware** — the **progress report** notes the sub-stage in the section column ("4a · Walls", "4b · General") under a single stage heading (no separate tables); the **decisions email** gains the **Options considered** column (chosen bold, dismissed struck) and the "Tasks from it" → **"Tasks generated"** rename, matching the web register.
+
+### v0.11 → v0.12 (register as a working surface; gated Config tools)
+55. **Confirm a decision from the register** — pending rows show each option with a ✓ confirm button plus a typed **"Other…"** outcome; confirming reuses `POST /api/tasks/<id>/confirm` (still requires the decision-maker first, mirroring the board) and reloads the row as decided.
+56. **Set the decision-maker from the register** — the **Decision by** cell is click-to-edit with **role autocomplete** (a `<datalist>` of the project's roles), saving via `POST /api/tasks/<id>` `{awaiting_on}`. Decisions can now be assigned without going to the board.
+57. **Confirmed options are read-only on the board** — a done decision's option list keeps its ✓/× hidden *and* drops the hover highlight, so dismissed options no longer invite a click.
+58. **Backdating tool (⚙ Config)** — a self-contained panel (pick a confirmed decision + a date) sets `decided_at` via `POST /api/tasks/<id>/decided-date`, for recording older decisions on live projects. Server-validated: the decision must be confirmed and the date can't be in the future. Deliberately *not* in the register, so dates aren't editable at random.
+59. **Reset activity log (⚙ Config)** — `POST /projects/<uid>/reset-log` clears a project's events behind a confirm (tasks, decisions and the register are untouched).
 
 ---
 
