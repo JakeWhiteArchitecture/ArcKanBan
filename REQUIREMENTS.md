@@ -4,7 +4,9 @@
 
 **A project tracker for a sole-trader architectural practice.** Every job moves through the eight RIBA stages; each stage holds its own small Kanban. New projects are laid out instantly from a template. Local-first, single-file database, no cloud.
 
-**Status:** v0.9 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+**Status:** v0.10 specification. A v0.1 prototype (Flask + SQLite) is referenced as the foundation but is **not present in this repository** — see *Repository state* below. This document specifies the build from that foundation forward.
+
+> **Revision note (v0.10):** a RIBA stage can be **split into sub‑stages** (4a/4b…), each its **own board page** in the ‹ › pager. The board is now a flat list of **pages** — one per in‑scope stage, several for a split stage — rather than one slide per stage; navigation keys off the **page index**, while the ★/current‑stage/nudge concepts stay keyed to the RIBA **stage** (a split stage's completion rolls its pages together). Split / add‑a‑sub‑stage / merge live in the board's **⋯ menu** for the focused stage. Data: `tasks.substage`, `sections.substage`, `projects.splits` (JSON `{stage: parts}`); new `POST /api/projects/<id>/split`. Full deltas in §11.
 
 > **Revision note (v0.9):** status changes now log uniformly as *"JW set "X" to "Status""*; a Done→undone **round‑trip within 10 minutes auto‑omits both** log entries (events gained a `task_id`); and the background is now a gentle **animated** drifting/pulsing glow. Still queued: the **email generator** (compose box + task table + `.eml` + JSON) and **redo**. Full deltas in §11.
 
@@ -447,6 +449,9 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 48. **Scope: current stage can now be disabled** — disabling the in-scope current stage auto-advances `current_stage` to the lowest remaining in-scope stage (was: blocked, so Stage 0 couldn't be turned off).
 49. **Background tuned darker & blobbier** — zoomed in, fewer octaves, gentler warp, ~0.4 render scale (soft upscale), darkened palette — sits well within the dark theme.
 50. **Save as template (export)** — `GET /projects/<id>/template.json` downloads a sanitized template (tasks · sections · types · **statuses**), **excluding the project name, any people (awaiting/decision-by), urgent flags and ids**. Templates now support a per-task `status` on import. Links on the board and home register. *(Phase 5 "save current project as template" — done as an export.)*
+
+### v0.9 → v0.10 (sub-stages — split a stage into its own pages)
+51. **Sub-stages (4a/4b…)** — a RIBA stage can be split into parts, each its **own page** in the pager. The server renders a **flat list of panels** (`build_panels`): one page per in-scope stage, several for a split one; an out-of-scope stage stays a single disabled placeholder. Navigation is **page-indexed** (slide `id` = page index; `data-page`/`data-stage`/`data-part`/`data-label` on each slide), decoupled from the RIBA stage number; the **★ / current stage / nudge** stay keyed to the stage (a split stage's completion rolls its pages together). Manage from the board **⋯ menu** for the focused stage: **Split into 4a/4b**, **Add a sub-stage** (→ 4c…, up to 6 parts), **Merge** (collapses every part back onto the stage). Data: `tasks.substage`, `sections.substage` (0 = first part), `projects.splits` (JSON `{stage: part_count}`); create / section / move / restore / decision-spawn all carry the sub-stage, and positions are isolated per part. New `POST /api/projects/<id>/split`. Splitting leaves existing work on 4a; the new part(s) start empty; merging never loses tasks.
 
 ---
 

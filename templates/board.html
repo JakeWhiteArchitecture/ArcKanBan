@@ -51,6 +51,9 @@
 
 <div class="tb-pop more-pop" id="more-pop" hidden aria-label="More actions">
   <button type="button" class="more-item" data-action="toggle-roles">Roles…</button>
+  <button type="button" class="more-item more-split" data-action="split-stage" hidden>Split this stage…</button>
+  <button type="button" class="more-item more-addpart" data-action="addpart-stage" hidden>Add a sub-stage</button>
+  <button type="button" class="more-item more-merge" data-action="merge-stage" hidden>Merge sub-stages</button>
   <a class="more-item" href="{{ url_for('export_template', project_uid=project.uid) }}" download>Save as template</a>
   <a class="more-item" href="{{ url_for('export_activity', project_uid=project.uid) }}" download
      title="Every event, including the minor moves hidden from the drawer">Export full log</a>
@@ -190,7 +193,9 @@
 <main class="board" data-project-id="{{ project.id }}" data-project-uid="{{ project.uid }}" data-current-stage="{{ project.current_stage }}" data-layout="{{ layout }}" data-stages="{{ enabled|join(',') }}">
   <div class="stage-track" id="stage-track">
     {% for s in stages %}
-      <section class="stage-slide stage{% if not s.enabled %} stage-off{% endif %}" id="stage-{{ s.idx }}" data-stage="{{ s.idx }}">
+      <section class="stage-slide stage{% if not s.enabled %} stage-off{% endif %}" id="stage-{{ s.page }}"
+               data-page="{{ s.page }}" data-stage="{{ s.idx }}" data-part="{{ s.part }}"
+               data-parts="{{ s.parts }}" data-label="{{ s.label }}" data-enabled="{{ 1 if s.enabled else 0 }}">
         {% if s.enabled %}
         <div class="slide-head">
           <span class="stage-counts slide-counts" aria-hidden="true">

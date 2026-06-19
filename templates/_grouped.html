@@ -1,10 +1,10 @@
 {# Grouped (status-primary) layout: 4 columns, each grouping cards into
    section "bubbles" + a loose area. Click a card to link its section across
    columns; drag changes status and auto-regroups into the section bubble. #}
-<div class="grouped" data-stage="{{ s.idx }}">
+<div class="grouped" data-stage="{{ s.idx }}" data-part="{{ s.part }}">
   {# Hidden registry — data source for bubbles, the create-task widget and the
      right-click menu. Sections are managed in the Sections popup (titleblock). #}
-  <div class="section-reg" data-stage="{{ s.idx }}" hidden aria-hidden="true">
+  <div class="section-reg" data-stage="{{ s.idx }}" data-part="{{ s.part }}" hidden aria-hidden="true">
     <span class="sec-chip sec-chip-general" data-section="" data-pos="-1"><span class="sec-chip-name">General</span></span>
     {% for sec in s.sections %}
       <span class="sec-chip" data-section="{{ sec.id }}" data-pos="{{ sec.pos }}">
@@ -18,7 +18,7 @@
     {% for st in statuses %}
       <section class="column col-{{ st }}" data-status="{{ st }}">
         <h3 class="col-head">{{ status_labels[st] }} <span class="col-count">{{ s.grouped[st].count }}</span></h3>
-        <div class="col-body" data-stage="{{ s.idx }}" data-status="{{ st }}">
+        <div class="col-body" data-stage="{{ s.idx }}" data-part="{{ s.part }}" data-status="{{ st }}">
           {% for b in s.grouped[st].bubbles %}
             <div class="bubble" data-section="{{ b.id }}" data-pos="{{ b.pos }}">
               <div class="bubble-head" title="Click to collapse / expand">
@@ -26,12 +26,12 @@
                 <span class="bubble-name">{{ b.title }}</span><span class="bubble-count">{{ b.tasks|length }}</span>
                 <span class="bubble-grip" draggable="true" aria-hidden="true" title="Drag to move this section to another status">⠿</span>
               </div>
-              <div class="col-cards bubble-cards" data-stage="{{ s.idx }}" data-status="{{ st }}" data-section="{{ b.id }}">
+              <div class="col-cards bubble-cards" data-stage="{{ s.idx }}" data-part="{{ s.part }}" data-status="{{ st }}" data-section="{{ b.id }}">
                 {% for t in b.tasks %}{% include "_card.html" %}{% endfor %}
               </div>
             </div>
           {% endfor %}
-          <div class="col-cards loose-cards" data-stage="{{ s.idx }}" data-status="{{ st }}" data-section="">
+          <div class="col-cards loose-cards" data-stage="{{ s.idx }}" data-part="{{ s.part }}" data-status="{{ st }}" data-section="">
             {% for t in s.grouped[st].loose %}{% include "_card.html" %}{% endfor %}
           </div>
         </div>

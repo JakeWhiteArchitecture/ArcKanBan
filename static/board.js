@@ -25,7 +25,6 @@
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var enabledStages = (board.dataset.stages || "0,1,2,3,4,5,6,7").split(",").map(Number);
   function isEnabled(n) { return enabledStages.indexOf(Number(n)) >= 0; }
-  function nextEnabled(from, dir) { for (var i = Number(from) + dir; i >= 0 && i <= 7; i += dir) if (isEnabled(i)) return i; return null; }
 
   var activity = {}, dismissed = {};
 
@@ -69,42 +68,85 @@
   function cardOf(el) { return el.closest(".card"); }
   function stageOf(el) { return el.closest(".stage"); }
   function colBodyOf(el) { return el.closest(".col-body"); }
-  function stageHasCards(n) { var el = document.getElementById("stage-" + n); return !!(el && el.querySelector(".card")); }
+  function pageHasCards(p) { var el = document.getElementById("stage-" + p); return !!(el && el.querySelector(".card")); }
 
-  // ---- horizontal navigation --------------------------------------------
-  var LS_STAGE = "arckanban-stage-" + projectId;
-  function activeStage() {
-    if (!track.clientWidth) return currentStage;
-    return Math.max(0, Math.min(7, Math.round(track.scrollLeft / track.clientWidth)));
+  // ---- horizontal navigation (page-based) --------------------------------
+  // The board is a flat list of pages: one per in-scope stage, or several when a
+  // stage is split into sub-stages (4a/4b…). A page no longer equals the RIBA
+  // stage number, so navigation keys off the page index and reads the stage/part
+  // each page carries; `currentStage` stays a RIBA stage (the ★ / nudge concept).
+  var LS_STAGE = "arckanban-page-" + projectId;
+  var panels = [].slice.call(track.querySelectorAll(".stage-slide")).map(function (el) {
+    return {
+      page: Number(el.dataset.page), stage: Number(el.dataset.stage), part: Number(el.dataset.part || 0),
+      parts: Number(el.dataset.parts || 1), label: el.dataset.label || el.dataset.stage,
+      enabled: el.dataset.enabled === "1", el: el,
+    };
+  });
+  var pageCount = panels.length || 1;
+  var currentPage = 0, lastActive = 0;
+  function panelAt(p) { return panels[Math.max(0, Math.min(pageCount - 1, p))] || panels[0]; }
+  function activePage() {
+    if (!track.clientWidth) return currentPage;
+    return Math.max(0, Math.min(pageCount - 1, Math.round(track.scrollLeft / track.clientWidth)));
   }
-  function updateNav(n) {
-    if (n == null) n = activeStage();
-    var num = document.querySelector(".tb-stage-num"); if (num) num.textContent = n;
+  function currentSlide() { return panelAt(activePage()).el; }
+  function nextEnabledPage(from, dir) {
+    for (var i = Number(from) + dir; i >= 0 && i < pageCount; i += dir) if (panels[i].enabled) return i;
+    return null;
+  }
+  function firstPageOfStage(stage) {
+    var i; stage = Number(stage);
+    for (i = 0; i < pageCount; i++) if (panels[i].stage === stage && panels[i].enabled) return i;
+    for (i = 0; i < pageCount; i++) if (panels[i].stage === stage) return i;   // disabled fallback
+    return null;
+  }
+  function pageForStagePart(stage, part) {
+    stage = Number(stage); part = Number(part || 0);
+    for (var i = 0; i < pageCount; i++) if (panels[i].stage === stage && panels[i].part === part) return i;
+    return firstPageOfStage(stage);
+  }
+  function updateNav(p) {
+    if (p == null) p = activePage();
+    var panel = panelAt(p);
+    var num = document.querySelector(".tb-stage-num"); if (num) num.textContent = panel.label;
     var prev = document.querySelector(".tb-pager.prev"), next = document.querySelector(".tb-pager.next");
-    if (prev) prev.disabled = nextEnabled(n, -1) === null;
-    if (next) next.disabled = nextEnabled(n, +1) === null;
-    var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[n];
+    if (prev) prev.disabled = nextEnabledPage(p, -1) === null;
+    if (next) next.disabled = nextEnabledPage(p, +1) === null;
+    var fn = document.querySelector(".tb-focus-name"); if (fn) fn.textContent = RIBA[panel.stage];
     var star = document.querySelector(".tb-star");
-    if (star) { var cur = n === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
+    if (star) { var cur = panel.stage === currentStage; star.textContent = cur ? "★" : "☆"; star.classList.toggle("is-current", cur); }
+    updateMoreMenu(panel);
   }
-  function gotoStage(n, instant) {
-    n = Math.max(0, Math.min(7, Number(n)));
-    track.scrollTo({ left: n * track.clientWidth, behavior: (instant || reduceMotion) ? "auto" : "smooth" });
-    updateNav(n);
+  function gotoPage(p, instant) {
+    p = Math.max(0, Math.min(pageCount - 1, Number(p)));
+    currentPage = p; lastActive = p;
+    try { localStorage.setItem(LS_STAGE, String(p)); } catch (e) {}
+    track.scrollTo({ left: p * track.clientWidth, behavior: (instant || reduceMotion) ? "auto" : "smooth" });
+    updateNav(p);
+  }
+  // Keep the ⋯ menu's split / merge items in step with the focused page.
+  function partLetter(n) { return String.fromCharCode(97 + n); }   // 0→a, 1→b…
+  function updateMoreMenu(panel) {
+    panel = panel || panelAt(activePage());
+    var sp = document.querySelector(".more-split"), ap = document.querySelector(".more-addpart"), mg = document.querySelector(".more-merge");
+    var split = panel.enabled && panel.parts > 1;
+    if (sp) { sp.hidden = !(panel.enabled && panel.parts <= 1); sp.textContent = "Split Stage " + panel.stage + " into " + panel.stage + "a / " + panel.stage + "b…"; }
+    if (ap) { ap.hidden = !(split && panel.parts < 6); ap.textContent = "Add a sub-stage to Stage " + panel.stage + " (→ " + panel.stage + partLetter(panel.parts) + ")"; }
+    if (mg) { mg.hidden = !split; mg.textContent = "Merge Stage " + panel.stage + " sub-stages"; }
   }
   var ticking = false;
   track.addEventListener("scroll", function () {
     if (!ticking) {
       ticking = true;
       requestAnimationFrame(function () {
-        var n = activeStage(); updateNav(n);
-        try { localStorage.setItem(LS_STAGE, String(n)); } catch (e) {}
-        lastActive = n; ticking = false;
+        var p = activePage(); updateNav(p);
+        try { localStorage.setItem(LS_STAGE, String(p)); } catch (e) {}
+        lastActive = p; currentPage = p; ticking = false;
       });
     }
   });
-  var lastActive = currentStage;
-  window.addEventListener("resize", function () { gotoStage(lastActive, true); });
+  window.addEventListener("resize", function () { gotoPage(lastActive, true); });
 
   // ---- counts ------------------------------------------------------------
   function colCards(scope, status) {
@@ -156,10 +198,15 @@
     }
   }
   function currentStageCompletion() {
-    var st = document.getElementById("stage-" + currentStage);
-    if (!st) return 0;
-    var total = st.querySelectorAll(".col-cards > .card").length;
-    return total ? colCards(st, "done") / total : 0;
+    // A split stage spans several pages — roll the whole RIBA stage together.
+    var slides = board.querySelectorAll('.stage-slide[data-stage="' + currentStage + '"]');
+    if (!slides.length) return 0;
+    var total = 0, done = 0;
+    slides.forEach(function (st) {
+      total += st.querySelectorAll(".col-cards > .card").length;
+      done += colCards(st, "done");
+    });
+    return total ? done / total : 0;
   }
   function evaluateNudge() {
     var target = null, s;
@@ -180,13 +227,10 @@
     var r = await api("/api/projects/" + projectId + "/current_stage", { stage: n });
     if (!r) return;
     currentStage = n; board.dataset.currentStage = n;
-    document.querySelectorAll(".titleblock .spine-cell").forEach(function (cell, i) {
-      cell.classList.remove("is-current", "is-past", "is-future");
-      cell.classList.add(i < n ? "is-past" : (i === n ? "is-current" : "is-future"));
-    });
-    var csn = document.querySelector(".compact-stage-num"); if (csn) csn.textContent = n;
-    document.getElementById("nudge").hidden = true;
-    gotoStage(n);      // also refreshes the focused-stage name + star via updateNav
+    var nudge = document.getElementById("nudge"); if (nudge) nudge.hidden = true;
+    var p = firstPageOfStage(n);
+    if (p != null) { lastActive = p; gotoPage(p); }   // lands on the stage's first page, refreshes the ★ via updateNav
+    else updateNav();
     evaluateNudge();
   }
 
@@ -258,7 +302,7 @@
       var r = await api("/api/sections/" + id, { title: val });
       if (!r) { titleEl.textContent = text; return; }
       titleEl.textContent = val;
-      var stageEl = document.getElementById("stage-" + activeStage());
+      var stageEl = currentSlide();
       if (stageEl) {
         stageEl.querySelectorAll('.bubble[data-section="' + id + '"] .bubble-name').forEach(function (n) { n.textContent = val; });
         stageEl.querySelectorAll('.sec-chip[data-section="' + id + '"] .sec-chip-name').forEach(function (n) { n.textContent = val; });
@@ -298,7 +342,7 @@
     head.appendChild(chev); head.appendChild(nm); head.appendChild(ct); head.appendChild(grip);
     var cards = document.createElement("div");
     cards.className = "col-cards bubble-cards";
-    cards.dataset.stage = colBody.dataset.stage; cards.dataset.status = colBody.dataset.status; cards.dataset.section = sec;
+    cards.dataset.stage = colBody.dataset.stage; cards.dataset.part = colBody.dataset.part; cards.dataset.status = colBody.dataset.status; cards.dataset.section = sec;
     bubble.appendChild(head); bubble.appendChild(cards);
     if (loadBubbles().has(sec)) bubble.classList.add("is-collapsed");
     var loose = colBody.querySelector(".loose-cards"), ref = null;
@@ -574,7 +618,7 @@
   // ---- email a task schedule (.eml, meeting-minutes style) --------------
   function openEmail() {
     var m = document.getElementById("email-modal"); if (!m) return;
-    var n = activeStage();
+    var n = Number(currentSlide().dataset.stage);   // pre-tick the focused RIBA stage
     m.querySelectorAll(".email-stage-cb").forEach(function (cb) { cb.checked = Number(cb.value) === n; });
     m.hidden = false;
   }
@@ -793,7 +837,7 @@
     if (!confirm("Delete this section? Its tasks move to General.")) return;
     var r = await api("/api/sections/" + id + "/delete", {});
     if (!r) return;
-    var stageEl = document.getElementById("stage-" + activeStage());
+    var stageEl = currentSlide();
     if (stageEl) {
       stageEl.querySelectorAll(".col-body").forEach(function (colBody) {
         var bubble = colBody.querySelector('.bubble[data-section="' + id + '"]');
@@ -835,19 +879,18 @@
   }
   function openSections() {
     var pop = document.getElementById("sections-pop"); if (!pop) return;
-    var n = activeStage(), stageEl = document.getElementById("stage-" + n);
-    var lbl = pop.querySelector(".sections-stage"); if (lbl) lbl.textContent = "Stage " + n + " · " + RIBA[n];
+    var stageEl = currentSlide(), panel = panelAt(activePage());
+    var lbl = pop.querySelector(".sections-stage"); if (lbl) lbl.textContent = "Stage " + panel.label + " · " + RIBA[panel.stage];
     renderSectionsList(stageEl);
     closePops("sections-pop"); pop.hidden = false;
     var ti = pop.querySelector(".sections-add input"); if (ti) ti.value = "";
   }
   async function addSectionPop(form) {
-    var stage = activeStage();
+    var stageEl = currentSlide(), stage = Number(stageEl.dataset.stage), substage = Number(stageEl.dataset.part || 0);
     var input = form.querySelector('input[name="title"]');
     var title = input.value.trim(); if (!title) { input.focus(); return; }
-    var r = await api("/api/projects/" + projectId + "/sections", { stage: stage, title: title });
+    var r = await api("/api/projects/" + projectId + "/sections", { stage: stage, substage: substage, title: title });
     if (!r) return;
-    var stageEl = document.getElementById("stage-" + stage);
     if (stageEl) {
       var reg = stageEl.querySelector(".section-reg");
       var pos = stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").length;
@@ -920,7 +963,7 @@
     var card = board.querySelector('.card[data-task-id="' + id + '"]'); if (!card) return;
     closePops();
     var collapsed = card.closest(".bubble.is-collapsed"); if (collapsed) collapsed.classList.remove("is-collapsed");
-    var stage = Number(card.dataset.stage); lastActive = stage; gotoStage(stage);
+    var p = pageForStagePart(card.dataset.stage, card.dataset.part); lastActive = p; gotoPage(p);
     setTimeout(function () {
       card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center", inline: "nearest" });
       card.classList.remove("is-found"); void card.offsetWidth; card.classList.add("is-found");
@@ -931,9 +974,9 @@
   // ---- create-task widget -----------------------------------------------
   function openCreate() {
     var pop = document.getElementById("create-pop"); if (!pop) return;
-    var n = activeStage(), stageEl = document.getElementById("stage-" + n);
-    pop.dataset.stage = n;
-    var lbl = pop.querySelector(".create-stage"); if (lbl) lbl.textContent = "Stage " + n + " · " + RIBA[n];
+    var stageEl = currentSlide(), panel = panelAt(activePage());
+    pop.dataset.stage = panel.stage; pop.dataset.part = panel.part; pop.dataset.page = panel.page;
+    var lbl = pop.querySelector(".create-stage"); if (lbl) lbl.textContent = "Stage " + panel.label + " · " + RIBA[panel.stage];
     var secSel = pop.querySelector(".create-section");
     secSel.innerHTML = '<option value="">General</option>';
     if (stageEl) stageEl.querySelectorAll(".sec-chip:not(.sec-chip-general)").forEach(function (ch) {
@@ -948,14 +991,14 @@
     var pop = document.getElementById("create-pop"); if (!pop) return;
     var ti = pop.querySelector(".create-title"), title = ti.value.trim();
     if (!title) { if (closeAfter) pop.hidden = true; else ti.focus(); return; }
-    var stage = Number(pop.dataset.stage);
+    var stage = Number(pop.dataset.stage), substage = Number(pop.dataset.part || 0);
     var type = pop.querySelector(".create-type").value;
     var status = pop.querySelector(".create-status").value;
     var section = pop.querySelector(".create-section").value;
     var r = await api("/api/projects/" + projectId + "/tasks",
-      { stage: stage, title: title, type: type, status: status, section_id: section });
+      { stage: stage, substage: substage, title: title, type: type, status: status, section_id: section });
     if (!r) return;
-    var stageEl = document.getElementById("stage-" + stage);
+    var stageEl = document.getElementById("stage-" + pop.dataset.page);
     if (stageEl) {
       var destCol = stageEl.querySelector('.col-body[data-status="' + status + '"]');
       if (destCol) {
@@ -994,6 +1037,18 @@
   // Appointment scope is managed on the register page now; the board keeps only
   // the in-context "Add to scope" affordance on a disabled-stage placeholder.
   function saveScope(stages) { api("/api/projects/" + projectId + "/stages", { stages: stages }).then(function (r) { if (r) location.reload(); }); }
+
+  // Split the focused stage into sub-stages (parts >= 2) or merge it back (parts <= 1).
+  // A full reload is the simplest resync — the page list, ids and indices all shift.
+  function splitStage(parts) {
+    var panel = panelAt(activePage());
+    if (parts > 1 && !panel.enabled) return;   // only an in-scope stage can be split
+    if (parts <= 1 && !confirm("Merge Stage " + panel.stage + " back into one page? Every sub-stage's tasks move onto Stage " + panel.stage + ".")) return;
+    // Reload onto the affected stage by name — page indices shift when the split
+    // shape changes, so a bare reload could land on the wrong page.
+    api("/api/projects/" + projectId + "/split", { stage: panel.stage, parts: parts })
+      .then(function (r) { if (r) location.href = location.pathname + "?stage=" + panel.stage; });
+  }
 
   // collapse section bubbles (grouped) — folds a whole section across columns, persisted
   var LS_BUBBLES = "arckanban-bubbles-" + projectId;
@@ -1240,10 +1295,13 @@
         case "delete-section": deleteSection(el); break;
         case "toggle-bubble": toggleBubble(el); break;
         case "set-current": setCurrentStage(el.dataset.stage); break;
-        case "star-current": setCurrentStage(activeStage()); break;
-        case "goto-stage": { var gs = Number(el.dataset.stage); if (isEnabled(gs)) { lastActive = gs; gotoStage(gs); } break; }
-        case "nav-prev": { var pe = nextEnabled(activeStage(), -1); if (pe != null) { lastActive = pe; gotoStage(pe); } break; }
-        case "nav-next": { var ne = nextEnabled(activeStage(), +1); if (ne != null) { lastActive = ne; gotoStage(ne); } break; }
+        case "star-current": setCurrentStage(Number(currentSlide().dataset.stage)); break;
+        case "goto-stage": { var gp = firstPageOfStage(Number(el.dataset.stage)); if (gp != null) { lastActive = gp; gotoPage(gp); } break; }
+        case "nav-prev": { var pe = nextEnabledPage(activePage(), -1); if (pe != null) { lastActive = pe; gotoPage(pe); } break; }
+        case "nav-next": { var ne = nextEnabledPage(activePage(), +1); if (ne != null) { lastActive = ne; gotoPage(ne); } break; }
+        case "split-stage": splitStage(2); break;
+        case "addpart-stage": splitStage(panelAt(activePage()).parts + 1); break;
+        case "merge-stage": splitStage(1); break;
         case "create-open": openCreate(); break;
         case "create-save": createSave(false); break;
         case "create-close": createSave(true); break;
@@ -1296,11 +1354,11 @@
   }
   function openColumnMenu(colBody, sec, x, y) {
     closeMenu();
-    var stageEl = stageOf(colBody), status = colBody.dataset.status, stage = Number(colBody.dataset.stage);
+    var stageEl = stageOf(colBody), status = colBody.dataset.status;
     var menu = document.createElement("div"); menu.className = "ctx-menu";
     if (sec) {                                   // inside a section → section context
       ctxHead(menu, sectionTitle(stageEl, sec));
-      menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(stage, status, sec); }));
+      menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(colBody, sec); }));
       menu.appendChild(ctxItem("Rename section", function () {
         closeMenu();
         var b = stageEl.querySelector('.bubble[data-section="' + sec + '"]');
@@ -1312,21 +1370,20 @@
       }));
     } else {                                     // empty column area → create context
       ctxHead(menu, STATUS_LABELS[status] || status);
-      menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(stage, status, ""); }));
-      menu.appendChild(ctxItem("New section…", function () { closeMenu(); lastActive = stage; gotoStage(stage); openSections(); }));
+      menu.appendChild(ctxItem("New task here", function () { closeMenu(); quickCreateTask(colBody, ""); }));
+      menu.appendChild(ctxItem("New section…", function () { closeMenu(); openSections(); }));   // already on this page
     }
     ctxSep(menu);
     appendUndo(menu);
     placeMenu(menu, x, y);
   }
-  async function quickCreateTask(stage, status, sec) {
+  async function quickCreateTask(colBody, sec) {
+    var stage = Number(colBody.dataset.stage), substage = Number(colBody.dataset.part || 0), status = colBody.dataset.status;
     var r = await api("/api/projects/" + projectId + "/tasks",
-      { stage: stage, title: "New task", type: "recommended", status: status, section_id: sec || "" });
+      { stage: stage, substage: substage, title: "New task", type: "recommended", status: status, section_id: sec || "" });
     if (!r) return;
-    var stageEl = document.getElementById("stage-" + stage);
-    var destCol = stageEl && stageEl.querySelector('.col-body[data-status="' + status + '"]');
-    if (!destCol) { location.reload(); return; }
-    var cont = ensureContainer(destCol, sec || "");
+    var stageEl = stageOf(colBody);
+    var cont = ensureContainer(colBody, sec || "");
     cont.insertAdjacentHTML("beforeend", r.html);
     var card = cont.lastElementChild;
     recountStageFull(stageEl);
@@ -1382,8 +1439,8 @@
     if (e.key === "Escape") { closeRationale(); closeUnmade(); closeEmail(); closeReassign(); closeMenu(); clearSelection(); closePops(); dockHideSoon(); return; }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       if (t.matches("input, select, textarea, [contenteditable]")) return;
-      var te = nextEnabled(activeStage(), e.key === "ArrowRight" ? 1 : -1);
-      if (te != null) { lastActive = te; gotoStage(te); }
+      var te = nextEnabledPage(activePage(), e.key === "ArrowRight" ? 1 : -1);
+      if (te != null) { lastActive = te; gotoPage(te); }
     }
   });
 
@@ -1407,20 +1464,22 @@
   if (drEl) { drEl.addEventListener("mouseenter", dockEnter); drEl.addEventListener("mouseleave", dockLeave); }
   var qStage = null; try { qStage = new URLSearchParams(location.search).get("stage"); } catch (e) {}
   var saved = null; try { saved = localStorage.getItem(LS_STAGE); } catch (e) {}
-  var startN;
-  if (qStage != null && qStage !== "" && isEnabled(Number(qStage))) {
-    startN = Number(qStage);   // explicit return-to-stage (e.g. coming back from the decision register)
+  var startP;
+  if (qStage != null && qStage !== "" && isEnabled(Number(qStage)) && firstPageOfStage(Number(qStage)) != null) {
+    startP = firstPageOfStage(Number(qStage));   // explicit return-to-stage (e.g. from the decision register)
     try { history.replaceState({}, "", location.pathname); } catch (e) {}   // keep the URL clean
-  } else if (saved != null && saved !== "" && isEnabled(Number(saved))) {
-    startN = Number(saved);
+  } else if (saved != null && saved !== "" && Number(saved) >= 0 && Number(saved) < pageCount && panels[Number(saved)].enabled) {
+    startP = Number(saved);      // remembered page (invalidated automatically if the split shape changed)
   } else {
-    startN = currentStage;
-    // Fresh project (no remembered stage): if the current stage is empty — e.g.
-    // a template whose tasks sit in later stages — open on the first enabled
-    // stage that actually has cards, so the board never looks empty.
-    if (!stageHasCards(startN)) {
-      for (var si = 0; si <= 7; si++) { if (isEnabled(si) && stageHasCards(si)) { startN = si; break; } }
+    startP = firstPageOfStage(currentStage);
+    if (startP == null) startP = 0;
+    // Fresh project (no remembered page): if that page is empty — e.g. a template
+    // whose tasks sit in later stages — open on the first enabled page that
+    // actually has cards, so the board never opens onto an empty page.
+    if (!pageHasCards(startP)) {
+      for (var si = 0; si < pageCount; si++) { if (panels[si].enabled && pageHasCards(si)) { startP = si; break; } }
     }
   }
-  gotoStage(startN, true);
+  lastActive = startP; currentPage = startP;
+  gotoPage(startP, true);
 })();
