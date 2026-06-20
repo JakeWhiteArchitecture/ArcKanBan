@@ -477,6 +477,8 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 62. **Search returns to the right** — the search button moves back into the right group (next to the email icon) with an enlarged magnifier glyph (clearer at a glance). The ＋ Task button stays where it was.
 63. **Archive projects** — `projects.archived` (0/1) with `POST /projects/<uid>/archive` and `/unarchive` from each project's ⚙ Config. The home page splits projects into the live grid and a muted **"Archived"** section below it; the project card is now a shared Jinja macro rendered in both grids.
 64. **Tagline** reworded to "An architectural project management tool based on the RIBA Plan of Work."
+65. **Confirmed decisions are read-only in the card menu** — a decided decision's right-click menu greys the options (no switching to an alternative) and offers only **Clear decision**; the submenu is positioned `absolute` against its parent item (the menu's `backdrop-filter` would otherwise capture a `fixed` child).
+66. **Register column order + density** — **Options considered** now sits left of **Outcome** (you pick, then see the result), and task-card text is reduced ~20% for density.
 
 ---
 

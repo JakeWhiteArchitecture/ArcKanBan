@@ -46,8 +46,8 @@
           <th class="dr-c-n">#</th>
           <th class="dr-c-desc">Decision</th>
           <th class="dr-c-by">Decision&nbsp;by</th>
-          <th class="dr-c-out">Outcome</th>
           <th class="dr-c-opts">Options considered</th>
+          <th class="dr-c-out">Outcome</th>
           <th class="dr-c-date">Decided</th>
           <th class="dr-c-stage">Stage</th>
           <th class="dr-c-rat">Rationale</th>
@@ -63,7 +63,6 @@
             <div class="dr-by-edit" data-decision-id="{{ d.id }}" data-action="edit-dr-assignee" role="button" tabindex="0"
                  title="Click to set the decision-maker">{% if d.assignee %}{{ d.assignee }}{% else %}<span class="dr-empty">— not set</span>{% endif %}</div>
           </td>
-          <td class="dr-c-out">{% if d.outcome %}<span class="dr-outcome">✓ {{ d.outcome }}</span>{% else %}<span class="dr-pending">pending</span>{% endif %}</td>
           <td class="dr-c-opts">
             {% if d.confirmed %}
               {% set dismissed = d.options | reject('equalto', d.outcome) | list %}
@@ -84,6 +83,7 @@
               </div>
             {% endif %}
           </td>
+          <td class="dr-c-out">{% if d.outcome %}<span class="dr-outcome">✓ {{ d.outcome }}</span>{% else %}<span class="dr-pending">pending</span>{% endif %}</td>
           <td class="dr-c-date">{{ d.decided_day or '—' }}</td>
           <td class="dr-c-stage"><span class="dr-stage" data-stage="{{ d.stage }}" data-label="{{ d.stage_label }}" style="--c: var(--riba-{{ d.stage }})">{{ d.stage }}</span><span class="dr-stage-name">{{ d.stage_name }}</span></td>
           <td class="dr-c-rat">
