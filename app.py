@@ -261,8 +261,7 @@ def init_db():
         for st, v in list(splits.items()):
             if v > MAX_PARTS:
                 apply_stage_parts(db, pid, splits, st, MAX_PARTS)
-        db.execute("UPDATE projects SET splits=? WHERE id=?",
-                   (json.dumps({str(k): v for k, v in splits.items()}) if splits else None, pid))
+        persist_splits(db, pid, splits)
     db.commit()
     db.close()
 
@@ -551,6 +550,12 @@ def project_splits(project_row):
         return {}
 
 
+def persist_splits(db, project_id, splits):
+    """Write the {stage: parts} map to a project's splits column (NULL when empty)."""
+    db.execute("UPDATE projects SET splits=? WHERE id=?",
+               (json.dumps({str(k): v for k, v in splits.items()}) if splits else None, project_id))
+
+
 def parts_for(splits, stage):
     """How many parts a stage has (1 when unsplit)."""
     return splits.get(stage, 1)
@@ -721,6 +726,13 @@ def block_cross_origin_writes():
 def index():
     db = get_db()
     rows = db.execute("SELECT * FROM projects ORDER BY id DESC").fetchall()
+    # Confirmed decisions for the Config backdating dropdowns — one query, bucketed
+    # by project, instead of one query per card.
+    decisions_by_project = {}
+    for dr in db.execute("SELECT project_id, id, title, decided_at FROM tasks "
+                         "WHERE type='decision' AND outcome IS NOT NULL AND outcome<>'' ORDER BY id"):
+        decisions_by_project.setdefault(dr["project_id"], []).append(
+            {"id": dr["id"], "title": dr["title"], "day": fmt_day(dr["decided_at"]), "ymd": fmt_ymd(dr["decided_at"])})
     projects, archived = [], []          # archived projects show in a section below the live ones
     for r in rows:
         is_arch = bool(r["archived"]) if "archived" in r.keys() else False
@@ -736,12 +748,7 @@ def index():
                 "enabled": sorted(enabled_stages(r)),
                 "splits": project_splits(r),   # {stage: parts} for the Config sub-stage tickboxes
                 "archived": is_arch,
-                "decisions": [   # confirmed decisions, for the Config backdating tool
-                    {"id": dr["id"], "title": dr["title"], "day": fmt_day(dr["decided_at"]), "ymd": fmt_ymd(dr["decided_at"])}
-                    for dr in db.execute(
-                        "SELECT id, title, decided_at FROM tasks WHERE project_id=? AND type='decision' "
-                        "AND outcome IS NOT NULL AND outcome<>'' ORDER BY id", (r["id"],))
-                ],
+                "decisions": decisions_by_project.get(r["id"], []),   # Config backdating tool
             }
         )
     return render_template("index.html", projects=projects, archived_projects=archived,
@@ -1179,8 +1186,7 @@ def set_scope(project_uid):
             else:
                 log_event(db, project_id, "split into sub-stages", None,
                           "Stage %d → %d parts" % (st, after), important=False)
-    db.execute("UPDATE projects SET splits=? WHERE id=?",
-               (json.dumps({str(k): v for k, v in splits.items()}) if splits else None, project_id))
+    persist_splits(db, project_id, splits)
     log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages), important=False)
     db.commit()
     flash("Appointment scope updated.")

@@ -145,26 +145,10 @@
     var id = cell.dataset.decisionId;
     var current = "value" in cell.dataset ? cell.dataset.value : (cell.querySelector(".dr-empty") ? "" : cell.textContent.trim());
     var ta = document.createElement("textarea"); ta.className = "dr-rationale-input"; ta.rows = 3; ta.value = current;
-    cell.textContent = ""; cell.appendChild(ta); ta.focus();
-    var done = false;
-    function finish(commit) {
-      if (done) return; done = true;
-      if (commit) saveRationale(id, ta.value.trim(), cell); else renderRationale(cell, current);
-    }
-    ta.addEventListener("keydown", function (ev) {
-      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); finish(true); }
-      else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+    editInline(cell, ta, function (val) {
+      if (val === null) renderRationale(cell, current);
+      else saveField(id, "rationale", val, cell, renderRationale, "Could not save the rationale.");
     });
-    ta.addEventListener("blur", function () { finish(true); });
-  }
-  async function saveRationale(id, val, cell) {
-    var res, json = {};
-    try {
-      res = await fetch("/api/tasks/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rationale: val }) });
-    } catch (err) { alert("Could not reach the app. Is it still running?"); renderRationale(cell, val); return; }
-    try { json = await res.json(); } catch (err) {}
-    if (!res.ok || !json.ok) alert((json && json.error) || "Could not save the rationale.");
-    renderRationale(cell, val);
   }
 
   // ---- inline "Decision by" editing (with role autocomplete) -------------
@@ -178,26 +162,38 @@
     var inp = document.createElement("input");
     inp.type = "text"; inp.className = "dr-by-input"; inp.value = current; inp.autocomplete = "off";
     inp.setAttribute("list", "dr-assignee-suggestions");
-    cell.textContent = ""; cell.appendChild(inp); inp.focus(); inp.select();
+    editInline(cell, inp, function (val) {
+      if (val === null) renderAssignee(cell, current);
+      else saveField(id, "awaiting_on", val, cell, renderAssignee, "Could not save the decision-maker.");
+    });
+  }
+
+  // Inline-edit lifecycle shared by the rationale + "Decision by" cells: swap in
+  // the field, commit on Enter/blur, cancel on Esc, fire onSave(value|null) once.
+  // (board.js keeps its own editInline — the page scripts are self-contained.)
+  function editInline(cell, field, onSave) {
+    cell.textContent = ""; cell.appendChild(field); field.focus();
+    if (field.tagName === "INPUT") field.select();
     var done = false;
     function finish(commit) {
       if (done) return; done = true;
-      if (commit) saveAssignee(id, inp.value.trim(), cell); else renderAssignee(cell, current);
+      onSave(commit ? field.value.trim() : null);
     }
-    inp.addEventListener("keydown", function (ev) {
-      if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+    field.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); finish(true); }
       else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
     });
-    inp.addEventListener("blur", function () { finish(true); });
+    field.addEventListener("blur", function () { finish(true); });
   }
-  async function saveAssignee(id, val, cell) {
+  async function saveField(id, field, val, cell, render, errMsg) {
+    var body = {}; body[field] = val;
     var res, json = {};
     try {
-      res = await fetch("/api/tasks/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ awaiting_on: val }) });
-    } catch (err) { alert("Could not reach the app. Is it still running?"); renderAssignee(cell, val); return; }
+      res = await fetch("/api/tasks/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    } catch (err) { alert("Could not reach the app. Is it still running?"); render(cell, val); return; }
     try { json = await res.json(); } catch (err) {}
-    if (!res.ok || !json.ok) alert((json && json.error) || "Could not save the decision-maker.");
-    renderAssignee(cell, val);
+    if (!res.ok || !json.ok) alert((json && json.error) || errMsg);
+    render(cell, val);
   }
 
   // ---- confirm a decision (mirrors the board: decision-maker required) ----
@@ -212,7 +208,7 @@
     // If the maker is still being typed inline, persist it first and wait — the
     // confirm endpoint requires awaiting_on to be saved, so confirming before the
     // blur-triggered save lands would race it and be rejected.
-    if (input) await saveAssignee(row.dataset.decisionId, maker, by);
+    if (input) await saveField(row.dataset.decisionId, "awaiting_on", maker, by, renderAssignee, "Could not save the decision-maker.");
     var res, json = {};
     try {
       res = await fetch("/api/tasks/" + row.dataset.decisionId + "/confirm", {
