@@ -63,6 +63,9 @@ STATUS_LABELS = {
     "done": "Done",
 }
 
+# Sub-stages: a stage can be split into at most this many parts (a / b / c).
+MAX_PARTS = 3
+
 # Task categories. 'decision' carries a responsible person (like Awaiting's
 # who/what) shown in any column; 'statutory' is the legal-teeth one (redline).
 TYPES = ["statutory", "recommended", "process", "decision"]
@@ -117,6 +120,7 @@ def _ensure_column(db, table, name, ddl):
 def init_db():
     """Create tables on first run; apply additive migrations otherwise."""
     db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row   # name access for migration helpers (index access still works)
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(
         """
@@ -242,6 +246,23 @@ def init_db():
     db.execute("UPDATE tasks SET type='recommended' WHERE type='client'")
     db.execute("UPDATE tasks SET type='process' WHERE type='admin'")
     db.execute("UPDATE tasks SET type='recommended' WHERE type NOT IN ('statutory','recommended','process','decision')")
+    # Sub-stages now cap at MAX_PARTS (a/b/c). Fold any legacy split with more parts
+    # (the removed board menu allowed up to 6) down to MAX_PARTS, migrating its tasks
+    # so none are stranded on a part the board no longer renders. Idempotent.
+    for pid, raw in db.execute(
+            "SELECT id, splits FROM projects WHERE splits IS NOT NULL AND splits<>''").fetchall():
+        try:
+            stored = {int(k): int(v) for k, v in json.loads(raw).items()}
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if not any(v > MAX_PARTS for v in stored.values()):
+            continue
+        splits = {k: v for k, v in stored.items() if 0 <= k <= 7 and v >= 2}
+        for st, v in list(splits.items()):
+            if v > MAX_PARTS:
+                apply_stage_parts(db, pid, splits, st, MAX_PARTS)
+        db.execute("UPDATE projects SET splits=? WHERE id=?",
+                   (json.dumps({str(k): v for k, v in splits.items()}) if splits else None, pid))
     db.commit()
     db.close()
 
@@ -522,8 +543,10 @@ def project_splits(project_row):
         return {}
     try:
         data = json.loads(raw)
-        return {int(k): int(v) for k, v in data.items()
-                if 0 <= int(k) <= 7 and 2 <= int(v) <= 6}
+        # Clamp to MAX_PARTS so a legacy split (the old board menu allowed up to 6)
+        # never reports more parts than the board can render or Config can manage.
+        return {int(k): min(int(v), MAX_PARTS) for k, v in data.items()
+                if 0 <= int(k) <= 7 and int(v) >= 2}
     except (ValueError, TypeError, AttributeError):
         return {}
 
@@ -1147,7 +1170,15 @@ def set_scope(project_uid):
         has_b = ("%db" % st) in subparts
         has_c = ("%dc" % st) in subparts
         want = 3 if (has_b and has_c) else (2 if has_b else 1)
+        before = parts_for(splits, st)
         apply_stage_parts(db, project_id, splits, st, want)
+        after = parts_for(splits, st)
+        if after != before:                       # keep the split/merge in the audit log
+            if after <= 1:
+                log_event(db, project_id, "merged sub-stages", None, "Stage %d" % st, important=False)
+            else:
+                log_event(db, project_id, "split into sub-stages", None,
+                          "Stage %d → %d parts" % (st, after), important=False)
     db.execute("UPDATE projects SET splits=? WHERE id=?",
                (json.dumps({str(k): v for k, v in splits.items()}) if splits else None, project_id))
     log_event(db, project_id, "updated appointment scope", None, "(%d of 8 stages)" % len(stages), important=False)
@@ -1301,7 +1332,7 @@ def apply_stage_parts(db, project_id, splits, stage, parts):
     in parts that no longer exist fold into the new last part; every section and
     status/section lane is renumbered in part order (a, then b, then c) so nothing
     collides. Reads the pre-change sub-stage to keep that ordering."""
-    parts = max(1, min(int(parts), 3))
+    parts = max(1, min(int(parts), MAX_PARTS))
     if parts == parts_for(splits, stage):
         return splits
     if parts <= 1:
