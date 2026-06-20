@@ -4,7 +4,7 @@
 
 ### An architectural project management tool based on the RIBA Plan of Work
 
-A local-first project tracker for a sole-trader architectural practice —
+A local-first project tracker for a micro-business architectural practice —
 **one SQLite file, one Flask app**. No cloud, no accounts, no build step.
 
 <p>
@@ -24,7 +24,7 @@ along the **RIBA Plan of Work**. Each of the eight work stages gets its own Kanb
 board page, every key choice is captured in a **decision register**, and the whole
 thing runs from a single file on your own machine.
 
-> Built for one person's workflow — a practising architect — rather than a team SaaS.
+> Built for a micro practice's own workflow — not a multi-tenant team SaaS.
 > There are no logins; reaching the app means full access, so keep it on your own
 > machine or a private network. See **[DEPLOY.md](DEPLOY.md)**.
 
