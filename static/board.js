@@ -733,12 +733,11 @@
     var sections = stageSections(stageEl);
     if (sections.length) {
       if (has) ctxSep(menu);
-      ctxHead(menu, "Move to section");
-      [{ id: "", title: "General (no section)" }].concat(sections).forEach(function (it) {
-        var el = ctxItem(it.title, it.id === cur ? null : function () { assignCardToSection(card, it.id); closeMenu(); });
-        if (it.id === cur) el.classList.add("is-current");
-        menu.appendChild(el);
+      var moves = [{ id: "", title: "General (no section)" }].concat(sections).map(function (it) {
+        return { label: it.title, current: it.id === cur,
+                 onClick: function () { assignCardToSection(card, it.id); closeMenu(); } };
       });
+      ctxSubmenu(menu, "Move to section", moves);
       has = true;
     }
     if (has) ctxSep(menu);
@@ -1319,6 +1318,38 @@
     var s = document.createElement("span"); s.textContent = label; el.appendChild(s);
     if (!disabled && onClick) el.addEventListener("click", onClick);
     return el;
+  }
+  // A ctx-item that opens a flyout submenu to its right (the long section list
+  // lives here so the card menu stays short). Hover opens it; click toggles for
+  // touch. The submenu is a child of the parent menu, so closeMenu() clears it.
+  function ctxSubmenu(parentMenu, label, items) {
+    var item = document.createElement("div"); item.className = "ctx-item ctx-parent";
+    var s = document.createElement("span"); s.textContent = label; item.appendChild(s);
+    var caret = document.createElement("span"); caret.className = "ctx-caret"; caret.textContent = "›"; item.appendChild(caret);
+    var sub = document.createElement("div"); sub.className = "ctx-menu ctx-submenu"; sub.hidden = true;
+    items.forEach(function (it) {
+      var el = ctxItem(it.label, it.current ? null : it.onClick, false);
+      if (it.current) el.classList.add("is-current");
+      sub.appendChild(el);
+    });
+    item.appendChild(sub);
+    var timer = null;
+    function open() {
+      if (timer) { clearTimeout(timer); timer = null; }
+      sub.hidden = false;
+      var r = item.getBoundingClientRect();
+      sub.style.top = Math.max(8, Math.min(r.top - 5, window.innerHeight - sub.offsetHeight - 8)) + "px";
+      var rx = r.right + 2, lx = r.left - sub.offsetWidth - 2;       // open right; flip left if no room
+      sub.style.left = (rx + sub.offsetWidth <= window.innerWidth - 8 ? rx : Math.max(8, lx)) + "px";
+    }
+    function closeSoon() { timer = setTimeout(function () { sub.hidden = true; }, 160); }
+    item.addEventListener("mouseenter", open);
+    item.addEventListener("mouseleave", closeSoon);
+    sub.addEventListener("mouseenter", function () { if (timer) { clearTimeout(timer); timer = null; } });
+    sub.addEventListener("mouseleave", closeSoon);
+    item.addEventListener("click", function (e) { if (!sub.contains(e.target)) { if (sub.hidden) open(); else sub.hidden = true; } });
+    parentMenu.appendChild(item);
+    return item;
   }
   function placeMenu(menu, x, y) {
     document.body.appendChild(menu);

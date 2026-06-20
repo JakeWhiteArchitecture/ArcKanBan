@@ -244,6 +244,8 @@ a { color: var(--blue); text-decoration: none; }
 .config-links { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--hairline); padding-top: 7px; }
 .config-item { display: block; padding: 6px 8px; border-radius: 6px; color: var(--ink); font-size: 0.84rem; text-decoration: none; }
 .config-item:hover { background: var(--glass); }
+.config-arch { margin: 0; }
+.config-archive { width: 100%; text-align: left; border: none; background: transparent; cursor: pointer; font: inherit; font-size: 0.84rem; }
 .config-danger { margin: 0; border-top: 1px solid var(--hairline); padding-top: 7px; }
 .config-del { width: 100%; text-align: left; padding: 6px 8px; border: none; background: transparent; color: var(--ink-dim); border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
 .config-del:hover { color: var(--redline); background: var(--redline-tint); }
@@ -262,6 +264,14 @@ a { color: var(--blue); text-decoration: none; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
 .empty { color: var(--ink-soft); font-style: italic; padding: calc(var(--u) * 4) 0; }
+
+/* Archived projects — a muted section below the live grid. */
+.archived-section { margin-top: calc(var(--u) * 4); }
+.archived-head { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-soft); margin: 0 0 calc(var(--u) * 2); padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
+.archived-count { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); background: var(--glass); border-radius: 999px; padding: 1px 8px; }
+.project-card.is-archived { opacity: 0.6; transition: opacity 140ms ease; }
+.project-card.is-archived:hover { opacity: 1; }
 
 /* ---- Spine (shared) — RIBA colour per cell ---------------------------- */
 .spine { list-style: none; margin: 0; padding: 0; display: flex; gap: 4px; }
@@ -295,12 +305,17 @@ a { color: var(--blue); text-decoration: none; }
 .titleblock {
   position: fixed; top: 0; left: 0; right: 0; z-index: 30;
   display: flex; align-items: center; gap: var(--u);
-  height: var(--tb-h); padding: var(--u) calc(var(--u) * 2);
+  /* left padding matches the slide's, so the logo lines up with column 1 */
+  height: var(--tb-h); padding: var(--u) calc(var(--u) * 2) var(--u) calc(var(--u) * 5);
   background: var(--glass-deep);
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border-bottom: 1px solid var(--hairline);
 }
-.tb-left { display: flex; align-items: center; gap: 22px; margin-right: auto; }
+.tb-left { display: flex; align-items: center; gap: 0; margin-right: auto; }
+/* The logo occupies a column-1-wide slot so the job id lines up with column 2.
+   (slide pad 2×40px + 5 gaps×10px = 130px; 6 fluid columns + one gap.) */
+.tb-logo-link { width: max(180px, calc((100vw - 130px) / 6 + 10px)); flex-shrink: 0; box-sizing: border-box; }
+.tb-create-btn { margin-left: 20px; }
 .tb-right { display: flex; align-items: center; gap: 6px; }
 .tb-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: none; }
@@ -356,6 +371,7 @@ a { color: var(--blue); text-decoration: none; }
 .pop-head { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); padding: 2px 6px 5px; }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 .tb-search-btn, .tb-icon-btn { font-size: 1rem; line-height: 1; padding: 6px 10px; }
+.tb-search-btn { font-size: 1.35rem; font-weight: 600; }   /* clearer magnifier */
 
 /* Task search popover */
 .search-pop { width: 360px; max-width: 92vw; gap: 6px; }
@@ -753,6 +769,10 @@ body.hide-done .col-done .bubble { display: none; }
 .ctx-item.is-current::after { content: "✓"; color: var(--blue); }
 .ctx-item.is-disabled { color: var(--ink-dim); cursor: default; }
 .ctx-item.is-disabled:hover { background: none; }
+/* Flyout submenu (e.g. Move to section) — opens to the right of its parent item. */
+.ctx-parent { position: relative; }
+.ctx-caret { color: var(--ink-dim); margin-left: 8px; }
+.ctx-submenu { max-height: 72vh; overflow-y: auto; }
 
 /* ---- Activity log drawer ---------------------------------------------- */
 .log-toggle { align-self: center; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-soft); border-radius: var(--radius-sm); padding: 5px 11px; font-size: 0.78rem; cursor: pointer; }
@@ -917,7 +937,9 @@ body.page-decisions { padding-top: var(--tb-h); }
   .columns { grid-template-columns: 1fr; }
   .titleblock { flex-wrap: wrap; height: auto; }
   .tb-center { position: static; transform: none; order: 3; flex-basis: 100%; margin-top: 4px; }
-  .tb-left { margin-right: 0; }
+  .tb-left { margin-right: 0; gap: 14px; }
+  .tb-logo-link { width: auto; }   /* single-column layout: no slot maths */
+  .tb-create-btn { margin-left: 0; }
   .nav-arrow { display: none; }     /* swipe / spine on touch */
   .field-name, .field-template { flex-basis: 100%; width: auto; }
   /* On small screens keep the header in flow (no fixed overlap) and disable the dock. */

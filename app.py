@@ -209,6 +209,7 @@ def init_db():
     _ensure_column(db, "tasks", "substage", "substage INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "sections", "substage", "substage INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "projects", "splits", "splits TEXT")
+    _ensure_column(db, "projects", "archived", "archived INTEGER NOT NULL DEFAULT 0")  # 0 live, 1 archived
     # Projects use a short (6-hex) URL-friendly uid; sections/tasks keep a long
     # one (not user-facing). Project uids are assigned with a uniqueness check,
     # so even the short length never collides; this also normalises any earlier
@@ -687,9 +688,10 @@ def block_cross_origin_writes():
 def index():
     db = get_db()
     rows = db.execute("SELECT * FROM projects ORDER BY id DESC").fetchall()
-    projects = []
+    projects, archived = [], []          # archived projects show in a section below the live ones
     for r in rows:
-        projects.append(
+        is_arch = bool(r["archived"]) if "archived" in r.keys() else False
+        (archived if is_arch else projects).append(
             {
                 "id": r["id"],
                 "uid": r["uid"],
@@ -700,10 +702,12 @@ def index():
                 "spine": mini_spine(r["current_stage"]),
                 "enabled": sorted(enabled_stages(r)),
                 "splits": project_splits(r),   # {stage: parts} for the Config sub-stage tickboxes
+                "archived": is_arch,
             }
         )
-    return render_template("index.html", projects=projects, templates=list_templates(),
-                           riba=RIBA_STAGES, selected_template=request.args.get("tpl", ""))
+    return render_template("index.html", projects=projects, archived_projects=archived,
+                           templates=list_templates(), riba=RIBA_STAGES,
+                           selected_template=request.args.get("tpl", ""))
 
 
 @app.route("/projects", methods=["POST"])
@@ -1166,6 +1170,28 @@ def delete_project(project_uid):
     db.execute("DELETE FROM projects WHERE id=?", (project_id,))
     db.commit()
     flash("Project deleted.")
+    return redirect(url_for("index"))
+
+
+@app.route("/projects/<project_uid>/archive", methods=["POST"])
+def archive_project(project_uid):
+    """Move a project to the Archived section (kept, just out of the live grid)."""
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    db.execute("UPDATE projects SET archived=1 WHERE id=?", (p["id"],))
+    db.commit()
+    flash("“%s” archived." % p["name"])
+    return redirect(url_for("index"))
+
+
+@app.route("/projects/<project_uid>/unarchive", methods=["POST"])
+def unarchive_project(project_uid):
+    """Restore an archived project to the live grid."""
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    db.execute("UPDATE projects SET archived=0 WHERE id=?", (p["id"],))
+    db.commit()
+    flash("“%s” restored to live." % p["name"])
     return redirect(url_for("index"))
 
 
