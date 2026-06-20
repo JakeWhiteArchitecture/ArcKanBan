@@ -718,16 +718,17 @@
     var stageEl = stageOf(card), cur = card.dataset.section || "";
     var menu = document.createElement("div"); menu.className = "ctx-menu"; var has = false;
     if (card.dataset.type === "decision") {
-      ctxHead(menu, "Confirm decision");
       var outcome = decOutcome(card);
+      var decided = !!outcome;        // confirmed → options are read-only; only Clear is offered
+      ctxHead(menu, decided ? "Decision" : "Confirm decision");
       card.querySelectorAll(".dec-option .dec-option-text").forEach(function (span) {
-        var text = span.textContent.trim();
-        var it = ctxItem(text, text === outcome ? null : function () { confirmDecision(card, text, false); closeMenu(); });
-        if (text === outcome) it.classList.add("is-current");
+        var text = span.textContent.trim(), chosen = text === outcome;
+        var it = ctxItem(text, (decided || chosen) ? null : function () { confirmDecision(card, text, false); closeMenu(); }, decided && !chosen);
+        if (chosen) it.classList.add("is-current");
         menu.appendChild(it);
       });
-      menu.appendChild(ctxItem("Other…", function () { closeMenu(); startAddOption(card, true); }));
-      if (outcome) menu.appendChild(ctxItem("Clear decision", function () { clearDecision(card); closeMenu(); }));
+      if (!decided) menu.appendChild(ctxItem("Other…", function () { closeMenu(); startAddOption(card, true); }));
+      if (decided) menu.appendChild(ctxItem("Clear decision", function () { clearDecision(card); closeMenu(); }));
       has = true;
     }
     var sections = stageSections(stageEl);
@@ -1336,11 +1337,11 @@
     var timer = null;
     function open() {
       if (timer) { clearTimeout(timer); timer = null; }
-      sub.hidden = false;
+      sub.classList.remove("flip-left", "flip-up");
+      sub.hidden = false;        // CSS places it (absolute, left:100%); flip near the edges
       var r = item.getBoundingClientRect();
-      sub.style.top = Math.max(8, Math.min(r.top - 5, window.innerHeight - sub.offsetHeight - 8)) + "px";
-      var rx = r.right + 2, lx = r.left - sub.offsetWidth - 2;       // open right; flip left if no room
-      sub.style.left = (rx + sub.offsetWidth <= window.innerWidth - 8 ? rx : Math.max(8, lx)) + "px";
+      if (r.right + sub.offsetWidth + 8 > window.innerWidth) sub.classList.add("flip-left");
+      if (r.top + sub.offsetHeight + 8 > window.innerHeight) sub.classList.add("flip-up");
     }
     function closeSoon() { timer = setTimeout(function () { sub.hidden = true; }, 160); }
     item.addEventListener("mouseenter", open);

@@ -608,7 +608,7 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 
 .card-top { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
 .card-top-spacer { flex: 1; }
-.type-select { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 2px; cursor: pointer; }
+.type-select { font-size: 0.51rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 2px; cursor: pointer; }
 .type-select:hover { border-color: var(--glass-border); }
 .type-select option { background: var(--bg-2); color: var(--ink); }
 .card.type-statutory .type-select { color: var(--redline); font-weight: 700; }
@@ -618,7 +618,7 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
   cursor: pointer; line-height: 1; border: 1px solid var(--glass-border); background: var(--glass);
   color: var(--ink-soft); font-weight: 800; font-size: 0.9rem;
   transition: color 140ms ease, border-color 140ms ease, background 140ms ease; }
-.flag .flag-word { display: none; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.flag .flag-word { display: none; font-size: 0.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 .flag[aria-pressed="true"] { color: var(--redline); border-color: var(--redline); background: var(--redline-tint); }
 .flag[aria-pressed="true"] .flag-word { display: inline; }
 .card-del { width: 22px; height: 22px; border: 1px solid transparent; background: transparent; color: var(--ink-soft); cursor: pointer; border-radius: 5px; font-size: 1.1rem; line-height: 1; }
@@ -628,24 +628,24 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
    red outline + "Urgent" label). Keep only a subtly thicker type band as a cue. */
 .card.is-urgent { border-left-width: 6px; }
 
-.task-title { font-size: 0.92rem; line-height: 1.35; cursor: text; border-radius: 5px; color: var(--ink); }
+.task-title { font-size: 0.74rem; line-height: 1.35; cursor: text; border-radius: 5px; color: var(--ink); }
 .task-title:hover { background: var(--glass); }
-.title-input { width: 100%; font: inherit; font-size: 0.92rem; border: 1px solid var(--blue); border-radius: 5px; padding: 3px 5px; background: var(--glass-deep); color: var(--ink); }
+.title-input { width: 100%; font: inherit; font-size: 0.74rem; border: 1px solid var(--blue); border-radius: 5px; padding: 3px 5px; background: var(--glass-deep); color: var(--ink); }
 
-.awaiting-on { display: none; margin-top: 6px; font-size: 0.78rem; color: var(--ochre); cursor: text; align-items: baseline; gap: 4px; }
+.awaiting-on { display: none; margin-top: 6px; font-size: 0.62rem; color: var(--ochre); cursor: text; align-items: baseline; gap: 4px; }
 .card.status-awaiting .awaiting-on, .card.type-decision .awaiting-on { display: flex; }
 .awaiting-text.is-empty { color: color-mix(in srgb, var(--ochre) 60%, transparent); font-style: italic; }
 
 /* ---- Decision card: options + confirmed outcome (decision register) ---- */
 .dec-block { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--hairline); display: flex; flex-direction: column; gap: 4px; }
-.dec-outcome { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; padding: 3px 7px; border-radius: 6px;
+.dec-outcome { display: flex; align-items: center; gap: 6px; font-size: 0.64rem; padding: 3px 7px; border-radius: 6px;
   color: var(--ink); background: var(--sage-tint); border: 1px solid color-mix(in srgb, var(--sage) 40%, transparent); }
 .dec-check { color: var(--sage); font-weight: 800; }
 .dec-outcome-text { flex: 1; font-weight: 600; }
 .dec-clear { border: none; background: transparent; color: var(--ink-dim); cursor: pointer; width: 18px; height: 18px; border-radius: 50%; font-size: 0.95rem; line-height: 1; }
 .dec-clear:hover { color: var(--redline); background: var(--redline-tint); }
 .dec-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.dec-option { display: flex; align-items: center; gap: 5px; font-size: 0.8rem; color: var(--ink-soft); padding: 1px 2px; border-radius: 5px; }
+.dec-option { display: flex; align-items: center; gap: 5px; font-size: 0.64rem; color: var(--ink-soft); padding: 1px 2px; border-radius: 5px; }
 .dec-option:hover { background: var(--glass); }
 .dec-option-text { flex: 1; }
 .dec-option.is-chosen .dec-option-text { color: var(--ink); font-weight: 600; }
@@ -656,9 +656,9 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 .dec-option:hover .dec-option-del { opacity: 1; }
 .dec-option-del:hover { color: var(--redline); background: var(--redline-tint); }
 .dec-actions { display: flex; gap: 6px; }
-.dec-add, .dec-other { border: 1px dashed var(--glass-border); background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; }
+.dec-add, .dec-other { border: 1px dashed var(--glass-border); background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 0.58rem; padding: 2px 8px; border-radius: 999px; }
 .dec-add:hover, .dec-other:hover { color: var(--ink); border-color: var(--glass-bright); }
-.dec-option-input { font: inherit; font-size: 0.8rem; width: 100%; border: 1px solid var(--blue); border-radius: 5px; padding: 2px 6px; background: var(--glass-deep); color: var(--ink); }
+.dec-option-input { font: inherit; font-size: 0.64rem; width: 100%; border: 1px solid var(--blue); border-radius: 5px; padding: 2px 6px; background: var(--glass-deep); color: var(--ink); }
 
 /* A decision in Done is decided & locked: collapse to just the ✓ + outcome.
    Keyed off status + the presence of an outcome, so it holds however the card
@@ -783,10 +783,14 @@ body.hide-done .col-done .bubble { display: none; }
 .ctx-item.is-current::after { content: "✓"; color: var(--blue); }
 .ctx-item.is-disabled { color: var(--ink-dim); cursor: default; }
 .ctx-item.is-disabled:hover { background: none; }
-/* Flyout submenu (e.g. Move to section) — opens to the right of its parent item. */
+/* Flyout submenu (e.g. Move to section) — opens to the right of its parent item.
+   Positioned absolutely against the item (the menu's backdrop-filter would make a
+   fixed child resolve against the menu, not the viewport — so absolute it is). */
 .ctx-parent { position: relative; }
 .ctx-caret { color: var(--ink-dim); margin-left: 8px; }
-.ctx-submenu { max-height: 72vh; overflow-y: auto; }
+.ctx-submenu { position: absolute; left: 100%; top: -5px; margin-left: 3px; max-height: 70vh; overflow-y: auto; }
+.ctx-submenu.flip-left { left: auto; right: 100%; margin-left: 0; margin-right: 3px; }
+.ctx-submenu.flip-up { top: auto; bottom: -5px; }
 
 /* ---- Activity log drawer ---------------------------------------------- */
 .log-toggle { align-self: center; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-soft); border-radius: var(--radius-sm); padding: 5px 11px; font-size: 0.78rem; cursor: pointer; }
