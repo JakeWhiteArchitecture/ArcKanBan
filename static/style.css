@@ -328,7 +328,6 @@ a { color: var(--blue); text-decoration: none; }
 /* The logo occupies a column-1-wide slot so the job id lines up with column 2.
    (slide pad 2×40px + 5 gaps×10px = 130px; 6 fluid columns + one gap.) */
 .tb-logo-link { width: max(180px, calc((100vw - 130px) / 6 + 10px)); flex-shrink: 0; box-sizing: border-box; }
-.tb-create-btn { margin-left: 20px; }
 .tb-right { display: flex; align-items: center; gap: 6px; }
 .tb-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: none; }
@@ -971,7 +970,6 @@ body.page-decisions { padding-top: var(--tb-h); }
   .tb-center { position: static; transform: none; order: 3; flex-basis: 100%; margin-top: 4px; }
   .tb-left { margin-right: 0; gap: 14px; }
   .tb-logo-link { width: auto; }   /* single-column layout: no slot maths */
-  .tb-create-btn { margin-left: 0; }
   .nav-arrow { display: none; }     /* swipe / spine on touch */
   .field-name, .field-template { flex-basis: 100%; width: auto; }
   /* On small screens keep the header in flow (no fixed overlap) and disable the dock. */
