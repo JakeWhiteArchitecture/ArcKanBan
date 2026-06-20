@@ -59,15 +59,30 @@
         <tr class="dr-row{% if d.confirmed %} is-decided{% endif %}" data-decision-id="{{ d.id }}" data-stage="{{ d.stage }}">
           <td class="dr-c-n">{{ '%03d'|format(d.n) }}</td>
           <td class="dr-c-desc">{{ d.title }}</td>
-          <td class="dr-c-by">{% if d.assignee %}{{ d.assignee }}{% else %}<span class="dr-empty">— not set</span>{% endif %}</td>
+          <td class="dr-c-by">
+            <div class="dr-by-edit" data-decision-id="{{ d.id }}" data-action="edit-dr-assignee" role="button" tabindex="0"
+                 title="Click to set the decision-maker">{% if d.assignee %}{{ d.assignee }}{% else %}<span class="dr-empty">— not set</span>{% endif %}</div>
+          </td>
           <td class="dr-c-out">{% if d.outcome %}<span class="dr-outcome">✓ {{ d.outcome }}</span>{% else %}<span class="dr-pending">pending</span>{% endif %}</td>
           <td class="dr-c-opts">
             {% if d.confirmed %}
               {% set dismissed = d.options | reject('equalto', d.outcome) | list %}
               {% if dismissed %}<ul class="dr-dismissed">{% for o in dismissed %}<li>{{ o }}</li>{% endfor %}</ul>{% else %}<span class="dr-empty">—</span>{% endif %}
-            {% elif d.options %}
-              <ul class="dr-optlist">{% for o in d.options %}<li>{{ o }}</li>{% endfor %}</ul>
-            {% else %}<span class="dr-empty">—</span>{% endif %}
+            {% else %}
+              <div class="dr-confirm">
+                {% if d.options %}
+                <ul class="dr-optlist dr-optlist-confirm">
+                  {% for o in d.options %}
+                  <li><button type="button" class="dr-opt-confirm" data-action="dr-confirm" data-text="{{ o }}" title="Confirm “{{ o }}”" aria-label="Confirm “{{ o }}”">✓</button><span class="dr-opt-text">{{ o }}</span></li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
+                <form class="dr-other" data-action="dr-confirm-other">
+                  <input type="text" name="other" placeholder="{% if d.options %}Other…{% else %}confirm an outcome…{% endif %}" autocomplete="off" aria-label="Confirm a typed outcome">
+                  <button type="submit" class="dr-opt-confirm" title="Confirm this outcome" aria-label="Confirm this outcome">✓</button>
+                </form>
+              </div>
+            {% endif %}
           </td>
           <td class="dr-c-date">{{ d.decided_day or '—' }}</td>
           <td class="dr-c-stage"><span class="dr-stage" data-stage="{{ d.stage }}" data-label="{{ d.stage_label }}" style="--c: var(--riba-{{ d.stage }})">{{ d.stage }}</span><span class="dr-stage-name">{{ d.stage_name }}</span></td>
@@ -90,6 +105,7 @@
     </table>
     <p class="dr-none" hidden>No decisions in this stage.</p>
   </div>
+  <datalist id="dr-assignee-suggestions">{% for a in assignees %}<option value="{{ a }}"></option>{% endfor %}</datalist>
   {% else %}
   <p class="empty">No decisions yet — add a <strong>Decision</strong> task on the board and it'll appear here.</p>
   {% endif %}

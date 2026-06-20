@@ -14,7 +14,6 @@
       <span class="tb-cell tb-name editable" data-action="edit-project-name" role="button"
             tabindex="0" title="Edit project name">{{ project.name }}</span>
     </div>
-    <button type="button" class="tb-btn tb-search-btn" data-action="toggle-search" aria-label="Search tasks" title="Search tasks (press /)">⌕</button>
   </div>
 
   <div class="tb-center">
@@ -36,6 +35,7 @@
     <button type="button" class="tb-btn" data-action="toggle-sections" title="Sections of work">Sections</button>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
     <button type="button" class="tb-btn" id="filter-btn" data-action="toggle-filters" title="Filters">Filter ▾</button>
+    <button type="button" class="tb-btn tb-icon-btn tb-search-btn" data-action="toggle-search" aria-label="Search tasks" title="Search tasks (press /)">⌕</button>
     <button type="button" class="tb-btn tb-icon-btn" data-action="open-email" aria-label="Email a progress report" title="Email a progress report">✉</button>
     <button type="button" class="tb-btn" data-action="toggle-log" title="Activity log">Log</button>
     <button type="button" class="tb-btn" data-action="toggle-more" aria-label="More actions" title="More">⋯</button>
