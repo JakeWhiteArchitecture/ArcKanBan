@@ -34,7 +34,7 @@
     </form>
   </section>
 
-  {% macro project_card(p, riba) %}
+  {% macro project_card(p, riba, today) %}
           <li class="project-card{% if p.archived %} is-archived{% endif %}">
             <a class="project-open" href="{{ url_for('board', project_uid=p.uid) }}">
               <span class="job-no">{{ p.number or '—' }}</span>
@@ -88,10 +88,31 @@
                           action="{{ url_for('unarchive_project', project_uid=p.uid) if p.archived else url_for('archive_project', project_uid=p.uid) }}">
                       <button type="submit" class="config-item config-archive">{{ 'Unarchive (restore to live)' if p.archived else 'Archive project' }}</button>
                     </form>
-                    <form class="config-danger" method="post" action="{{ url_for('delete_project', project_uid=p.uid) }}"
-                          onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks? This cannot be undone.');">
-                      <button type="submit" class="config-del">Delete project</button>
-                    </form>
+                    <div class="config-subhead">Backdate a decision</div>
+                    {% if p.decisions %}
+                      <div class="backdate" data-project-uid="{{ p.uid }}">
+                        <select class="backdate-pick" aria-label="Decision to date">
+                          {% for d in p.decisions %}<option value="{{ d.id }}" data-ymd="{{ d.ymd }}">{{ d.title }} — {{ d.day }}</option>{% endfor %}
+                        </select>
+                        <div class="backdate-row">
+                          <input type="date" class="backdate-date" aria-label="Decision date" value="{{ p.decisions[0].ymd }}" max="{{ today }}">
+                          <button type="button" class="btn-quiet btn-sm backdate-set">Set date</button>
+                        </div>
+                        <span class="backdate-note" aria-live="polite"></span>
+                      </div>
+                    {% else %}
+                      <p class="config-muted">No confirmed decisions yet.</p>
+                    {% endif %}
+                    <div class="config-danger">
+                      <form method="post" action="{{ url_for('reset_log', project_uid=p.uid) }}"
+                            onsubmit="return confirm('Reset the activity log for “{{ p.name }}”? The audit trail is cleared — tasks and decisions stay. This cannot be undone.');">
+                        <button type="submit" class="config-del config-reset">Reset activity log</button>
+                      </form>
+                      <form method="post" action="{{ url_for('delete_project', project_uid=p.uid) }}"
+                            onsubmit="return confirm('Delete “{{ p.name }}” and all its tasks? This cannot be undone.');">
+                        <button type="submit" class="config-del">Delete project</button>
+                      </form>
+                    </div>
                   </div>
                 </details>
               </span>
@@ -103,7 +124,7 @@
     <h2 id="projects-h" class="visually-hidden">Projects</h2>
     {% if projects %}
       <ul class="project-grid">
-        {% for p in projects %}{{ project_card(p, riba) }}{% endfor %}
+        {% for p in projects %}{{ project_card(p, riba, today) }}{% endfor %}
       </ul>
     {% elif not archived_projects %}
       <p class="empty">No projects yet — create one above to lay out its RIBA stages.</p>
@@ -113,7 +134,7 @@
       <section class="archived-section" aria-labelledby="archived-h">
         <h2 id="archived-h" class="archived-head">Archived <span class="archived-count">{{ archived_projects|length }}</span></h2>
         <ul class="project-grid">
-          {% for p in archived_projects %}{{ project_card(p, riba) }}{% endfor %}
+          {% for p in archived_projects %}{{ project_card(p, riba, today) }}{% endfor %}
         </ul>
       </section>
     {% endif %}

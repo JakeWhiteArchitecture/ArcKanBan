@@ -40,6 +40,33 @@
     if (cb === b && !b.checked && c) c.checked = false;   // unticking b drops c
   });
 
+  // Backdate tool (Config): set a confirmed decision's date — for recording
+  // older decisions on live projects. Updates inline; the Config stays open.
+  document.querySelectorAll(".backdate").forEach(function (box) {
+    var pick = box.querySelector(".backdate-pick"), date = box.querySelector(".backdate-date");
+    var setBtn = box.querySelector(".backdate-set"), note = box.querySelector(".backdate-note");
+    if (!pick || !date || !setBtn) return;
+    function sync() { var o = pick.options[pick.selectedIndex]; if (o && o.dataset.ymd) date.value = o.dataset.ymd; }
+    pick.addEventListener("change", function () { sync(); note.textContent = ""; });
+    setBtn.addEventListener("click", async function () {
+      var id = pick.value, d = date.value;
+      if (!id || !d) { note.textContent = "Pick a decision and a date."; return; }
+      setBtn.disabled = true; note.textContent = "Saving…";
+      var res, json = {};
+      try {
+        res = await fetch("/api/tasks/" + id + "/decided-date", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date: d }),
+        });
+      } catch (e) { note.textContent = "Couldn't reach the app."; setBtn.disabled = false; return; }
+      try { json = await res.json(); } catch (e) {}
+      setBtn.disabled = false;
+      if (!res.ok || !json.ok) { note.textContent = (json && json.error) || "Couldn't set the date."; return; }
+      note.textContent = "✓ Dated " + json.decided_day;
+      var o = pick.options[pick.selectedIndex];   // keep the dropdown label + prefill current
+      if (o) { o.dataset.ymd = json.ymd; o.textContent = o.textContent.replace(/\s+—\s+.*$/, "") + " — " + json.decided_day; }
+    });
+  });
+
   var select = document.getElementById("template-select");
   var fileInput = document.getElementById("tpl-file");
   var modal = document.getElementById("upload-modal");

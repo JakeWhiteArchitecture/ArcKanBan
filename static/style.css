@@ -246,9 +246,22 @@ a { color: var(--blue); text-decoration: none; }
 .config-item:hover { background: var(--glass); }
 .config-arch { margin: 0; }
 .config-archive { width: 100%; text-align: left; border: none; background: transparent; cursor: pointer; font: inherit; font-size: 0.84rem; }
-.config-danger { margin: 0; border-top: 1px solid var(--hairline); padding-top: 7px; }
+.config-danger { margin-top: 7px; border-top: 1px solid var(--hairline); padding-top: 7px; display: flex; flex-direction: column; gap: 1px; }
+.config-danger form { margin: 0; }
 .config-del { width: 100%; text-align: left; padding: 6px 8px; border: none; background: transparent; color: var(--ink-dim); border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
 .config-del:hover { color: var(--redline); background: var(--redline-tint); }
+.config-reset:hover { color: var(--amber, #d9a441); background: var(--amber-tint, rgba(217,164,65,0.12)); }
+.config-muted { color: var(--ink-dim); font-size: 0.78rem; font-style: italic; margin: 2px 0 0; }
+
+/* Backdate-a-decision tool (Config) */
+.backdate { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
+.backdate-pick { width: 100%; font: inherit; font-size: 0.8rem; padding: 4px 6px; border-radius: 6px;
+  background: var(--glass-deep); color: var(--ink); border: 1px solid var(--glass-border); }
+.backdate-row { display: flex; gap: 6px; }
+.backdate-date { flex: 1; min-width: 0; font: inherit; font-size: 0.8rem; padding: 3px 6px; border-radius: 6px;
+  background: var(--glass-deep); color: var(--ink); border: 1px solid var(--glass-border); color-scheme: dark; }
+.backdate-set { flex-shrink: 0; }
+.backdate-note { font-size: 0.74rem; color: var(--ink-dim); min-height: 1em; }
 
 /* Modal (template uploader name prompt) */
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
@@ -664,7 +677,9 @@ body.dock-mode .tb-collapse .chevron { transform: rotate(180deg); }
 /* In Done the revealed options are a read-only record — no confirming, adding or deleting. */
 .card[data-type="decision"][data-status="done"] .dec-option .dec-confirm,
 .card[data-type="decision"][data-status="done"] .dec-option .dec-option-del { display: none; }
+/* A confirmed decision's options are a read-only record — no click affordance. */
 .card[data-type="decision"][data-status="done"] .dec-option { cursor: default; }
+.card[data-type="decision"][data-status="done"] .dec-option:hover { background: transparent; }
 .ctx-sep { height: 1px; background: var(--hairline); margin: 4px 6px; }
 
 .step { width: 22px; height: 20px; border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink); border-radius: 5px; cursor: pointer; line-height: 1; }
@@ -868,6 +883,23 @@ body.page-decisions { padding-top: var(--tb-h); }
 .dr-rationale { cursor: text; color: var(--ink-soft); white-space: pre-wrap; line-height: 1.45; border-radius: 6px; padding: 3px 5px; margin: -3px -5px; min-height: 1.3em; }
 .dr-rationale:hover { background: var(--glass); }
 .dr-rationale-input { width: 100%; font: inherit; font-size: 0.84rem; background: var(--glass-deep); color: var(--ink); border: 1px solid var(--blue); border-radius: 6px; padding: 5px 7px; resize: vertical; }
+
+/* Editable "Decision by" (click to set the decision-maker, role autocomplete) */
+.dr-by-edit { cursor: pointer; border-radius: 6px; padding: 3px 5px; margin: -3px -5px; min-height: 1.3em; }
+.dr-by-edit:hover { background: var(--glass); }
+.dr-by-input { width: 100%; font: inherit; font-size: 0.84rem; background: var(--glass-deep); color: var(--ink); border: 1px solid var(--blue); border-radius: 6px; padding: 3px 6px; }
+
+/* Confirm a decision inline (pending rows): ✓ per option + a typed "Other…" */
+.dr-confirm { display: flex; flex-direction: column; gap: 4px; }
+.dr-optlist-confirm li { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
+.dr-opt-text { flex: 1; }
+.dr-opt-confirm { flex-shrink: 0; width: 19px; height: 19px; padding: 0; border-radius: 5px; line-height: 1; font-size: 0.72rem;
+  border: 1px solid var(--glass-border); background: var(--glass); color: var(--ink-dim); cursor: pointer; }
+.dr-opt-confirm:hover { color: var(--sage); border-color: var(--sage); background: var(--sage-tint, rgba(127,176,105,0.12)); }
+.dr-other { display: flex; align-items: center; gap: 6px; }
+.dr-other input { flex: 1; min-width: 0; font: inherit; font-size: 0.8rem; padding: 3px 6px; border-radius: 5px;
+  background: var(--glass-deep); color: var(--ink); border: 1px solid var(--glass-border); }
+.dr-other input:focus { border-color: var(--blue); outline: none; }
 
 /* Centred modal (decision rationale capture) */
 .modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(4, 6, 12, 0.62); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: pop-in 140ms ease; }
