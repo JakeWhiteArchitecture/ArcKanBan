@@ -209,6 +209,10 @@
       alert("Set the decision-maker (“Decision by”) before confirming.");
       if (by) startAssigneeEdit(by); return;
     }
+    // If the maker is still being typed inline, persist it first and wait — the
+    // confirm endpoint requires awaiting_on to be saved, so confirming before the
+    // blur-triggered save lands would race it and be rejected.
+    if (input) await saveAssignee(row.dataset.decisionId, maker, by);
     var res, json = {};
     try {
       res = await fetch("/api/tasks/" + row.dataset.decisionId + "/confirm", {

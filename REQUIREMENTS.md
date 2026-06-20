@@ -480,6 +480,11 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 65. **Confirmed decisions are read-only in the card menu** — a decided decision's right-click menu greys the options (no switching to an alternative) and offers only **Clear decision**; the submenu is positioned `absolute` against its parent item (the menu's `backdrop-filter` would otherwise capture a `fixed` child).
 66. **Register column order + density** — **Options considered** now sits left of **Outcome** (you pick, then see the result), and task-card text is reduced ~20% for density.
 
+### v0.13 fixes (review follow-ups)
+67. **Confirm-from-register no longer races the inline decision-maker** — `confirmDecision` now persists an in-progress "Decision by" edit (awaiting its save) before calling `/confirm`, so confirming immediately after typing a maker can't be rejected by the server's "set the decision-maker first" guard.
+68. **Sub-stage parts capped at `MAX_PARTS` (3) end-to-end** — `project_splits` clamps any stored value to 3 (the removed board menu once allowed up to 6), and a one-time `init_db` migration folds legacy 4–6-part splits down to 3, moving any stranded tasks onto the new last part so nothing is hidden.
+69. **Split / merge is logged again** — changing a stage's parts in Config records a *"split into sub-stages"* / *"merged sub-stages"* event (restoring the audit entry the removed `/split` route used to write).
+
 ---
 
 ## 12. Backlog (outstanding to implement)
