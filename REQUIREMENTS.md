@@ -484,6 +484,7 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 67. **Confirm-from-register no longer races the inline decision-maker** — `confirmDecision` now persists an in-progress "Decision by" edit (awaiting its save) before calling `/confirm`, so confirming immediately after typing a maker can't be rejected by the server's "set the decision-maker first" guard.
 68. **Sub-stage parts capped at `MAX_PARTS` (3) end-to-end** — `project_splits` clamps any stored value to 3 (the removed board menu once allowed up to 6), and a one-time `init_db` migration folds legacy 4–6-part splits down to 3, moving any stranded tasks onto the new last part so nothing is hidden.
 69. **Split / merge is logged again** — changing a stage's parts in Config records a *"split into sub-stages"* / *"merged sub-stages"* event (restoring the audit entry the removed `/split` route used to write).
+70. **Ponytail cleanup (no behaviour change)** — the register's two inline editors share one `editInline` + `saveField`; `index()` loads the Config backdating decisions in a single grouped query (was one per project); splits persistence is a single `persist_splits()` helper; paired card font-sizes use `--card-*-fs` CSS vars. (The audit's "merge the two `confirmDecision`s" was left as-is — they share ~3 lines but use different fetch infra, so merging would add a module, not delete code.)
 
 ---
 
