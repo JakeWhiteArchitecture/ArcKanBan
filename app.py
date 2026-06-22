@@ -1,5 +1,5 @@
 """
-ArcKanban — a project tracker for a sole-trader architectural practice.
+ArcKanban — a project tracker for a micro-business architectural practice.
 
 Single-file Flask app over SQLite. Local-first, no cloud, no build step.
 See REQUIREMENTS.md for the full specification. This module covers projects,
