@@ -711,9 +711,15 @@ def mini_spine(current_stage):
 
 @app.before_request
 def block_cross_origin_writes():
+    """Refuse cross-site writes — cheap CSRF insurance for a localhost service.
+    Block a mismatched Origin, and (defence in depth) a browser Sec-Fetch-Site of
+    cross-site/same-site. A request with neither header is a non-browser client
+    (curl, a local script) and is still allowed."""
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         origin = request.headers.get("Origin")
         if origin and urlparse(origin).netloc != request.host:
+            return ("Cross-origin request refused.", 403)
+        if request.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site"):
             return ("Cross-origin request refused.", 403)
     return None
 
@@ -1840,4 +1846,5 @@ def api_delete_task(task_id):
 
 if __name__ == "__main__":
     init_db()
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # Reloader/debugger off by default; opt in with ARCKANBAN_DEBUG=1 for local dev.
+    app.run(host="127.0.0.1", port=5000, debug=os.environ.get("ARCKANBAN_DEBUG") == "1")

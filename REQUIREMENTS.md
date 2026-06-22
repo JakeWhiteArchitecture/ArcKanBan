@@ -336,7 +336,7 @@ Positions are not global. On every drop/step, **renumber the affected list `0,1,
 - **Backend:** Python 3, Flask, Jinja templates.
 - **Database:** SQLite, single file (`arckanban.db`) in the app folder, created on first run.
 - **Frontend:** vanilla JS, no framework, no bundler. **Drag uses the browser's native drag-and-drop** — no library, no CDN (the CDNs are blocked in the build environment anyway, and native keeps it sovereign). SortableJS may be vendored later for the nesting gesture + touch support.
-- **Persistence of drag/steps:** small JSON endpoints (`fetch`) that update status / position / section_id / parent_id / urgent / type and return ok; no page reload. **Mutating endpoints check the `Origin` header (same-origin)** — a localhost service is otherwise reachable by any page in the user's browser; cheap insurance, on-brand for a sovereign tool.
+- **Persistence of drag/steps:** small JSON endpoints (`fetch`) that update status / position / section_id / parent_id / urgent / type and return ok; no page reload. **Mutating endpoints refuse cross-site writes** — a mismatched `Origin`, or a browser `Sec-Fetch-Site` of `cross-site`/`same-site`, is 403'd (a request with neither header is a non-browser local client and is allowed). A localhost service is otherwise reachable by any page in the user's browser; cheap insurance, on-brand for a sovereign tool.
 - **Run:** `pip install flask` → `python app.py` → `http://127.0.0.1:5000`.
 
 ---
@@ -485,6 +485,7 @@ No cloud sync, multi-user, or auth (single user; last-write-wins, refresh to rec
 68. **Sub-stage parts capped at `MAX_PARTS` (3) end-to-end** — `project_splits` clamps any stored value to 3 (the removed board menu once allowed up to 6), and a one-time `init_db` migration folds legacy 4–6-part splits down to 3, moving any stranded tasks onto the new last part so nothing is hidden.
 69. **Split / merge is logged again** — changing a stage's parts in Config records a *"split into sub-stages"* / *"merged sub-stages"* event (restoring the audit entry the removed `/split` route used to write).
 70. **Ponytail cleanup (no behaviour change)** — the register's two inline editors share one `editInline` + `saveField`; `index()` loads the Config backdating decisions in a single grouped query (was one per project); splits persistence is a single `persist_splits()` helper; paired card font-sizes use `--card-*-fs` CSS vars. (The audit's "merge the two `confirmDecision`s" was left as-is — they share ~3 lines but use different fetch infra, so merging would add a module, not delete code.)
+71. **Security hardening (from the security review)** — the cross-site write guard now also 403s a browser `Sec-Fetch-Site` of `cross-site`/`same-site` (defence in depth atop the `Origin` check; a no-header local client is still allowed); and the dev-server debugger is off unless `ARCKANBAN_DEBUG=1` (production `serve.py`/Waitress was never affected).
 
 ---
 
