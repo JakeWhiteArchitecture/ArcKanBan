@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Task list — {{ project.number }} {{ project.name }}{% endblock %}
+{% block body_class %}page-tasklist{% endblock %}
+
+{% block content %}
+<header class="titleblock" id="titleblock">
+  <div class="tb-left">
+    <a class="tb-logo-link" href="{{ url_for('index') }}" title="Register" aria-label="ArcKanBan — back to register">
+      <img class="tb-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="ArcKanBan">
+    </a>
+    <div class="tb-id">
+      <span class="tb-cell tb-job-no{% if not project.number %} is-empty{% endif %}">{{ project.number or 'no.' }}</span>
+      <span class="tb-cell tb-name">{{ project.name }}</span>
+    </div>
+  </div>
+  <div class="tb-center"><div class="tb-stage-name">Task list</div></div>
+  <div class="tb-right">
+    <a class="tb-btn" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
+    <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
+    <a class="tb-btn tb-icon-btn" href="{{ url_for('email_task_list', project_uid=project.uid) }}" download
+       title="Email this task list" aria-label="Email this task list">✉</a>
+  </div>
+</header>
+
+<main class="register-page tl-page">
+  <h1 class="dr-page-title">Task list <span class="tl-total">{{ total }}</span></h1>
+  {% if segments %}
+    {% for seg in segments %}
+    <details class="tl-seg" open>
+      <summary class="tl-sum status-{{ seg.status }}">{{ seg.label }}<span class="tl-count">{{ seg.count }}</span></summary>
+      <ul class="tl-list">
+        {% for t in seg.tasks %}
+        <li class="tl-task type-{{ t.type }}{% if t.urgent %} is-urgent{% endif %}">
+          <span class="tl-stage" style="--c: var(--riba-{{ t.stage }})">{{ t.stage_label }}</span>
+          <span class="tl-title">{{ t.title }}</span>
+          {% if t.assignee %}<span class="tl-who">{{ t.assignee }}</span>{% endif %}
+          {% if t.note %}<span class="tl-note">{{ t.note }}</span>{% endif %}
+          <span class="tl-type">{{ t.type_label }}</span>
+          {% if t.urgent %}<span class="tl-urgent">urgent</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endfor %}
+  {% else %}
+    <p class="empty">No tasks yet — add some on the board.</p>
+  {% endif %}
+</main>
+{% endblock %}
