@@ -83,6 +83,7 @@
                     <div class="config-links">
                       <a class="config-item" href="{{ url_for('export_template', project_uid=p.uid) }}" download>Save as template</a>
                       <a class="config-item" href="{{ url_for('decisions_page', project_uid=p.uid) }}">Decision register</a>
+                      <a class="config-item" href="{{ url_for('task_list_page', project_uid=p.uid) }}">Task list</a>
                     </div>
                     <form class="config-arch" method="post"
                           action="{{ url_for('unarchive_project', project_uid=p.uid) if p.archived else url_for('archive_project', project_uid=p.uid) }}">
