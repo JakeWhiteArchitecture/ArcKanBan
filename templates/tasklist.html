@@ -13,7 +13,7 @@
       <span class="tb-cell tb-name">{{ project.name }}</span>
     </div>
   </div>
-  <div class="tb-center"><div class="tb-stage-name">Task list</div></div>
+  <div class="tb-center"><div class="tb-stage-name">Stage {{ stage }} · {{ stage_name }}</div></div>
   <div class="tb-right">
     <a class="tb-btn" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
@@ -30,9 +30,9 @@
       <summary class="tl-sum status-{{ seg.status }}">{{ seg.label }}<span class="tl-count">{{ seg.count }}</span></summary>
       <ul class="tl-list">
         {% for t in seg.tasks %}
-        <li class="tl-task type-{{ t.type }}{% if t.urgent %} is-urgent{% endif %}">
-          <span class="tl-stage" style="--c: var(--riba-{{ t.stage }})">{{ t.stage_label }}</span>
+        <li class="tl-task type-{{ t.type }}{% if t.urgent %} is-urgent{% endif %}{% if t.done %} is-done{% endif %}">
           <span class="tl-title">{{ t.title }}</span>
+          {% if t.section %}<span class="tl-section">{{ t.section }}</span>{% endif %}
           {% if t.assignee %}<span class="tl-who">{{ t.assignee }}</span>{% endif %}
           {% if t.note %}<span class="tl-note">{{ t.note }}</span>{% endif %}
           <span class="tl-type">{{ t.type_label }}</span>
