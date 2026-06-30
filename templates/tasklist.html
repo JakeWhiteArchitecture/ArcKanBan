@@ -3,7 +3,8 @@
 {% block body_class %}page-tasklist{% endblock %}
 
 {% block content %}
-<header class="titleblock" id="titleblock">
+<header class="titleblock" id="titleblock"
+        data-project-uid="{{ project.uid }}" data-current-stage="{{ project.current_stage }}" data-stages="{{ enabled|join(',') }}">
   <div class="tb-left">
     <a class="tb-logo-link" href="{{ url_for('index') }}" title="Register" aria-label="ArcKanBan — back to register">
       <img class="tb-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="ArcKanBan">
@@ -13,27 +14,54 @@
       <span class="tb-cell tb-name">{{ project.name }}</span>
     </div>
   </div>
-  <div class="tb-center"><div class="tb-stage-name">Stage {{ stage }} · {{ stage_name }}</div></div>
+
+  <div class="tb-center">
+    <div class="tb-stage">
+      <button type="button" class="tb-pager prev" data-action="tl-prev" aria-label="Previous stage" title="Previous stage">‹</button>
+      <div class="tb-stage-id">
+        <span class="tb-stage-kicker">RIBA Stage</span>
+        <span class="tb-stage-num">{{ project.current_stage }}</span>
+      </div>
+      <button type="button" class="tb-pager next" data-action="tl-next" aria-label="Next stage" title="Next stage">›</button>
+    </div>
+    <div class="tb-stage-name">{{ riba[project.current_stage] }}</div>
+  </div>
+
   <div class="tb-right">
     <a class="tb-btn" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
+    <button type="button" class="tb-btn" data-action="tl-toggle-all">Show all stages</button>
+    <button type="button" class="tb-btn" id="tl-filter-btn" data-action="tl-toggle-filters" title="Filters">Filter ▾</button>
     <a class="tb-btn tb-icon-btn" href="{{ url_for('email_task_list', project_uid=project.uid) }}" download
        title="Email this task list" aria-label="Email this task list">✉</a>
   </div>
 </header>
 
+<div class="tb-pop filter-pop" id="tl-filter-pop" hidden aria-label="Filters">
+  <div class="pop-head">Filters</div>
+  <button type="button" class="filter-btn" data-filter="urgent" aria-pressed="false">Urgent</button>
+  <button type="button" class="filter-btn" data-filter="statutory" aria-pressed="false">Statutory</button>
+  <button type="button" class="filter-btn" data-filter="done" aria-pressed="false">Hide done</button>
+</div>
+<datalist id="assignee-suggestions">{% for a in assignees %}<option value="{{ a }}"></option>{% endfor %}</datalist>
+
 <main class="register-page tl-page">
   <h1 class="dr-page-title">Task list <span class="tl-total">{{ total }}</span></h1>
   {% if segments %}
     {% for seg in segments %}
-    <details class="tl-seg" open>
+    <details class="tl-seg seg-{{ seg.status }}" data-status="{{ seg.status }}" open>
       <summary class="tl-sum status-{{ seg.status }}">{{ seg.label }}<span class="tl-count">{{ seg.count }}</span></summary>
-      <ul class="tl-list">
+      <ul class="tl-list" data-status="{{ seg.status }}">
         {% for t in seg.tasks %}
-        <li class="tl-task type-{{ t.type }}{% if t.urgent %} is-urgent{% endif %}{% if t.done %} is-done{% endif %}">
+        <li class="tl-task type-{{ t.type }}{% if t.urgent %} is-urgent{% endif %}{% if t.done %} is-done{% endif %}"
+            draggable="true" data-task-id="{{ t.id }}" data-stage="{{ t.stage }}" data-substage="{{ t.substage }}"
+            data-section-id="{{ t.section_id if t.section_id is not none else '' }}" data-status="{{ seg.status }}"
+            data-type="{{ t.type }}"{% if t.type == 'decision' %} data-options='{{ t.options|tojson }}' data-outcome="{{ t.outcome }}"{% endif %}>
+          <input type="checkbox" class="tl-check" {% if t.done %}checked{% endif %} aria-label="Mark done" title="Tick to mark done">
+          <span class="tl-stage" style="--c: var(--riba-{{ t.stage }})">{{ t.stage_label }}</span>
           <span class="tl-title">{{ t.title }}</span>
           {% if t.section %}<span class="tl-section">{{ t.section }}</span>{% endif %}
-          {% if t.assignee %}<span class="tl-who">{{ t.assignee }}</span>{% endif %}
+          <span class="tl-who"{% if not t.assignee %} hidden{% endif %}>{{ t.assignee }}</span>
           {% if t.note %}<span class="tl-note">{{ t.note }}</span>{% endif %}
           <span class="tl-type">{{ t.type_label }}</span>
           {% if t.urgent %}<span class="tl-urgent">urgent</span>{% endif %}
@@ -42,8 +70,13 @@
       </ul>
     </details>
     {% endfor %}
+    <p class="tl-none empty" hidden>No tasks in this stage.</p>
   {% else %}
     <p class="empty">No tasks yet — add some on the board.</p>
   {% endif %}
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='tasklist.js') }}"></script>
 {% endblock %}
