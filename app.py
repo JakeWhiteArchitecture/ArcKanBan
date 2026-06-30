@@ -1117,30 +1117,41 @@ def build_email_schedule(db, project_id, stage_indices, splits=None):
     return out
 
 
-def build_task_list(db, project_id, splits=None, stages=None):
-    """Whole-project tasks grouped into status segments, decided-work first
-    (done → awaiting → in progress → to do → upcoming → goals). Each task notes
-    its stage (and sub-stage when split). Feeds the list view and its email.
-    Empty segments are dropped. `stages` limits to those in scope (None = all)."""
+def build_task_list(db, project_id, splits=None, stages=None, keep_empty=False):
+    """Tasks grouped into status segments, decided-work first (done → awaiting →
+    in progress → to do → upcoming → goals). `stages` limits to those stage indices
+    — the page passes the in-scope stages (so its pager has stages to walk); the
+    email passes just the current stage. Each task carries its stage (+ label) and
+    section of work; decisions also carry their options for the right-click confirm
+    menu. Empty segments are dropped."""
     splits = splits or {}
     allow = set(stages) if stages is not None else None
+    secs = {s["id"]: s["title"] for s in db.execute(
+        "SELECT id, title FROM sections WHERE project_id=?", (project_id,))}
     seg = {}
     for r in db.execute(
-        "SELECT title, type, urgent, status, stage, substage, awaiting_on, outcome FROM tasks "
+        "SELECT id, title, type, urgent, status, stage, substage, section_id, awaiting_on, outcome FROM tasks "
         "WHERE project_id=? AND parent_id IS NULL ORDER BY stage, substage, position, id", (project_id,)):
         if allow is not None and r["stage"] not in allow:
             continue
-        note = ""
+        note, options = "", []
         if r["type"] == "decision":
             note = ("Decided: " + r["outcome"].strip()) if (r["outcome"] or "").strip() else "Pending"
+            options = [o["text"] for o in db.execute(
+                "SELECT text FROM decision_options WHERE task_id=? ORDER BY position, id", (r["id"],))]
+        parts = parts_for(splits, r["stage"])
+        sub = part_label(r["stage"], r["substage"] or 0, parts) if parts > 1 else ""
+        section = " · ".join(x for x in (sub, secs.get(r["section_id"], "")) if x)
         seg.setdefault(r["status"], []).append({
-            "title": r["title"], "type": r["type"], "type_label": TYPE_LABELS.get(r["type"], r["type"]),
-            "urgent": bool(r["urgent"]), "stage": r["stage"],
-            "stage_label": part_label(r["stage"], r["substage"] or 0, parts_for(splits, r["stage"])),
-            "assignee": r["awaiting_on"] or "", "note": note,
+            "id": r["id"], "title": r["title"], "type": r["type"], "type_label": TYPE_LABELS.get(r["type"], r["type"]),
+            "urgent": bool(r["urgent"]), "assignee": r["awaiting_on"] or "", "note": note,
+            "section": section, "done": r["status"] == "done",
+            "stage": r["stage"], "substage": r["substage"] or 0, "section_id": r["section_id"],
+            "stage_label": part_label(r["stage"], r["substage"] or 0, parts),
+            "outcome": (r["outcome"] or "").strip(), "options": options,
         })
-    return [{"status": s, "label": STATUS_LABELS[s], "count": len(seg[s]), "tasks": seg[s]}
-            for s in reversed(STATUSES) if s in seg]
+    return [{"status": s, "label": STATUS_LABELS[s], "count": len(seg.get(s, [])), "tasks": seg.get(s, [])}
+            for s in reversed(STATUSES) if keep_empty or s in seg]
 
 
 def _eml_response(subject, html, filename):
@@ -1182,15 +1193,18 @@ def email_schedule(project_uid):
 
 @app.route("/projects/<project_uid>/list")
 def task_list_page(project_uid):
-    """A flat task-list view: the project's tasks grouped into collapsible status
-    segments, vertically down the page — a second lens on the same data as the board."""
+    """A flat task-list view: the in-scope tasks grouped into collapsible status
+    segments, vertically down the page — a second lens on the same data as the
+    board. Interactive (drag, tick-to-done, stage pager, filters, decision menu)."""
     db = get_db()
     p = get_project_by_uid_or_404(db, project_uid)
-    segments = build_task_list(db, p["id"], project_splits(p), sorted(enabled_stages(p)))
+    enabled = sorted(enabled_stages(p))
+    segments = build_task_list(db, p["id"], project_splits(p), enabled, keep_empty=True)
     return render_template(
         "tasklist.html",
-        project={"uid": p["uid"], "number": p["number"] or "", "name": p["name"]},
-        segments=segments, total=sum(s["count"] for s in segments), riba=RIBA_STAGES)
+        project={"uid": p["uid"], "number": p["number"] or "", "name": p["name"], "current_stage": p["current_stage"]},
+        segments=segments, total=sum(s["count"] for s in segments),
+        enabled=enabled, riba=RIBA_STAGES, assignees=[r["name"] for r in project_roles(db, p["id"])])
 
 
 @app.route("/projects/<project_uid>/list.eml")
@@ -1200,11 +1214,13 @@ def email_task_list(project_uid):
     expanded elsewhere)."""
     db = get_db()
     p = get_project_by_uid_or_404(db, project_uid)
+    stage = p["current_stage"]
     subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
-    segments = build_task_list(db, p["id"], project_splits(p), sorted(enabled_stages(p)))
+    segments = build_task_list(db, p["id"], project_splits(p), [stage])
     html = render_template("email_tasklist.html", subtitle=subtitle, date=fmt_day(now_iso()),
-                           segments=segments, riba=RIBA_STAGES)
-    return _eml_response("%s — Task list" % subtitle, html, (_slugify(subtitle) or "tasks") + "-tasklist.eml")
+                           segments=segments, stage=stage, stage_name=RIBA_STAGES[stage])
+    return _eml_response("%s — Task list · Stage %d" % (subtitle, stage), html,
+                         (_slugify(subtitle) or "tasks") + "-tasklist.eml")
 
 
 @app.route("/projects/<project_uid>/scope", methods=["POST"])

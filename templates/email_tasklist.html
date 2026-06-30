@@ -6,39 +6,40 @@
   body { font-family: Arial, Helvetica, sans-serif; color: #222; margin: 0; padding: 24px; background: #ffffff; }
   .em-title { font-size: 20px; font-weight: 700; margin: 0 0 2px; }
   .em-sub { font-size: 13px; color: #666; margin: 0 0 6px; }
-  .em-hint { font-size: 11px; color: #999; margin: 0 0 16px; }
-  details.em-seg { margin: 0 0 12px; border: 1px solid #d8d8d8; border-radius: 6px; overflow: hidden; }
-  summary.em-sum { cursor: pointer; list-style: none; padding: 9px 12px; background: #e9e9e9; color: #333;
-    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .em-hint { font-size: 11px; color: #aaa; margin: 0 0 18px; }
+  details.em-seg { margin: 0 0 16px; }
+  summary.em-sum { cursor: pointer; list-style: none; padding: 9px 14px; background: #eef1f4; border-radius: 10px;
+    color: #444; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
   summary.em-sum::-webkit-details-marker { display: none; }
-  summary.em-sum::before { content: "\25B8  "; color: #888; }
-  details[open] summary.em-sum::before { content: "\25BE  "; }
-  .em-count { color: #777; font-weight: 400; }
-  table.em { width: 100%; border-collapse: collapse; font-size: 13px; }
-  table.em th { background: #f2f2f2; color: #333; text-align: left; font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.03em; padding: 6px 9px; border-top: 1px solid #d8d8d8; }
-  table.em td { padding: 6px 9px; border-top: 1px solid #e4e4e4; vertical-align: top; }
-  table.em tbody tr:nth-child(even) td { background: #f7f7f7; }
-  td.em-stage { font-family: "Courier New", monospace; font-weight: 700; color: #2a6f8f; white-space: nowrap; }
+  summary.em-sum::before { content: "\25B8\00A0\00A0"; color: #999; }
+  details[open] summary.em-sum::before { content: "\25BE\00A0\00A0"; }
+  .em-count { color: #999; font-weight: 400; }
+  table.em { width: 100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 0; }
+  table.em th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #aaa; font-weight: 700; padding: 7px 14px 4px; }
+  table.em td { padding: 7px 14px; vertical-align: top; color: #333; }
+  table.em tbody tr:nth-child(even) td { background: #f6f7f9; }
   td.em-urgent { text-align: center; color: #c0392b; font-weight: 700; }
-  td.em-note { color: #555; font-size: 12px; }
+  td.em-note { color: #777; font-size: 12px; }
+  table.em-done td { color: #9aa0a6; }
+  table.em-done td:first-child { text-decoration: line-through; }
 </style>
 </head>
 <body>
   <div class="em-title">{{ subtitle }}</div>
-  <div class="em-sub">Task list &middot; {{ date }}</div>
+  <div class="em-sub">Task list &middot; RIBA Stage {{ stage }} &mdash; {{ stage_name }} &middot; {{ date }}</div>
   <p class="em-hint">Tip: click a section heading to collapse or expand it.</p>
 
   {% for seg in segments %}
   <details class="em-seg" open>
     <summary class="em-sum">{{ seg.label }} <span class="em-count">({{ seg.count }})</span></summary>
-    <table class="em" border="1" cellspacing="0" cellpadding="6">
+    <table class="em{% if seg.status == 'done' %} em-done{% endif %}">
       <thead>
         <tr>
-          <th style="width:9%">Stage</th>
           <th>Task</th>
+          <th style="width:20%">Section</th>
           <th style="width:13%">Type</th>
-          <th style="width:16%">For</th>
+          <th style="width:15%">For</th>
           <th style="width:7%">Urgent</th>
           <th style="width:22%">Notes</th>
         </tr>
@@ -46,8 +47,8 @@
       <tbody>
         {% for t in seg.tasks %}
         <tr>
-          <td class="em-stage">{{ t.stage_label }}</td>
           <td>{{ t.title }}</td>
+          <td>{{ t.section }}</td>
           <td>{{ t.type_label }}</td>
           <td>{{ t.assignee }}</td>
           <td class="em-urgent">{% if t.urgent %}&#10003;{% endif %}</td>
@@ -58,6 +59,6 @@
     </table>
   </details>
   {% endfor %}
-  {% if not segments %}<p style="color:#999;font-style:italic">No tasks yet.</p>{% endif %}
+  {% if not segments %}<p style="color:#999;font-style:italic">No tasks in this stage.</p>{% endif %}
 </body>
 </html>
