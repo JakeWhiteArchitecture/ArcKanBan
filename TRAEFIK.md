@@ -1,77 +1,30 @@
 # Running ArcKanban behind Traefik
 
-ArcKanban serves plain HTTP on port **5000** (Waitress, via `serve.py`). Traefik sits in
-front to give it a hostname and HTTPS.
+ArcKanban serves plain HTTP on port **5000** (Waitress, via `serve.py`); Traefik sits in
+front for a hostname + HTTPS. The repo is **Podman-first** (see `Containerfile` / `DEPLOY.md`),
+so this guide is too — there's no benefit to Docker for this. (If you do run Docker, the
+same labels in §2b work via the normal Docker socket.)
 
-> ⚠️ **ArcKanban has no login** — its only protection is a same-origin check on writes. Add
-> Traefik **Basic Auth** (below) before exposing it beyond your own machine/VPN.
+> ⚠️ **ArcKanban has no login** — only a same-origin check on writes. Add Traefik
+> **Basic Auth** (below) before exposing it beyond your own machine/VPN.
 
-This guide assumes you **already run Traefik** with the Docker provider, a Let's Encrypt
-**certresolver**, and `web` (80) / `websecure` (443) entrypoints. Swap the example names
-(`kanban.example.com`, `letsencrypt`, the `traefik` network) for yours.
+Examples use `kanban.example.com`, a `letsencrypt` certresolver and `web`/`websecure`
+entrypoints — swap them for yours.
 
-## 1. Docker Compose (recommended)
+## 1. Run ArcKanban (rootless Podman)
 
-Drop this `docker-compose.yml` in the repo root (next to `Containerfile`):
-
-```yaml
-services:
-  arckanban:
-    build:
-      context: .
-      dockerfile: Containerfile     # the repo ships a Containerfile, not a Dockerfile
-    container_name: arckanban
-    restart: unless-stopped
-    networks: [traefik]             # the network Traefik watches
-    volumes:
-      - arckanban-data:/data        # keeps the SQLite DB across rebuilds
-    # No `ports:` — Traefik reaches it over the docker network.
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=traefik
-      - traefik.http.routers.arckanban.rule=Host(`kanban.example.com`)
-      - traefik.http.routers.arckanban.entrypoints=websecure
-      - traefik.http.routers.arckanban.tls.certresolver=letsencrypt
-      - traefik.http.services.arckanban.loadbalancer.server.port=5000
-      # --- Basic Auth — don't skip it, the app has no login of its own ---
-      - traefik.http.routers.arckanban.middlewares=arckanban-auth
-      - traefik.http.middlewares.arckanban-auth.basicauth.users=USER:HASH
-
-volumes:
-  arckanban-data:
-
-networks:
-  traefik:
-    external: true
-```
-
-Make the `USER:HASH` for Basic Auth and paste it into the last label:
+Exactly as in `DEPLOY.md` — published to localhost only, data on a named volume:
 
 ```bash
-htpasswd -nB jake        # prompts for a password; copy the whole "jake:$2y$..." line
+podman build -t arckanban .
+podman run -d --name arckanban --restart=unless-stopped \
+  -p 127.0.0.1:5000:5000 -v arckanban-data:/data arckanban
 ```
 
-In a Compose file you must **double every `$`** in that hash (`$` → `$$`), or it won't parse.
+## 2a. Point Traefik at it — file provider (simplest)
 
-Bring it up:
-
-```bash
-docker compose up -d --build
-```
-
-Open **https://kanban.example.com** and log in with your Basic Auth user. Done.
-
-## 2. Updating
-
-```bash
-git pull
-docker compose up -d --build     # the arckanban-data volume keeps your data
-```
-
-## 3. Not using Docker? (Traefik file provider)
-
-If you run ArcKanban directly (`ARCKANBAN_HOST=0.0.0.0 python serve.py` — see `DEPLOY.md`)
-and want Traefik to route to it, add this to your Traefik **dynamic** config file:
+Best when Traefik runs on the host (or anything that can reach `127.0.0.1:5000`). Add to
+your Traefik **dynamic** config file:
 
 ```yaml
 http:
@@ -86,21 +39,78 @@ http:
     arckanban:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:5000"    # where serve.py is listening
+          - url: "http://127.0.0.1:5000"
   middlewares:
     arckanban-auth:
       basicAuth:
         users:
-          - "USER:HASH"                     # from `htpasswd -nB` (no $ doubling here)
+          - "USER:HASH"          # from: htpasswd -nB jake
+```
+
+No socket, no labels — Traefik just proxies to the port. (If Traefik is itself a Podman
+container, run it with `--network=host`, or put both on one network and use `http://arckanban:5000`.)
+
+## 2b. Or let Traefik auto-discover it — labels via the Podman socket
+
+If you'd rather Traefik find the container by labels (the "Docker-style" way), Podman exposes
+a Docker-compatible API. Enable the socket once:
+
+```bash
+systemctl --user enable --now podman.socket    # → /run/user/$(id -u)/podman/podman.sock
+```
+
+Point Traefik's **docker provider** at it (static config):
+
+```yaml
+providers:
+  docker:
+    endpoint: "unix:///run/user/1000/podman/podman.sock"   # use your own $(id -u)
+    exposedByDefault: false
+    network: traefik
+```
+
+Then put Traefik and ArcKanban on one Podman network and run it with the labels (no `-p` —
+Traefik reaches it over the network):
+
+```bash
+podman network create traefik     # once
+podman run -d --name arckanban --restart=unless-stopped \
+  --network traefik -v arckanban-data:/data \
+  --label traefik.enable=true \
+  --label 'traefik.http.routers.arckanban.rule=Host(`kanban.example.com`)' \
+  --label traefik.http.routers.arckanban.entrypoints=websecure \
+  --label traefik.http.routers.arckanban.tls.certresolver=letsencrypt \
+  --label traefik.http.services.arckanban.loadbalancer.server.port=5000 \
+  --label traefik.http.routers.arckanban.middlewares=arckanban-auth \
+  --label 'traefik.http.middlewares.arckanban-auth.basicauth.users=USER:HASH' \
+  arckanban
+```
+
+## Basic Auth user
+
+```bash
+htpasswd -nB jake      # prompts for a password; use the whole "jake:$2y$..." line as USER:HASH
+```
+
+`$`-handling for the hash: paste it **as-is** in the Traefik file YAML (§2a); keep it
+**single-quoted** in `--label` (as shown, so the shell leaves `$` alone); only double each
+`$`→`$$` if you ever put it in a **compose** file.
+
+## Updating
+
+```bash
+git pull
+podman build -t arckanban .
+podman rm -f arckanban
+# re-run the same `podman run …` from §1 (file provider) or §2b — the arckanban-data
+# volume keeps your database.
 ```
 
 ## Notes
 
-- **Keep the Host header** (Traefik forwards it by default). ArcKanban's write protection
-  compares the browser's `Origin` to the request host, so stripping/rewriting Host would
-  break saving. No other proxy config is needed.
-- **HTTPS** comes from the `tls`/`certresolver` lines. Drop them only if TLS is terminated
-  elsewhere.
-- **Single user by design:** Basic Auth is the gate — everyone who logs in shares the same
-  boards. For separate users, run separate instances (each with its own `/data` volume and
-  hostname).
+- **Keep the Host header** (Traefik forwards it by default): ArcKanban's write check compares
+  the browser's `Origin` to the request host, so don't rewrite Host.
+- **HTTPS** comes from the `tls`/`certresolver` lines; drop them if TLS is terminated elsewhere.
+- **Single user by design** — Basic Auth is the gate; everyone who logs in shares the boards.
+- To keep it running across reboots, prefer a **Quadlet** / `systemd --user` unit
+  (`podman generate systemd` or a `.container` file) — see `DEPLOY.md`.
