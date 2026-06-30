@@ -115,6 +115,73 @@ htpasswd -nB jake      # prompts for a password; use the whole "jake:$2y$..." li
 Paste it **as-is** in the Traefik file YAML; keep it **single-quoted** in a `--label`; only
 double each `$`→`$$` in a **compose** file.
 
+## Optional: real login with Authentik (SSO)
+
+Basic Auth is a shared password with no UI. If you want **proper accounts, a login page,
+optional MFA, and one sign-on across several internal apps**, put
+[authentik](https://goauthentik.io) in front via Traefik **forward auth** instead. It's
+heavier — authentik's compose runs **PostgreSQL + Redis + server + worker** — so it earns its
+keep when you'll protect more than just this board. ArcKanban itself is unchanged: authentik
+gates *access*; the board stays single-user inside.
+
+> Forward-auth uses session cookies, so run this over **HTTPS** (self-signed / internal-CA is
+> fine — see above). Authentik, ArcKanban and Traefik must share a network so Traefik can reach
+> both the app and authentik's outpost.
+
+**1. Stand up authentik** (download its compose, set two secrets, start it):
+
+```bash
+curl -O https://goauthentik.io/docker-compose.yml          # podman or docker compose both work
+printf 'PG_PASS=%s\nAUTHENTIK_SECRET_KEY=%s\n' \
+  "$(openssl rand -base64 36 | tr -d '\n')" \
+  "$(openssl rand -base64 60 | tr -d '\n')" > .env
+docker compose up -d                                       # → postgresql, redis, server, worker
+```
+
+Finish setup at `http://<host>:9000/if/flow/initial-setup/`. Full current steps:
+<https://docs.goauthentik.io/install-config/install/docker-compose/>.
+
+**2. In the authentik UI**, create:
+- a **Proxy Provider** in **Forward auth (single application)** mode, *External host* = `https://kanban.example.com`;
+- an **Application** linked to it; and
+- assign that application to the **authentik Embedded Outpost** (Outposts → Embedded → add it).
+
+(Guide: <https://docs.goauthentik.io/add-secure-apps/providers/proxy/server_traefik>.)
+
+**3. Traefik** — a forward-auth middleware, a router so the outpost paths reach authentik, and
+the middleware applied to ArcKanban's router (dynamic config):
+
+```yaml
+http:
+  routers:
+    arckanban:
+      rule: "Host(`kanban.example.com`)"
+      entryPoints: [websecure]
+      tls: {}
+      service: arckanban
+      middlewares: [authentik]                 # ← the gate
+    arckanban-outpost:                          # lets authentik's login/callback paths through
+      rule: "Host(`kanban.example.com`) && PathPrefix(`/outpost.goauthentik.io/`)"
+      entryPoints: [websecure]
+      tls: {}
+      service: authentik
+  services:
+    arckanban:
+      loadBalancer: { servers: [{ url: "http://arckanban:5000" }] }
+    authentik:
+      loadBalancer: { servers: [{ url: "http://authentik-server:9000" }] }
+  middlewares:
+    authentik:
+      forwardAuth:
+        address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+        trustForwardHeader: true
+        authResponseHeaders: [X-authentik-username, X-authentik-email, X-authentik-groups, X-authentik-name, X-authentik-uid]
+```
+
+Now visiting the board redirects to the authentik login; after signing in, Traefik forwards
+you through. (ArcKanban ignores the `X-authentik-*` headers — they're there only if you ever
+want them.) Drop the `arckanban-auth` Basic Auth middleware when you switch to this.
+
 ## Updating
 
 ```bash
