@@ -1,21 +1,36 @@
 /* ArcKanban — Gantt chart view.
-   Driven by the project's Sections of Work: one row per section (every stage,
-   listed in the sidebar), a bar on the row for each scheduled item. No bar
+   Driven by the project's Sections of Work: the sidebar lists sections (paged
+   by RIBA stage, like the board/decisions/task list — a "Show all stages"
+   toggle reveals everything), a bar for each scheduled item. No bar
    dependencies. Bars are drawn as SVG path `d` strings matching the project's
    global corner-shape setting (mirrored server-side for the PDF export by
    _gantt_bar_path in app.py — same corner map, same corner size). Holidays
    split any bar that crosses them (_split_around_holidays, mirrored here).
-   Self-contained IIFE, same pattern as the other page scripts; no build step. */
+   The timeline is an open-ended virtual canvas: click-drag pans it (scrollLeft
+   tracking the mouse), and the rendered date window quietly extends whenever
+   the scroll position nears an edge, so it "rolls on" indefinitely. Bars can
+   be dragged to move, or dragged at an end to resize. Self-contained IIFE,
+   same pattern as the other page scripts; no build step. */
 (function () {
   "use strict";
 
   var D = window.GANTT_DATA;
   if (!D) return;
 
+  var RIBA = [
+    "Strategic Definition", "Preparation and Briefing", "Concept Design",
+    "Spatial Coordination", "Technical Design", "Manufacturing and Construction",
+    "Handover", "Use",
+  ];
+
   var SVGNS = "http://www.w3.org/2000/svg";
-  var ROW_H = 32;     // px — must match the sidebar row height set below
-  var HEAD_H = 26;    // px — month-label strip above row 0
-  var DAY_W = 28;     // px per day
+  var ROW_H = 32;              // px — must match the sidebar row height set below
+  var HEAD_H = 26;             // px — month-label strip / column-head strip
+  var ZOOM_LEVELS = [10, 16, 22, 28, 36, 48, 64];   // px per day
+  var DEFAULT_ZOOM_IDX = 3;
+  var EXTEND_DAYS = 120;        // how far to extend the rendered window at an edge
+  var EDGE_PX = 400;            // trigger extension within this many px of an edge
+  var EDGE_ZONE_PX = 8;         // resize handle hit-zone at a bar's edge
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   var GANTT_SHAPE_CORNERS = {
@@ -118,19 +133,73 @@
   var sectionsById = {};
   D.allSections.forEach(function (s) { sectionsById[s.id] = s; });
 
+  var tb = document.getElementById("titleblock");
+  var projectUid = tb ? tb.dataset.projectUid : D.projectUid;
+  var currentStage = tb ? Number(tb.dataset.currentStage) : 0;
+  var enabledStages = ((tb && tb.dataset.stages) || "0,1,2,3,4,5,6,7").split(",").map(Number);
+  function isEnabled(n) { return enabledStages.indexOf(Number(n)) >= 0; }
+  function nextEnabledStage(from, dir) { for (var i = Number(from) + dir; i >= 0 && i <= 7; i += dir) if (isEnabled(i)) return i; return null; }
+
   var sidebarEl = document.getElementById("gantt-sidebar");
+  var sidebarRowsEl = document.getElementById("gantt-sidebar-rows");
+  var sidebarEmptyEl = document.getElementById("gantt-sidebar-empty");
+  var colHeadEl = document.getElementById("gantt-col-head");
   var chartEl = document.getElementById("gantt-chart");
+  var resizeHandle = document.getElementById("gantt-resize-handle");
 
   function itemForSection(sectionId) {
     var found = D.items.filter(function (it) { return it.section_id === sectionId; });
     return found.length ? found[0] : null;
   }
 
-  // ---- chart render --------------------------------------------------------
-  function render() {
-    if (!chartEl) return;
-    var rows = D.allSections;
+  // ---- stage paging (mirrors the task list / decision register) ----------
+  var LS_STAGE = "arckanban-gantt-stage-" + projectUid;
+  var view = currentStage;
+  try {
+    var savedStage = localStorage.getItem(LS_STAGE);
+    if (savedStage === "all") view = "all";
+    else if (savedStage !== null && savedStage !== "" && isEnabled(Number(savedStage))) view = Number(savedStage);
+  } catch (e) {}
+  if (view !== "all" && !isEnabled(view)) view = isEnabled(currentStage) ? currentStage : (enabledStages[0] != null ? enabledStages[0] : 0);
+  var lastStage = view === "all" ? currentStage : view;
 
+  function visibleSections() {
+    return D.allSections.filter(function (s) { return view === "all" || s.stage === view; });
+  }
+
+  function syncAddStageDefault() {
+    var sel = document.getElementById("gantt-add-stage");
+    if (sel) sel.value = String(view === "all" ? currentStage : view);
+  }
+
+  function applyStagePager() {
+    var all = view === "all";
+    var num = document.querySelector(".tb-stage-num"), nm = document.querySelector(".tb-stage-name");
+    var prev = document.querySelector(".tb-pager.prev"), next = document.querySelector(".tb-pager.next");
+    var toggle = document.querySelector('[data-action="gantt-toggle-all"]');
+    if (all) {
+      if (num) num.textContent = "·"; if (nm) nm.textContent = "All stages";
+      if (prev) prev.disabled = true; if (next) next.disabled = true;
+      if (toggle) toggle.textContent = "Show stage " + lastStage;
+    } else {
+      if (num) num.textContent = view; if (nm) nm.textContent = RIBA[view];
+      if (prev) prev.disabled = nextEnabledStage(view, -1) === null;
+      if (next) next.disabled = nextEnabledStage(view, +1) === null;
+      if (toggle) toggle.textContent = "Show all stages";
+    }
+    try { localStorage.setItem(LS_STAGE, all ? "all" : String(view)); } catch (e) {}
+    syncAddStageDefault();
+    refresh();
+  }
+  function goStage(n) { if (n == null) return; view = n; lastStage = n; applyStagePager(); }
+  function toggleAllStages() { if (view === "all") goStage(isEnabled(lastStage) ? lastStage : currentStage); else { view = "all"; applyStagePager(); } }
+
+  // ---- pan/zoom viewport state --------------------------------------------
+  var dayW = ZOOM_LEVELS[DEFAULT_ZOOM_IDX];
+  var zoomIdx = DEFAULT_ZOOM_IDX;
+  var viewStart, viewEnd;   // the currently-rendered date window (Date objects)
+
+  function computeDefaultRange() {
     var allDates = [];
     D.items.forEach(function (it) { allDates.push(parseISO(it.start_date), parseISO(it.end_date)); });
     D.holidays.forEach(function (h) { allDates.push(parseISO(h.start_date), parseISO(h.end_date)); });
@@ -138,28 +207,86 @@
     if (!allDates.length) allDates.push(today);
     var minD = new Date(Math.min.apply(null, allDates));
     var maxD = new Date(Math.max.apply(null, allDates));
-    var rangeStart = addDays(minD, -14);
-    var rangeEnd = addDays(maxD, 14);
+    return { start: addDays(minD, -30), end: addDays(maxD, 30) };
+  }
+  function xOf(d) { return dayDiff(viewStart, d) * dayW; }
+  function dateAtX(x) { return addDays(viewStart, Math.round(x / dayW)); }
+  function ensureRangeVisible(start, end) {
+    if (start < viewStart) viewStart = addDays(start, -14);
+    if (end > viewEnd) viewEnd = addDays(end, 14);
+  }
 
-    function xOf(d) { return dayDiff(rangeStart, d) * DAY_W; }
+  function refresh() { renderSidebar(); renderChart(); }
 
-    var chartW = Math.max(1, dayDiff(rangeStart, rangeEnd) * DAY_W);
+  // ---- sidebar (JS-built: title, start, end, duration, edit button) ------
+  function buildRow(section) {
+    var item = itemForSection(section.id);
+    var row = document.createElement("div");
+    row.className = "gantt-row-label" + (item ? " is-scheduled" : "");
+    row.dataset.sectionId = section.id;
+
+    var title = document.createElement("span");
+    title.className = "gantt-row-title";
+    title.title = section.title;
+    title.textContent = section.title;
+    row.appendChild(title);
+
+    var startSpan = document.createElement("span"); startSpan.className = "gantt-row-date";
+    var endSpan = document.createElement("span"); endSpan.className = "gantt-row-date";
+    var durSpan = document.createElement("span"); durSpan.className = "gantt-row-dur";
+    if (item) {
+      var s = parseISO(item.start_date), e = parseISO(item.end_date);
+      startSpan.textContent = fmtDisplayDate(s);
+      endSpan.textContent = fmtDisplayDate(e);
+      durSpan.textContent = (dayDiff(s, e) + 1) + "d";
+    } else {
+      startSpan.textContent = "—"; endSpan.textContent = "—"; durSpan.textContent = "—";
+    }
+    row.appendChild(startSpan); row.appendChild(endSpan); row.appendChild(durSpan);
+
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "gantt-row-btn"; btn.dataset.sectionId = section.id;
+    btn.textContent = item ? "✎" : "+";
+    btn.title = item ? "Edit on the Gantt" : "Add to the Gantt";
+    btn.setAttribute("aria-label", (item ? "Edit " : "Add ") + section.title + (item ? " on the Gantt" : " to the Gantt"));
+    row.appendChild(btn);
+    return row;
+  }
+
+  function renderSidebar() {
+    if (!sidebarRowsEl) return;
+    sidebarRowsEl.innerHTML = "";
+    var visible = visibleSections();
+    visible.forEach(function (s) { sidebarRowsEl.appendChild(buildRow(s)); });
+    if (sidebarEmptyEl) sidebarEmptyEl.hidden = visible.length !== 0;
+    syncRowHeights();
+  }
+
+  function syncRowHeights() {
+    if (colHeadEl) colHeadEl.style.height = HEAD_H + "px";
+    [].slice.call((sidebarRowsEl || sidebarEl).querySelectorAll(".gantt-row-label")).forEach(function (row) { row.style.height = ROW_H + "px"; });
+  }
+
+  // ---- chart render (viewport-relative; panning/zoom shift viewStart/dayW) ----
+  function renderChart() {
+    if (!chartEl) return;
+    var rows = visibleSections();
+    var chartW = Math.max(1, dayDiff(viewStart, viewEnd) * dayW);
     var chartH = HEAD_H + rows.length * ROW_H;
     var holidayRanges = D.holidays.map(function (h) { return [parseISO(h.start_date), parseISO(h.end_date)]; });
+    var today = new Date(); today.setHours(0, 0, 0, 0);
 
     var svg = [];
     svg.push('<svg xmlns="' + SVGNS + '" width="' + chartW + '" height="' + chartH + '" viewBox="0 0 ' + chartW + ' ' + chartH + '">');
     svg.push('<defs><pattern id="gantt-hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">' +
              '<line x1="0" y1="0" x2="0" y2="7" stroke="' + COL_INK_SOFT + '" stroke-opacity="0.35" stroke-width="1.5"></line></pattern></defs>');
 
-    // row stripes
     rows.forEach(function (s, i) {
       if (i % 2 === 1) svg.push('<rect x="0" y="' + (HEAD_H + i * ROW_H) + '" width="' + chartW + '" height="' + ROW_H + '" fill="' + COL_GLASS + '"></rect>');
     });
 
-    // month grid
-    var d = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
-    while (d <= rangeEnd) {
+    var d = new Date(viewStart.getFullYear(), viewStart.getMonth(), 1);
+    while (d <= viewEnd) {
       var gx = xOf(d);
       if (gx >= 0 && gx <= chartW) {
         svg.push('<line x1="' + gx + '" y1="0" x2="' + gx + '" y2="' + chartH + '" stroke="' + COL_INK_SOFT + '" stroke-opacity="0.16" stroke-width="1"></line>');
@@ -168,16 +295,14 @@
       d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
     }
 
-    // week ticks (Mondays) — lighter, full height below the header strip
-    var wd = new Date(rangeStart);
+    var wd = new Date(viewStart);
     while (wd.getDay() !== 1) wd = addDays(wd, 1);
-    while (wd <= rangeEnd) {
+    while (wd <= viewEnd) {
       var wx = xOf(wd);
       if (wx >= 0 && wx <= chartW) svg.push('<line x1="' + wx + '" y1="' + HEAD_H + '" x2="' + wx + '" y2="' + chartH + '" stroke="' + COL_INK_SOFT + '" stroke-opacity="0.06" stroke-width="1"></line>');
       wd = addDays(wd, 7);
     }
 
-    // holidays: crosshatch overlay across the full chart height, label at top
     D.holidays.forEach(function (h) {
       var hx0 = Math.max(0, xOf(parseISO(h.start_date)));
       var hx1 = Math.min(chartW, xOf(addDays(parseISO(h.end_date), 1)));
@@ -189,7 +314,6 @@
       svg.push('</g>');
     });
 
-    // bars — one per scheduled section, split around holidays
     rows.forEach(function (s, i) {
       var it = itemForSection(s.id);
       if (!it) return;
@@ -197,10 +321,12 @@
       var barH = ROW_H * 0.6;
       var barY = rowY + (ROW_H - barH) / 2;
       var iStart = parseISO(it.start_date), iEnd = parseISO(it.end_date);
-      splitAroundHolidays(iStart, iEnd, holidayRanges).forEach(function (seg) {
+      var segs = splitAroundHolidays(iStart, iEnd, holidayRanges);
+      segs.forEach(function (seg, si) {
         var bx = xOf(seg[0]);
         var bw = Math.max(2, xOf(addDays(seg[1], 1)) - bx);
-        svg.push('<g class="gantt-bar" data-item-id="' + it.id + '" data-section-id="' + s.id + '">');
+        svg.push('<g class="gantt-bar" data-item-id="' + it.id + '" data-section-id="' + s.id +
+                 '" data-is-first="' + (si === 0 ? 1 : 0) + '" data-is-last="' + (si === segs.length - 1 ? 1 : 0) + '">');
         svg.push('<path d="' + barPath(bx, barY, bw, barH, D.shape) + '" fill="' + it.colour + '"></path>');
         if (bw > 80) {
           var label = fmtDisplayDate(iStart) + " – " + fmtDisplayDate(iEnd);
@@ -211,8 +337,7 @@
       });
     });
 
-    // today line, on top
-    if (today >= rangeStart && today <= rangeEnd) {
+    if (today >= viewStart && today <= viewEnd) {
       var tx = xOf(today);
       svg.push('<line x1="' + tx + '" y1="0" x2="' + tx + '" y2="' + chartH + '" stroke="' + COL_REDLINE + '" stroke-width="1.5"></line>');
       svg.push('<text x="' + (tx + 4) + '" y="12" font-family="' + FONT_MONO + '" font-size="10" fill="' + COL_REDLINE + '">Today</text>');
@@ -223,23 +348,187 @@
     syncRowHeights();
   }
 
-  function syncRowHeights() {
-    if (!sidebarEl) return;
-    sidebarEl.style.paddingTop = HEAD_H + "px";
-    [].slice.call(sidebarEl.querySelectorAll(".gantt-row-label")).forEach(function (row) { row.style.height = ROW_H + "px"; });
+  // ---- vertical scroll sync (sidebar <-> chart) + horizontal edge-extend ---
+  var scrollSyncing = false, extending = false;
+  function checkEdges() {
+    if (extending || !chartEl) return;
+    if (chartEl.scrollLeft < EDGE_PX) {
+      extending = true;
+      viewStart = addDays(viewStart, -EXTEND_DAYS);
+      var addedPx = EXTEND_DAYS * dayW;
+      renderChart();
+      chartEl.scrollLeft += addedPx;
+      extending = false;
+    } else if (chartEl.scrollWidth - chartEl.clientWidth - chartEl.scrollLeft < EDGE_PX) {
+      extending = true;
+      viewEnd = addDays(viewEnd, EXTEND_DAYS);
+      renderChart();
+      extending = false;
+    }
   }
-
-  // ---- vertical scroll sync (sidebar <-> chart) ---------------------------
-  var scrollSyncing = false;
   if (sidebarEl && chartEl) {
     chartEl.addEventListener("scroll", function () {
-      if (scrollSyncing) return;
-      scrollSyncing = true; sidebarEl.scrollTop = chartEl.scrollTop; scrollSyncing = false;
+      if (!scrollSyncing) { scrollSyncing = true; sidebarEl.scrollTop = chartEl.scrollTop; scrollSyncing = false; }
+      checkEdges();
     });
     sidebarEl.addEventListener("scroll", function () {
       if (scrollSyncing) return;
       scrollSyncing = true; chartEl.scrollTop = sidebarEl.scrollTop; scrollSyncing = false;
     });
+  }
+
+  // ---- zoom ------------------------------------------------------------
+  function setZoom(newIdx) {
+    newIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, newIdx));
+    if (newIdx === zoomIdx || !chartEl) return;
+    var centerDate = dateAtX(chartEl.scrollLeft + chartEl.clientWidth / 2);
+    zoomIdx = newIdx;
+    dayW = ZOOM_LEVELS[zoomIdx];
+    renderChart();
+    chartEl.scrollLeft = Math.max(0, xOf(centerDate) - chartEl.clientWidth / 2);
+  }
+
+  // ---- pan: click-drag on empty chart area scrolls it -----------------
+  var panDragging = false, panStartX, panStartY, panScrollLeft, panScrollTop;
+  function startPan(e) {
+    e.preventDefault();
+    panDragging = true;
+    panStartX = e.clientX; panStartY = e.clientY;
+    panScrollLeft = chartEl.scrollLeft; panScrollTop = chartEl.scrollTop;
+    chartEl.classList.add("is-panning");
+    document.addEventListener("mousemove", onPanMove);
+    document.addEventListener("mouseup", onPanUp);
+  }
+  function onPanMove(e) {
+    if (!panDragging) return;
+    chartEl.scrollLeft = panScrollLeft - (e.clientX - panStartX);
+    chartEl.scrollTop = panScrollTop - (e.clientY - panStartY);
+  }
+  function onPanUp() {
+    panDragging = false;
+    chartEl.classList.remove("is-panning");
+    document.removeEventListener("mousemove", onPanMove);
+    document.removeEventListener("mouseup", onPanUp);
+  }
+
+  // ---- bars: drag to move, drag an end to resize -----------------------
+  function hitMode(barGroup, clientX) {
+    var isFirst = barGroup.dataset.isFirst === "1", isLast = barGroup.dataset.isLast === "1";
+    var bbox = barGroup.querySelector("path").getBBox();
+    var svgEl = chartEl.querySelector("svg");
+    var localX = clientX - svgEl.getBoundingClientRect().left - bbox.x;
+    if (isFirst && localX < EDGE_ZONE_PX) return "resize-start";
+    if (isLast && (bbox.width - localX) < EDGE_ZONE_PX) return "resize-end";
+    return "move";
+  }
+  function itemBoundsPx(item) {
+    var x0 = xOf(parseISO(item.start_date));
+    var x1 = xOf(addDays(parseISO(item.end_date), 1));
+    return { x: x0, w: Math.max(2, x1 - x0) };
+  }
+  var justDraggedBar = false;
+
+  chartEl.addEventListener("mousemove", function (e) {
+    if (panDragging) return;
+    var barGroup = e.target.closest(".gantt-bar");
+    if (!barGroup) return;
+    barGroup.style.cursor = hitMode(barGroup, e.clientX) === "move" ? "grab" : "ew-resize";
+  });
+
+  chartEl.addEventListener("mousedown", function (e) {
+    if (e.button !== 0) return;
+    var barGroup = e.target.closest(".gantt-bar");
+    if (!barGroup) { startPan(e); return; }
+    e.preventDefault();
+    var itemId = Number(barGroup.dataset.itemId);
+    var item = D.items.filter(function (it) { return it.id === itemId; })[0];
+    if (!item) return;
+    var mode = hitMode(barGroup, e.clientX);
+    var bbox = barGroup.querySelector("path").getBBox();
+    var svgEl = chartEl.querySelector("svg");
+    var svgRect = svgEl.getBoundingClientRect();
+    function toSvgX(clientX) { return clientX - svgRect.left; }
+
+    var startSvgX = toSvgX(e.clientX);
+    var origStart = parseISO(item.start_date), origEnd = parseISO(item.end_date);
+    var bounds = itemBoundsPx(item);
+    var moved = false, pending = null;
+
+    var ghost = document.createElementNS(SVGNS, "rect");
+    ghost.setAttribute("class", "gantt-ghost");
+    ghost.setAttribute("x", bounds.x); ghost.setAttribute("y", bbox.y);
+    ghost.setAttribute("width", bounds.w); ghost.setAttribute("height", bbox.height);
+    ghost.setAttribute("rx", 4);
+    svgEl.appendChild(ghost);
+    var label = document.createElementNS(SVGNS, "text");
+    label.setAttribute("class", "gantt-ghost-label");
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("font-family", FONT_MONO); label.setAttribute("font-size", "10");
+    label.setAttribute("fill", COL_INK);
+    svgEl.appendChild(label);
+
+    function updateGhost(newStart, newEnd) {
+      var gx = xOf(newStart), gw = Math.max(dayW, xOf(addDays(newEnd, 1)) - gx);
+      ghost.setAttribute("x", gx); ghost.setAttribute("width", gw);
+      label.setAttribute("x", gx + gw / 2); label.setAttribute("y", bbox.y - 6);
+      label.textContent = fmtDisplayDate(newStart) + " – " + fmtDisplayDate(newEnd);
+    }
+    updateGhost(origStart, origEnd);
+
+    function onMove(e2) {
+      var dx = toSvgX(e2.clientX) - startSvgX;
+      if (Math.abs(dx) > 3) moved = true;
+      var deltaDays = Math.round(dx / dayW);
+      var newStart = origStart, newEnd = origEnd;
+      if (mode === "move") { newStart = addDays(origStart, deltaDays); newEnd = addDays(origEnd, deltaDays); }
+      else if (mode === "resize-start") { newStart = addDays(origStart, deltaDays); if (newStart > newEnd) newStart = newEnd; }
+      else if (mode === "resize-end") { newEnd = addDays(origEnd, deltaDays); if (newEnd < newStart) newEnd = newStart; }
+      updateGhost(newStart, newEnd);
+      pending = { start: newStart, end: newEnd };
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      ghost.remove(); label.remove();
+      if (moved && pending) {
+        justDraggedBar = true;
+        setTimeout(function () { justDraggedBar = false; }, 0);
+        api("/api/gantt/" + itemId, { start_date: toISO(pending.start), end_date: toISO(pending.end) }).then(function (r) {
+          if (r) { D.items = D.items.filter(function (it) { return it.id !== r.item.id; }); D.items.push(r.item); }
+          refresh();
+        });
+      }
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+
+  // ---- resizable sidebar width -------------------------------------------
+  var LS_SIDEBAR_W = "arckanban-gantt-sidebar-w";
+  (function initSidebarWidth() {
+    var saved = null;
+    try { saved = parseInt(localStorage.getItem(LS_SIDEBAR_W), 10); } catch (e) {}
+    if (saved && sidebarEl) sidebarEl.style.flexBasis = Math.max(240, Math.min(640, saved)) + "px";
+  })();
+  if (resizeHandle && sidebarEl) {
+    var rsStartX, rsStartW, rsDragging = false;
+    resizeHandle.addEventListener("mousedown", function (e) {
+      rsDragging = true; rsStartX = e.clientX; rsStartW = sidebarEl.getBoundingClientRect().width;
+      document.addEventListener("mousemove", onResizeMove);
+      document.addEventListener("mouseup", onResizeUp);
+      e.preventDefault();
+    });
+    function onResizeMove(e) {
+      if (!rsDragging) return;
+      sidebarEl.style.flexBasis = Math.max(240, Math.min(640, rsStartW + (e.clientX - rsStartX))) + "px";
+    }
+    function onResizeUp() {
+      if (!rsDragging) return;
+      rsDragging = false;
+      document.removeEventListener("mousemove", onResizeMove);
+      document.removeEventListener("mouseup", onResizeUp);
+      try { localStorage.setItem(LS_SIDEBAR_W, Math.round(sidebarEl.getBoundingClientRect().width)); } catch (e) {}
+    }
   }
 
   // ---- settings popup (cog): bar shape + live preview ---------------------
@@ -263,7 +552,7 @@
       if (!r) { shapeSelect.value = prev; return; }
       D.shape = r.shape;
       renderShapePreview();
-      render();
+      renderChart();
     });
   }
 
@@ -310,18 +599,6 @@
     if (!isNaN(dur) && dur > 0) itemEnd.value = toISO(addDays(s, dur - 1));
   });
 
-  function updateRowButton(sectionId, scheduled) {
-    var row = document.querySelector('.gantt-row-label[data-section-id="' + sectionId + '"]');
-    if (!row) return;
-    row.classList.toggle("is-scheduled", scheduled);
-    var btn = row.querySelector(".gantt-row-btn");
-    if (!btn) return;
-    btn.textContent = scheduled ? "✎" : "+";
-    var label = (scheduled ? "Edit " : "Add ") + sectionsById[sectionId].title + (scheduled ? " on the Gantt" : " to the Gantt");
-    btn.title = scheduled ? "Edit on the Gantt" : "Add to the Gantt";
-    btn.setAttribute("aria-label", label);
-  }
-
   async function saveItem() {
     if (!editingSectionId) return;
     var start = itemStart.value, end = itemEnd.value, colour = itemColour.value;
@@ -334,9 +611,9 @@
     D.items = D.items.filter(function (it) { return it.id !== item.id; });
     D.items.push(item);
     D.scheduledIds.add(editingSectionId);
-    updateRowButton(editingSectionId, true);
+    ensureRangeVisible(parseISO(item.start_date), parseISO(item.end_date));
     closeItemEditor();
-    render();
+    refresh();
   }
   async function deleteItem() {
     if (!editingItemId) return;
@@ -345,9 +622,8 @@
     var sid = editingSectionId;
     D.items = D.items.filter(function (it) { return it.id !== editingItemId; });
     D.scheduledIds.delete(sid);
-    updateRowButton(sid, false);
     closeItemEditor();
-    render();
+    refresh();
   }
 
   // ---- holiday editor -------------------------------------------------------
@@ -381,8 +657,9 @@
     var h = r.holiday;
     D.holidays = D.holidays.filter(function (x) { return x.id !== h.id; });
     D.holidays.push(h);
+    ensureRangeVisible(parseISO(h.start_date), parseISO(h.end_date));
     closeHolidayEditor();
-    render();
+    refresh();
   }
   async function deleteHoliday() {
     if (!editingHolidayId) return;
@@ -391,21 +668,43 @@
     var hid = editingHolidayId;
     D.holidays = D.holidays.filter(function (x) { return x.id !== hid; });
     closeHolidayEditor();
-    render();
+    refresh();
   }
 
-  // ---- clicks: bars, holidays, row buttons, popup, modal actions ----------
+  // ---- add a new section of work (bottom of the sidebar list) ------------
+  var addForm = document.getElementById("gantt-add-row");
+  var addTitleInput = document.getElementById("gantt-add-title");
+  var addStageSelect = document.getElementById("gantt-add-stage");
+  if (addForm) {
+    addForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var title = (addTitleInput.value || "").trim();
+      if (!title) return;
+      var stage = Number(addStageSelect.value);
+      var r = await api("/api/projects/" + D.projectId + "/sections", { title: title, stage: stage });
+      if (!r) return;
+      var sec = r.section;
+      var entry = { id: sec.id, title: sec.title, stage: sec.stage, substage: sec.substage || 0 };
+      D.allSections.push(entry);
+      sectionsById[sec.id] = entry;
+      addTitleInput.value = "";
+      addTitleInput.focus();
+      renderSidebar();
+    });
+  }
+
+  // ---- clicks: rows, bars, holidays, popup, modal actions, pager ----------
   document.addEventListener("click", function (e) {
     var bar = e.target.closest(".gantt-bar");
-    if (bar) { openItemEditor(Number(bar.dataset.sectionId)); return; }
+    if (bar) { if (justDraggedBar) return; openItemEditor(Number(bar.dataset.sectionId)); return; }
     var hol = e.target.closest("[data-holiday-id]");
     if (hol) {
       var matches = D.holidays.filter(function (x) { return String(x.id) === hol.dataset.holidayId; });
       if (matches.length) openHolidayEditor(matches[0]);
       return;
     }
-    var rowBtn = e.target.closest(".gantt-row-btn");
-    if (rowBtn) { openItemEditor(Number(rowBtn.dataset.sectionId)); return; }
+    var rowLabel = e.target.closest(".gantt-row-label");
+    if (rowLabel) { openItemEditor(Number(rowLabel.dataset.sectionId)); return; }
 
     var trigger = e.target.closest('[data-action="gantt-settings"]');
     if (trigger) { toggleSettingsPop(); return; }
@@ -421,14 +720,25 @@
       case "item-cancel": closeItemEditor(); break;
       case "item-save": saveItem(); break;
       case "item-delete": deleteItem(); break;
+      case "gantt-prev": goStage(nextEnabledStage(view === "all" ? lastStage : view, -1)); break;
+      case "gantt-next": goStage(nextEnabledStage(view === "all" ? lastStage : view, +1)); break;
+      case "gantt-toggle-all": toggleAllStages(); break;
+      case "gantt-zoom-in": setZoom(zoomIdx + 1); break;
+      case "gantt-zoom-out": setZoom(zoomIdx - 1); break;
     }
   });
   if (itemModal) itemModal.addEventListener("click", function (e) { if (e.target === itemModal) closeItemEditor(); });
   if (holidayModal) holidayModal.addEventListener("click", function (e) { if (e.target === holidayModal) closeHolidayEditor(); });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") { closeItemEditor(); closeHolidayEditor(); closeSettingsPop(); }
+    if (e.target.matches("input, textarea, select")) return;
+    if (e.key === "ArrowLeft") goStage(nextEnabledStage(view === "all" ? lastStage : view, -1));
+    else if (e.key === "ArrowRight") goStage(nextEnabledStage(view === "all" ? lastStage : view, +1));
   });
 
+  // ---- init ----------------------------------------------------------------
+  var initialRange = computeDefaultRange();
+  viewStart = initialRange.start; viewEnd = initialRange.end;
   renderShapePreview();
-  render();
+  applyStagePager();
 })();

@@ -1512,14 +1512,11 @@ def api_update_gantt_settings(project_id):
 def gantt_page(project_uid):
     db = get_db()
     p = get_project_by_uid_or_404(db, project_uid)
-    splits = project_splits(p)
     items, holidays = _gantt_export_rows(db, p["id"])
-    all_sections = []
-    for r in db.execute("SELECT * FROM sections WHERE project_id=? ORDER BY stage, substage, position", (p["id"],)):
-        all_sections.append({
-            "id": r["id"], "title": r["title"], "stage": r["stage"], "substage": r["substage"],
-            "stage_label": part_label(r["stage"], r["substage"], parts_for(splits, r["stage"])),
-        })
+    all_sections = [
+        {"id": r["id"], "title": r["title"], "stage": r["stage"], "substage": r["substage"]}
+        for r in db.execute("SELECT * FROM sections WHERE project_id=? ORDER BY stage, substage, position", (p["id"],))
+    ]
     scheduled_ids = {it["section_id"] for it in items}
     return render_template(
         "gantt.html",
@@ -1527,6 +1524,7 @@ def gantt_page(project_uid):
                  "current_stage": p["current_stage"]},
         items=items, holidays=holidays, all_sections=all_sections, scheduled_ids=scheduled_ids,
         gantt_shape=p["gantt_shape"], gantt_shapes=GANTT_SHAPES, gantt_shape_labels=GANTT_SHAPE_LABELS,
+        enabled=sorted(enabled_stages(p)), riba=RIBA_STAGES,
     )
 
 

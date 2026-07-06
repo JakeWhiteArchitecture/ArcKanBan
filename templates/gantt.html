@@ -3,7 +3,8 @@
 {% block body_class %}page-gantt{% endblock %}
 
 {% block content %}
-<header class="titleblock" id="titleblock" data-project-uid="{{ project.uid }}">
+<header class="titleblock" id="titleblock" data-project-uid="{{ project.uid }}"
+        data-current-stage="{{ project.current_stage }}" data-stages="{{ enabled|join(',') }}">
   <div class="tb-left">
     <a class="tb-logo-link" href="{{ url_for('index') }}" title="Register" aria-label="ArcKanBan — back to register">
       <img class="tb-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="ArcKanBan">
@@ -15,11 +16,22 @@
   </div>
 
   <div class="tb-center">
-    <div class="tb-stage-name">Gantt Chart</div>
+    <div class="tb-stage">
+      <button type="button" class="tb-pager prev" data-action="gantt-prev" aria-label="Previous stage" title="Previous stage">‹</button>
+      <div class="tb-stage-id">
+        <span class="tb-stage-kicker">RIBA Stage</span>
+        <span class="tb-stage-num">{{ project.current_stage }}</span>
+      </div>
+      <button type="button" class="tb-pager next" data-action="gantt-next" aria-label="Next stage" title="Next stage">›</button>
+    </div>
+    <div class="tb-stage-name">{{ riba[project.current_stage] }}</div>
   </div>
 
   <div class="tb-right">
+    <button type="button" class="tb-btn" data-action="gantt-toggle-all">Show all stages</button>
     <button type="button" class="tb-btn" data-action="add-holiday" title="Add a holiday period">＋ Holiday</button>
+    <button type="button" class="tb-btn tb-icon-btn" data-action="gantt-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+    <button type="button" class="tb-btn tb-icon-btn" data-action="gantt-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
     <button type="button" class="tb-btn" data-action="gantt-settings" title="Gantt settings">⚙</button>
     <a class="tb-btn" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
@@ -90,24 +102,28 @@
 </div>
 
 <main class="gantt-page">
-  {% if all_sections %}
   <div class="gantt-container" id="gantt-container">
     <div class="gantt-sidebar" id="gantt-sidebar">
-      {% for s in all_sections %}
-      <div class="gantt-row-label{% if s.id in scheduled_ids %} is-scheduled{% endif %}" data-section-id="{{ s.id }}">
-        <span class="gantt-row-stage" style="--c: var(--riba-{{ s.stage }})">{{ s.stage_label }}</span>
-        <span class="gantt-row-title" title="{{ s.title }}">{{ s.title }}</span>
-        <button type="button" class="gantt-row-btn" data-action="edit-item" data-section-id="{{ s.id }}"
-                title="{% if s.id in scheduled_ids %}Edit on the Gantt{% else %}Add to the Gantt{% endif %}"
-                aria-label="{% if s.id in scheduled_ids %}Edit {{ s.title }} on the Gantt{% else %}Add {{ s.title }} to the Gantt{% endif %}">{% if s.id in scheduled_ids %}✎{% else %}+{% endif %}</button>
+      <div class="gantt-col-head" id="gantt-col-head">
+        <span class="gantt-col-title">Section of work</span>
+        <span class="gantt-col-date">Start</span>
+        <span class="gantt-col-date">End</span>
+        <span class="gantt-col-dur">Dur</span>
+        <span class="gantt-col-spacer" aria-hidden="true"></span>
       </div>
-      {% endfor %}
+      <div class="gantt-sidebar-rows" id="gantt-sidebar-rows"></div>
+      <p class="gantt-sidebar-empty" id="gantt-sidebar-empty" hidden>No sections in this stage yet.</p>
+      <form class="gantt-add-row" id="gantt-add-row">
+        <select id="gantt-add-stage" aria-label="Stage for the new section">
+          {% for i in enabled %}<option value="{{ i }}">{{ i }} · {{ riba[i] }}</option>{% endfor %}
+        </select>
+        <input type="text" id="gantt-add-title" placeholder="+ New section of work…" autocomplete="off" aria-label="New section of work">
+        <button type="submit" class="btn-quiet btn-sm">Add</button>
+      </form>
     </div>
+    <div class="gantt-resize-handle" id="gantt-resize-handle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
     <div class="gantt-chart" id="gantt-chart"></div>
   </div>
-  {% else %}
-  <p class="empty">No sections of work yet — add some on the board, then come back to schedule them here.</p>
-  {% endif %}
 </main>
 {% endblock %}
 
