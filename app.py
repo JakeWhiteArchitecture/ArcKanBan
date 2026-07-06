@@ -1565,11 +1565,13 @@ def _compute_effective_end(start, end, holidays):
 
 
 def _build_gantt_pdf(proj, items, holidays, shape):
-    """Render the project's Gantt chart as an A3-landscape PDF (bytes): title, a
-    month grid, right-aligned section titles, bars in the project's global corner
-    shape (split around holidays), and holiday columns as a crosshatched overlay
-    spanning the full chart height. Print-friendly styling (white background, dark
-    text) — deliberately not the app's dark theme."""
+    """Render the project's Gantt chart as an A3-landscape PDF (bytes): a two-line
+    title (job reference, then "Proposed Timeline"), a month grid, left-aligned
+    section titles with their working-day duration, bars in the project's global
+    corner shape (split around holidays, zero-day items drawn as a milestone
+    diamond), holiday columns as a crosshatched overlay spanning the full chart
+    height, and a red "Today" line. Print-friendly styling (white background,
+    dark text) — deliberately not the app's dark theme."""
     from io import BytesIO
 
     from reportlab.lib.colors import Color, HexColor, black, white
@@ -1582,7 +1584,7 @@ def _build_gantt_pdf(proj, items, holidays, shape):
     c.setFillColor(white)
     c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
 
-    margin, label_w, title_h, head_h = 28, 190, 34, 22
+    margin, label_w, title_h, head_h = 28, 190, 70, 22
 
     all_starts = ([date.fromisoformat(i["start_date"]) for i in items] +
                   [date.fromisoformat(h["start_date"]) for h in holidays])
@@ -1604,10 +1606,13 @@ def _build_gantt_pdf(proj, items, holidays, shape):
     row_h = max(10.0, min(22.0, (rows_top - margin) / max(1, n_rows)))
     chart_bottom = max(margin, rows_top - row_h * n_rows)
 
-    title = " ".join(x for x in [proj["number"], proj["name"]] if x) + " — Gantt Chart"
+    title_ref = " ".join(x for x in [proj["number"], proj["name"]] if x)
     c.setFillColor(black)
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(margin, page_h - margin - 18, title)
+    c.drawString(margin, page_h - margin - 18, title_ref)
+    c.setFillColor(Color(0, 0, 0, alpha=0.6))
+    c.setFont("Helvetica", 12)
+    c.drawString(margin, page_h - margin - 36, "Proposed Timeline")
 
     # ---- month grid: a line + label at the 1st of each month in range ----
     c.setFont("Helvetica", 8)
@@ -1649,23 +1654,40 @@ def _build_gantt_pdf(proj, items, holidays, shape):
         if idx % 2 == 1:
             c.setFillColor(Color(0, 0, 0, alpha=0.035))
             c.rect(margin, row_bottom, page_w - margin * 2, row_h, fill=1, stroke=0)
+        i_start, i_end_raw = date.fromisoformat(item["start_date"]), date.fromisoformat(item["end_date"])
+        is_milestone = i_start == i_end_raw
+        suffix = " · %dd" % _working_days_between(i_start, i_end_raw)
         label = item["section_title"]
-        if len(label) > 28:
-            label = label[:27] + "…"
+        max_len = max(4, 28 - len(suffix))
+        if len(label) > max_len:
+            label = label[:max_len - 1] + "…"
+        label += suffix
         c.setFillColor(black)
         c.setFont("Helvetica", 9)
-        c.drawRightString(chart_x0 - 8, row_top - row_h / 2 - 3, label)
+        c.drawString(margin, row_top - row_h / 2 - 3, label)
 
         bar_h = row_h * 0.6
         bar_y = row_bottom + (row_h - bar_h) / 2
-        i_start, i_end = date.fromisoformat(item["start_date"]), date.fromisoformat(item["end_date"])
-        i_end = _compute_effective_end(i_start, i_end, holiday_ranges)
-        for seg_start, seg_end in _split_around_holidays(i_start, i_end, holiday_ranges):
-            bx = x_of(seg_start)
-            bw = max(1.0, x_of(seg_end + timedelta(days=1)) - bx)
-            path = _gantt_bar_path(c, bx, bar_y, bw, bar_h, shape)
-            c.setFillColor(HexColor(item["colour"]))
-            c.drawPath(path, fill=1, stroke=0)
+        i_end = _compute_effective_end(i_start, i_end_raw, holiday_ranges)
+        c.setFillColor(HexColor(item["colour"]))
+        if is_milestone:
+            mx, my, mr = x_of(i_end) + day_w / 2, bar_y + bar_h / 2, bar_h / 2
+            c.setStrokeColor(HexColor(item["colour"]))
+            c.setLineWidth(1)
+            c.line(mx, row_top, mx, row_bottom)
+            dpath = c.beginPath()
+            dpath.moveTo(mx, my + mr)
+            dpath.lineTo(mx + mr, my)
+            dpath.lineTo(mx, my - mr)
+            dpath.lineTo(mx - mr, my)
+            dpath.close()
+            c.drawPath(dpath, fill=1, stroke=0)
+        else:
+            for seg_start, seg_end in _split_around_holidays(i_start, i_end, holiday_ranges):
+                bx = x_of(seg_start)
+                bw = max(1.0, x_of(seg_end + timedelta(days=1)) - bx)
+                path = _gantt_bar_path(c, bx, bar_y, bw, bar_h, shape)
+                c.drawPath(path, fill=1, stroke=0)
 
     # ---- holidays: crosshatch overlay across the full chart height, label at top ----
     for h in holidays:
@@ -1687,6 +1709,17 @@ def _build_gantt_pdf(proj, items, holidays, shape):
         c.setFillColor(Color(0, 0, 0, alpha=0.65))
         c.setFont("Helvetica-Oblique", 7)
         c.drawString(hx0 + 3, rows_top - 9, h["label"])
+
+    # ---- today: a red line on top of everything, matching the on-screen chart ----
+    today = date.today()
+    if range_start <= today <= range_end:
+        tx = x_of(today)
+        c.setStrokeColor(HexColor("#FF6B5C"))
+        c.setLineWidth(1.2)
+        c.line(tx, chart_bottom, tx, rows_top)
+        c.setFillColor(HexColor("#FF6B5C"))
+        c.setFont("Helvetica-Oblique", 7)
+        c.drawString(tx + 3, rows_top + 5, "Today")
 
     c.showPage()
     c.save()

@@ -353,23 +353,37 @@
       var barH = ROW_H * 0.6;
       var barY = rowY + (ROW_H - barH) / 2;
       var iStart = parseISO(it.start_date);
-      var iEnd = computeEffectiveEnd(iStart, parseISO(it.end_date), holidayRanges);
-      var segs = splitAroundHolidays(iStart, iEnd, holidayRanges);
-      var lastX = 0;
-      segs.forEach(function (seg, si) {
-        var bx = xOf(seg[0]);
-        var bw = Math.max(2, xOf(addDays(seg[1], 1)) - bx);
-        lastX = bx + bw;
+      var rawEnd = parseISO(it.end_date);
+      var isMilestone = dayDiff(iStart, rawEnd) === 0;
+      var iEnd = computeEffectiveEnd(iStart, rawEnd, holidayRanges);
+      var lastX;
+      if (isMilestone) {
+        var mx = xOf(iEnd) + dayW / 2, mr = barH / 2, my = rowY + ROW_H / 2;
         svg.push('<g class="gantt-bar" data-item-id="' + it.id + '" data-section-id="' + s.id +
-                 '" data-is-first="' + (si === 0 ? 1 : 0) + '" data-is-last="' + (si === segs.length - 1 ? 1 : 0) + '">');
-        svg.push('<path d="' + barPath(bx, barY, bw, barH, D.shape) + '" fill="' + it.colour + '"></path>');
-        if (bw > 80) {
-          var label = fmtDisplayDate(iStart) + " – " + fmtDisplayDate(iEnd);
-          svg.push('<text x="' + (bx + bw / 2) + '" y="' + (barY + barH / 2 + 4) + '" text-anchor="middle" font-family="' +
-                   FONT_MONO + '" font-size="10" fill="' + textColourFor(it.colour) + '" pointer-events="none">' + esc(label) + '</text>');
-        }
+                 '" data-is-first="1" data-is-last="1" data-milestone="1">');
+        svg.push('<line x1="' + mx + '" y1="' + rowY + '" x2="' + mx + '" y2="' + (rowY + ROW_H) + '" stroke="' + it.colour + '" stroke-width="1.5"></line>');
+        svg.push('<polygon points="' + mx + ',' + (my - mr) + ' ' + (mx + mr) + ',' + my + ' ' + mx + ',' + (my + mr) + ' ' + (mx - mr) + ',' + my +
+                 '" fill="' + it.colour + '"></polygon>');
         svg.push('</g>');
-      });
+        lastX = mx + mr;
+      } else {
+        var segs = splitAroundHolidays(iStart, iEnd, holidayRanges);
+        lastX = 0;
+        segs.forEach(function (seg, si) {
+          var bx = xOf(seg[0]);
+          var bw = Math.max(2, xOf(addDays(seg[1], 1)) - bx);
+          lastX = bx + bw;
+          svg.push('<g class="gantt-bar" data-item-id="' + it.id + '" data-section-id="' + s.id +
+                   '" data-is-first="' + (si === 0 ? 1 : 0) + '" data-is-last="' + (si === segs.length - 1 ? 1 : 0) + '">');
+          svg.push('<path d="' + barPath(bx, barY, bw, barH, D.shape) + '" fill="' + it.colour + '"></path>');
+          if (bw > 80) {
+            var label = fmtDisplayDate(iStart) + " – " + fmtDisplayDate(iEnd);
+            svg.push('<text x="' + (bx + bw / 2) + '" y="' + (barY + barH / 2 + 4) + '" text-anchor="middle" font-family="' +
+                     FONT_MONO + '" font-size="10" fill="' + textColourFor(it.colour) + '" pointer-events="none">' + esc(label) + '</text>');
+          }
+          svg.push('</g>');
+        });
+      }
       svg.push('<text x="' + (lastX + 8) + '" y="' + (barY + barH / 2 + 4) + '" font-family="' + FONT_UI +
                '" font-size="11" fill="' + COL_INK + '" pointer-events="none">' + esc(s.title) + '</text>');
     });
@@ -468,6 +482,7 @@
 
   // ---- bars: drag to move, drag an end to resize -----------------------
   function hitMode(barGroup, clientX) {
+    if (barGroup.dataset.milestone === "1") return "move";   // zero-length — nothing to resize
     var isFirst = barGroup.dataset.isFirst === "1", isLast = barGroup.dataset.isLast === "1";
     var bbox = barGroup.querySelector("path").getBBox();
     var svgEl = chartEl.querySelector("svg");
@@ -499,7 +514,7 @@
     var item = D.items.filter(function (it) { return it.id === itemId; })[0];
     if (!item) return;
     var mode = hitMode(barGroup, e.clientX);
-    var bbox = barGroup.querySelector("path").getBBox();
+    var bbox = barGroup.querySelector("path, polygon").getBBox();
     var svgEl = chartEl.querySelector("svg");
     var svgRect = svgEl.getBoundingClientRect();
     function toSvgX(clientX) { return clientX - svgRect.left; }
