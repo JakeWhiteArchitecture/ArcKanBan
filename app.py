@@ -14,8 +14,9 @@ Parent/child task nesting arrives in the next increment.
 
 import json
 import os
+import re
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from flask import (
@@ -65,6 +66,31 @@ STATUS_LABELS = {
 
 # Sub-stages: a stage can be split into at most this many parts (a / b / c).
 MAX_PARTS = 3
+
+# Gantt bar shapes (a project-level setting). Each maps to the corner treatment of
+# the four corners as (top-left, top-right, bottom-right, bottom-left): 'r' rounded,
+# 'c' chamfered, 's' square. The two "diagonal" variants are mirror images. Both the
+# browser SVG (gantt.js) and the reportlab PDF draw from this same corner map.
+GANTT_SHAPES = ["rounded_all", "rounded_tl_br", "rounded_br_tl",
+                "chamfer_all", "chamfer_tl_br", "chamfer_br_tl", "square"]
+GANTT_SHAPE_LABELS = {
+    "rounded_all": "Rounded (all corners)",
+    "rounded_tl_br": "Rounded (top-left + bottom-right)",
+    "rounded_br_tl": "Rounded (top-right + bottom-left)",
+    "chamfer_all": "Chamfered (all corners)",
+    "chamfer_tl_br": "Chamfered (top-left + bottom-right)",
+    "chamfer_br_tl": "Chamfered (top-right + bottom-left)",
+    "square": "Square (no corner treatment)",
+}
+GANTT_SHAPE_CORNERS = {
+    "rounded_all":   ("r", "r", "r", "r"),
+    "rounded_tl_br": ("r", "s", "r", "s"),
+    "rounded_br_tl": ("s", "r", "s", "r"),
+    "chamfer_all":   ("c", "c", "c", "c"),
+    "chamfer_tl_br": ("c", "s", "c", "s"),
+    "chamfer_br_tl": ("s", "c", "s", "c"),
+    "square":        ("s", "s", "s", "s"),
+}
 
 # Task categories. 'decision' carries a responsible person (like Awaiting's
 # who/what) shown in any column; 'statutory' is the legal-teeth one (redline).
@@ -178,6 +204,22 @@ def init_db():
             name       TEXT NOT NULL,
             position   INTEGER NOT NULL DEFAULT 0
         );
+        CREATE TABLE IF NOT EXISTS gantt_items (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+            start_date TEXT NOT NULL,
+            end_date   TEXT NOT NULL,
+            colour     TEXT NOT NULL DEFAULT '#5B8DEF',
+            position   INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS gantt_holidays (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            label      TEXT NOT NULL DEFAULT 'Holiday',
+            start_date TEXT NOT NULL,
+            end_date   TEXT NOT NULL
+        );
         """
     )
     # Additive migrations for an existing v0.1-shaped database (see REQUIREMENTS §6).
@@ -214,6 +256,7 @@ def init_db():
     _ensure_column(db, "sections", "substage", "substage INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "projects", "splits", "splits TEXT")
     _ensure_column(db, "projects", "archived", "archived INTEGER NOT NULL DEFAULT 0")  # 0 live, 1 archived
+    _ensure_column(db, "projects", "gantt_shape", "gantt_shape TEXT NOT NULL DEFAULT 'rounded_all'")  # Gantt bar shape (project-level)
     # Projects use a short (6-hex) URL-friendly uid; sections/tasks keep a long
     # one (not user-facing). Project uids are assigned with a uniqueness check,
     # so even the short length never collides; this also normalises any earlier
@@ -1221,6 +1264,434 @@ def email_task_list(project_uid):
                            segments=segments, stage=stage, stage_name=RIBA_STAGES[stage])
     return _eml_response("%s — Task list · Stage %d" % (subtitle, stage), html,
                          (_slugify(subtitle) or "tasks") + "-tasklist.eml")
+
+
+# --------------------------------------------------------------------------- #
+# Gantt chart — driven by the project's Sections of Work; no bar dependencies.
+# --------------------------------------------------------------------------- #
+
+_HEX_COLOUR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+_BEZIER_KAPPA = 0.5522847498   # cubic-bezier approximation of a circular quarter-arc
+
+
+def _parse_gantt_date(s):
+    try:
+        return date.fromisoformat(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _split_around_holidays(start, end, holidays):
+    """Split the inclusive [start, end] date range (date objects) into segments that
+    skip any holiday period they cross. `holidays` is an iterable of (holiday_start,
+    holiday_end) date pairs. Returns (segment_start, segment_end) date pairs in
+    order; empty if the whole range falls inside holidays. Used by both the
+    on-screen SVG chart (gantt.js) and the PDF export, so a bar splits the same
+    way in both places."""
+    segments = [(start, end)]
+    for h_start, h_end in sorted(holidays):
+        next_segments = []
+        for seg_start, seg_end in segments:
+            if h_end < seg_start or h_start > seg_end:
+                next_segments.append((seg_start, seg_end))
+                continue
+            if h_start > seg_start:
+                next_segments.append((seg_start, h_start - timedelta(days=1)))
+            if h_end < seg_end:
+                next_segments.append((h_end + timedelta(days=1), seg_end))
+        segments = next_segments
+    return segments
+
+
+def _gantt_bar_path(pdf_canvas, x, y, w, h, shape):
+    """A reportlab PDFPathObject filling (x, y)-(x+w, y+h) — reportlab coordinates,
+    origin bottom-left, y increases upward — with the per-corner treatment from
+    GANTT_SHAPE_CORNERS (top-left, top-right, bottom-right, bottom-left). Rounded
+    corners are a single cubic-bezier quarter-arc (the standard kappa
+    approximation); chamfered corners are a straight cut of the same size; square
+    is square. Must match the SVG bars gantt.js draws client-side — same corner
+    map, same corner size — so the chart looks the same on screen and on paper."""
+    tl, tr, br, bl = GANTT_SHAPE_CORNERS.get(shape, GANTT_SHAPE_CORNERS["rounded_all"])
+    r = max(0.0, min(10.0, w / 2, h / 2))
+    k = _BEZIER_KAPPA * r
+    x0, x1, y0, y1 = x, x + w, y, y + h   # y0 bottom edge, y1 top edge (y increases upward)
+    p = pdf_canvas.beginPath()
+
+    p.moveTo(x0 + (r if tl != "s" else 0), y1)
+    p.lineTo(x1 - (r if tr != "s" else 0), y1)                     # top edge, left to right
+    if tr == "r":
+        p.curveTo(x1 - r + k, y1, x1, y1 - r + k, x1, y1 - r)
+    elif tr == "c":
+        p.lineTo(x1, y1 - r)
+    else:
+        p.lineTo(x1, y1)
+    p.lineTo(x1, y0 + (r if br != "s" else 0))                     # right edge, top to bottom
+    if br == "r":
+        p.curveTo(x1, y0 + r - k, x1 - r + k, y0, x1 - r, y0)
+    elif br == "c":
+        p.lineTo(x1 - r, y0)
+    else:
+        p.lineTo(x1, y0)
+    p.lineTo(x0 + (r if bl != "s" else 0), y0)                     # bottom edge, right to left
+    if bl == "r":
+        p.curveTo(x0 + r - k, y0, x0, y0 + r - k, x0, y0 + r)
+    elif bl == "c":
+        p.lineTo(x0, y0 + r)
+    else:
+        p.lineTo(x0, y0)
+    p.lineTo(x0, y1 - (r if tl != "s" else 0))                     # left edge, bottom to top
+    if tl == "r":
+        p.curveTo(x0, y1 - r + k, x0 + r - k, y1, x0 + r, y1)
+    elif tl == "c":
+        p.lineTo(x0 + r, y1)
+    else:
+        p.lineTo(x0, y1)
+    p.close()
+    return p
+
+
+def gantt_item_dict(row):
+    return {"id": row["id"], "section_id": row["section_id"], "start_date": row["start_date"],
+            "end_date": row["end_date"], "colour": row["colour"], "position": row["position"]}
+
+
+def gantt_holiday_dict(row):
+    return {"id": row["id"], "label": row["label"], "start_date": row["start_date"], "end_date": row["end_date"]}
+
+
+def _gantt_export_rows(db, project_id):
+    """Items (joined with their section's title) + holidays, in the order both the
+    on-screen chart and the PDF/email export draw them."""
+    items = [dict(r) for r in db.execute(
+        """SELECT gi.*, s.title AS section_title FROM gantt_items gi
+           JOIN sections s ON s.id = gi.section_id
+           WHERE gi.project_id=? ORDER BY gi.position, gi.id""", (project_id,))]
+    holidays = [dict(r) for r in db.execute(
+        "SELECT * FROM gantt_holidays WHERE project_id=? ORDER BY start_date, id", (project_id,))]
+    return items, holidays
+
+
+@app.route("/api/projects/<int:project_id>/gantt", methods=["POST"])
+def api_add_gantt_item(project_id):
+    db = get_db()
+    get_project_or_404(db, project_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        section_id = int(data.get("section_id"))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="Invalid section."), 400
+    section = db.execute("SELECT id FROM sections WHERE id=? AND project_id=?", (section_id, project_id)).fetchone()
+    if section is None:
+        return jsonify(ok=False, error="Section not in this project."), 400
+    start, end = _parse_gantt_date(data.get("start_date")), _parse_gantt_date(data.get("end_date"))
+    if not start or not end:
+        return jsonify(ok=False, error="Dates must be YYYY-MM-DD."), 400
+    if end < start:
+        return jsonify(ok=False, error="End date must be on or after the start date."), 400
+    colour = (data.get("colour") or "#5B8DEF").strip()
+    if not _HEX_COLOUR_RE.match(colour):
+        return jsonify(ok=False, error="Invalid colour."), 400
+    pos = db.execute("SELECT COALESCE(MAX(position)+1,0) AS p FROM gantt_items WHERE project_id=?",
+                      (project_id,)).fetchone()["p"]
+    cur = db.execute(
+        "INSERT INTO gantt_items (project_id, section_id, start_date, end_date, colour, position) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (project_id, section_id, data["start_date"], data["end_date"], colour, pos),
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM gantt_items WHERE id=?", (cur.lastrowid,)).fetchone()
+    return jsonify(ok=True, item=gantt_item_dict(row))
+
+
+@app.route("/api/gantt/<int:item_id>", methods=["POST"])
+def api_update_gantt_item(item_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM gantt_items WHERE id=?", (item_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such Gantt item."), 404
+    data = request.get_json(silent=True) or {}
+    start_raw = data.get("start_date", row["start_date"])
+    end_raw = data.get("end_date", row["end_date"])
+    start, end = _parse_gantt_date(start_raw), _parse_gantt_date(end_raw)
+    if not start or not end:
+        return jsonify(ok=False, error="Dates must be YYYY-MM-DD."), 400
+    if end < start:
+        return jsonify(ok=False, error="End date must be on or after the start date."), 400
+    colour = row["colour"]
+    if "colour" in data:
+        colour = (data["colour"] or "").strip()
+        if not _HEX_COLOUR_RE.match(colour):
+            return jsonify(ok=False, error="Invalid colour."), 400
+    db.execute("UPDATE gantt_items SET start_date=?, end_date=?, colour=? WHERE id=?",
+               (start_raw, end_raw, colour, item_id))
+    db.commit()
+    new_row = db.execute("SELECT * FROM gantt_items WHERE id=?", (item_id,)).fetchone()
+    return jsonify(ok=True, item=gantt_item_dict(new_row))
+
+
+@app.route("/api/gantt/<int:item_id>/delete", methods=["POST"])
+def api_delete_gantt_item(item_id):
+    db = get_db()
+    row = db.execute("SELECT id FROM gantt_items WHERE id=?", (item_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such Gantt item."), 404
+    db.execute("DELETE FROM gantt_items WHERE id=?", (item_id,))
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/projects/<int:project_id>/gantt/holidays", methods=["POST"])
+def api_add_gantt_holiday(project_id):
+    db = get_db()
+    get_project_or_404(db, project_id)
+    data = request.get_json(silent=True) or {}
+    start, end = _parse_gantt_date(data.get("start_date")), _parse_gantt_date(data.get("end_date"))
+    if not start or not end:
+        return jsonify(ok=False, error="Dates must be YYYY-MM-DD."), 400
+    if end < start:
+        return jsonify(ok=False, error="End date must be on or after the start date."), 400
+    label = (data.get("label") or "Holiday").strip() or "Holiday"
+    cur = db.execute(
+        "INSERT INTO gantt_holidays (project_id, label, start_date, end_date) VALUES (?, ?, ?, ?)",
+        (project_id, label, data["start_date"], data["end_date"]),
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM gantt_holidays WHERE id=?", (cur.lastrowid,)).fetchone()
+    return jsonify(ok=True, holiday=gantt_holiday_dict(row))
+
+
+@app.route("/api/gantt/holidays/<int:holiday_id>", methods=["POST"])
+def api_update_gantt_holiday(holiday_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM gantt_holidays WHERE id=?", (holiday_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such holiday."), 404
+    data = request.get_json(silent=True) or {}
+    start_raw = data.get("start_date", row["start_date"])
+    end_raw = data.get("end_date", row["end_date"])
+    start, end = _parse_gantt_date(start_raw), _parse_gantt_date(end_raw)
+    if not start or not end:
+        return jsonify(ok=False, error="Dates must be YYYY-MM-DD."), 400
+    if end < start:
+        return jsonify(ok=False, error="End date must be on or after the start date."), 400
+    label = row["label"]
+    if "label" in data:
+        label = (data["label"] or "Holiday").strip() or "Holiday"
+    db.execute("UPDATE gantt_holidays SET label=?, start_date=?, end_date=? WHERE id=?",
+               (label, start_raw, end_raw, holiday_id))
+    db.commit()
+    new_row = db.execute("SELECT * FROM gantt_holidays WHERE id=?", (holiday_id,)).fetchone()
+    return jsonify(ok=True, holiday=gantt_holiday_dict(new_row))
+
+
+@app.route("/api/gantt/holidays/<int:holiday_id>/delete", methods=["POST"])
+def api_delete_gantt_holiday(holiday_id):
+    db = get_db()
+    row = db.execute("SELECT id FROM gantt_holidays WHERE id=?", (holiday_id,)).fetchone()
+    if row is None:
+        return jsonify(ok=False, error="No such holiday."), 404
+    db.execute("DELETE FROM gantt_holidays WHERE id=?", (holiday_id,))
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/projects/<int:project_id>/gantt/settings", methods=["POST"])
+def api_update_gantt_settings(project_id):
+    db = get_db()
+    get_project_or_404(db, project_id)
+    data = request.get_json(silent=True) or {}
+    shape = data.get("shape")
+    if shape not in GANTT_SHAPES:
+        return jsonify(ok=False, error="Invalid shape."), 400
+    db.execute("UPDATE projects SET gantt_shape=? WHERE id=?", (shape, project_id))
+    db.commit()
+    return jsonify(ok=True, shape=shape)
+
+
+@app.route("/projects/<project_uid>/gantt")
+def gantt_page(project_uid):
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    splits = project_splits(p)
+    items, holidays = _gantt_export_rows(db, p["id"])
+    all_sections = []
+    for r in db.execute("SELECT * FROM sections WHERE project_id=? ORDER BY stage, substage, position", (p["id"],)):
+        all_sections.append({
+            "id": r["id"], "title": r["title"], "stage": r["stage"], "substage": r["substage"],
+            "stage_label": part_label(r["stage"], r["substage"], parts_for(splits, r["stage"])),
+        })
+    scheduled_ids = {it["section_id"] for it in items}
+    return render_template(
+        "gantt.html",
+        project={"id": p["id"], "uid": p["uid"], "number": p["number"] or "", "name": p["name"],
+                 "current_stage": p["current_stage"]},
+        items=items, holidays=holidays, all_sections=all_sections, scheduled_ids=scheduled_ids,
+        gantt_shape=p["gantt_shape"], gantt_shapes=GANTT_SHAPES, gantt_shape_labels=GANTT_SHAPE_LABELS,
+    )
+
+
+def _build_gantt_pdf(proj, items, holidays, shape):
+    """Render the project's Gantt chart as an A3-landscape PDF (bytes): title, a
+    month grid, right-aligned section titles, bars in the project's global corner
+    shape (split around holidays), and holiday columns as a crosshatched overlay
+    spanning the full chart height. Print-friendly styling (white background, dark
+    text) — deliberately not the app's dark theme."""
+    from io import BytesIO
+
+    from reportlab.lib.colors import Color, HexColor, black, white
+    from reportlab.lib.pagesizes import A3, landscape
+    from reportlab.pdfgen import canvas as pdf_canvas_module
+
+    page_w, page_h = landscape(A3)
+    buf = BytesIO()
+    c = pdf_canvas_module.Canvas(buf, pagesize=(page_w, page_h))
+    c.setFillColor(white)
+    c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
+
+    margin, label_w, title_h, head_h = 28, 190, 34, 22
+
+    all_starts = ([date.fromisoformat(i["start_date"]) for i in items] +
+                  [date.fromisoformat(h["start_date"]) for h in holidays])
+    all_ends = ([date.fromisoformat(i["end_date"]) for i in items] +
+                [date.fromisoformat(h["end_date"]) for h in holidays])
+    range_start = min(all_starts) - timedelta(days=7)
+    range_end = max(all_ends) + timedelta(days=7)
+    total_days = max(1, (range_end - range_start).days)
+
+    chart_x0 = margin + label_w
+    chart_x1 = page_w - margin
+    day_w = (chart_x1 - chart_x0) / total_days
+
+    def x_of(d):
+        return chart_x0 + (d - range_start).days * day_w
+
+    n_rows = len(items)
+    rows_top = page_h - margin - title_h - head_h
+    row_h = max(10.0, min(22.0, (rows_top - margin) / max(1, n_rows)))
+    chart_bottom = max(margin, rows_top - row_h * n_rows)
+
+    title = " ".join(x for x in [proj["number"], proj["name"]] if x) + " — Gantt Chart"
+    c.setFillColor(black)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(margin, page_h - margin - 18, title)
+
+    # ---- month grid: a line + label at the 1st of each month in range ----
+    c.setFont("Helvetica", 8)
+    d = date(range_start.year, range_start.month, 1)
+    while d <= range_end:
+        gx = x_of(d)
+        if chart_x0 <= gx <= chart_x1:
+            c.setStrokeColor(Color(0, 0, 0, alpha=0.18))
+            c.setLineWidth(0.6)
+            c.line(gx, chart_bottom, gx, rows_top)
+            c.setFillColor(Color(0, 0, 0, alpha=0.65))
+            c.drawString(gx + 3, rows_top + 5, d.strftime("%b %Y"))
+        d = date(d.year + (1 if d.month == 12 else 0), 1 if d.month == 12 else d.month + 1, 1)
+
+    # ---- rows: alternating stripe, right-aligned label, bar(s) split around holidays ----
+    holiday_ranges = [(date.fromisoformat(h["start_date"]), date.fromisoformat(h["end_date"])) for h in holidays]
+    for idx, item in enumerate(items):
+        row_top = rows_top - idx * row_h
+        row_bottom = row_top - row_h
+        if idx % 2 == 1:
+            c.setFillColor(Color(0, 0, 0, alpha=0.035))
+            c.rect(margin, row_bottom, page_w - margin * 2, row_h, fill=1, stroke=0)
+        label = item["section_title"]
+        if len(label) > 28:
+            label = label[:27] + "…"
+        c.setFillColor(black)
+        c.setFont("Helvetica", 9)
+        c.drawRightString(chart_x0 - 8, row_top - row_h / 2 - 3, label)
+
+        bar_h = row_h * 0.6
+        bar_y = row_bottom + (row_h - bar_h) / 2
+        i_start, i_end = date.fromisoformat(item["start_date"]), date.fromisoformat(item["end_date"])
+        for seg_start, seg_end in _split_around_holidays(i_start, i_end, holiday_ranges):
+            bx = x_of(seg_start)
+            bw = max(1.0, x_of(seg_end + timedelta(days=1)) - bx)
+            path = _gantt_bar_path(c, bx, bar_y, bw, bar_h, shape)
+            c.setFillColor(HexColor(item["colour"]))
+            c.drawPath(path, fill=1, stroke=0)
+
+    # ---- holidays: crosshatch overlay across the full chart height, label at top ----
+    for h in holidays:
+        h_start, h_end = date.fromisoformat(h["start_date"]), date.fromisoformat(h["end_date"])
+        hx0, hx1 = max(chart_x0, x_of(h_start)), min(chart_x1, x_of(h_end + timedelta(days=1)))
+        if hx1 <= hx0:
+            continue
+        c.saveState()
+        c.setFillColor(Color(0, 0, 0, alpha=0.10))
+        c.rect(hx0, chart_bottom, hx1 - hx0, rows_top - chart_bottom, fill=1, stroke=0)
+        clip_path = c.beginPath()
+        clip_path.rect(hx0, chart_bottom, hx1 - hx0, rows_top - chart_bottom)
+        c.clipPath(clip_path, stroke=0, fill=0)
+        c.setStrokeColor(Color(0, 0, 0, alpha=0.22))
+        c.setLineWidth(0.5)
+        step, span = 8, int((hx1 - hx0) + (rows_top - chart_bottom)) + 8
+        for i in range(span // step + 1):
+            xo = hx0 + i * step
+            c.line(xo, chart_bottom, xo - (rows_top - chart_bottom), rows_top)
+        c.restoreState()
+        c.setFillColor(Color(0, 0, 0, alpha=0.65))
+        c.setFont("Helvetica-Oblique", 7)
+        c.drawString(hx0 + 3, rows_top - 9, h["label"])
+
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def _eml_pdf_response(subject, html, pdf_bytes, pdf_filename, eml_filename):
+    """Like _eml_response, but with a PDF attached (the Gantt programme email)."""
+    from email.message import EmailMessage
+    from email.utils import formatdate
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = "ArcKanban <arckanban@localhost>"
+    msg["To"] = ""
+    msg["Date"] = formatdate(localtime=True)
+    msg.set_content("Please find attached programme for your consideration.")
+    msg.add_alternative(html, subtype="html")
+    msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=pdf_filename)
+    resp = make_response(msg.as_bytes())
+    resp.headers["Content-Type"] = "message/rfc822"
+    resp.headers["Content-Disposition"] = 'attachment; filename="%s"' % eml_filename
+    return resp
+
+
+@app.route("/projects/<project_uid>/gantt.pdf")
+def gantt_pdf(project_uid):
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    items, holidays = _gantt_export_rows(db, p["id"])
+    if not items:
+        from werkzeug.exceptions import BadRequest
+
+        raise BadRequest("Add something to the Gantt chart before exporting a PDF.")
+    pdf_bytes = _build_gantt_pdf(p, items, holidays, p["gantt_shape"])
+    subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
+    resp = make_response(pdf_bytes)
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = 'attachment; filename="%s"' % ((_slugify(subtitle) or "gantt") + "-programme.pdf")
+    return resp
+
+
+@app.route("/projects/<project_uid>/gantt.eml")
+def gantt_email(project_uid):
+    db = get_db()
+    p = get_project_by_uid_or_404(db, project_uid)
+    items, holidays = _gantt_export_rows(db, p["id"])
+    if not items:
+        from werkzeug.exceptions import BadRequest
+
+        raise BadRequest("Add something to the Gantt chart before emailing a programme.")
+    pdf_bytes = _build_gantt_pdf(p, items, holidays, p["gantt_shape"])
+    subtitle = ((p["number"] + " ") if p["number"] else "") + p["name"]
+    html = ('<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1a1a1a; '
+            'line-height: 1.5;"><p>Please find attached programme for your consideration.</p></div>')
+    pdf_filename = (_slugify(subtitle) or "gantt") + "-programme.pdf"
+    return _eml_pdf_response("%s — Programme" % subtitle, html, pdf_bytes, pdf_filename,
+                             (_slugify(subtitle) or "gantt") + "-programme.eml")
 
 
 @app.route("/projects/<project_uid>/scope", methods=["POST"])
