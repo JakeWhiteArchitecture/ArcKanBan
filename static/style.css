@@ -85,7 +85,7 @@ body {
   background: linear-gradient(180deg, var(--bg-2), var(--bg));
   overflow: hidden;            /* board manages its own scroll */
 }
-body.page-home, body.page-decisions, body.page-tasklist { overflow: auto; }
+body.page-home, body.page-decisions, body.page-tasklist, body.page-gantt { overflow: auto; }
 
 /* WebGL gradient canvas (bg.js) sits above the CSS glow fallback, below content */
 .neat-bg { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; display: block; pointer-events: none; }
@@ -1039,4 +1039,57 @@ body.hide-done .tl-task.is-done { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* ====================================================================== */
+/*  GANTT CHART                                                            */
+/* ====================================================================== */
+.gantt-page { height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column;
+  padding: calc(var(--tb-h) + var(--u) * 2) calc(var(--u) * 2) calc(var(--u) * 2); }
+.gantt-container { flex: 1; min-height: 0; display: flex; border: 1px solid var(--glass-border);
+  border-radius: var(--radius); background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  overflow: hidden; box-shadow: var(--shadow); }
+
+.gantt-sidebar { flex: 0 0 220px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+  border-right: 1px solid var(--glass-border); }
+.gantt-sidebar::-webkit-scrollbar { display: none; width: 0; }
+.gantt-row-label { display: flex; align-items: center; gap: 6px; padding: 0 8px; box-sizing: border-box;
+  border-bottom: 1px solid var(--glass-border); font-size: 0.8rem; color: var(--ink-dim); }
+.gantt-row-label.is-scheduled { color: var(--ink); }
+.gantt-row-stage { flex-shrink: 0; display: grid; place-items: center; min-width: 20px; height: 18px; padding: 0 4px;
+  box-sizing: border-box; border-radius: 5px; color: #07101f; font-family: var(--font-mono); font-weight: 700;
+  font-size: 0.64rem; background: var(--c, var(--blue)); }
+.gantt-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-row-btn { flex-shrink: 0; width: 20px; height: 20px; border: 1px solid transparent; background: transparent;
+  color: var(--ink-soft); cursor: pointer; border-radius: 6px; font-size: 0.85rem; line-height: 1; opacity: 0;
+  transition: opacity 120ms ease, color 140ms ease, background 140ms ease; }
+.gantt-row-label:hover .gantt-row-btn, .gantt-row-btn:focus-visible { opacity: 1; }
+.gantt-row-label.is-scheduled .gantt-row-btn { opacity: 0.5; }
+.gantt-row-btn:hover { color: var(--ink); border-color: var(--glass-bright); background: var(--glass-raised); }
+
+.gantt-chart { flex: 1; min-width: 0; overflow: auto; position: relative; }
+.gantt-chart svg { display: block; }
+.gantt-bar, .gantt-holiday { cursor: pointer; }
+
+/* Modal form fields (holiday + item editors) — same glass/radius/focus language as the rest of the app. */
+.gantt-field { display: flex; flex-direction: column; gap: 4px; }
+.gantt-field > span { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
+.gantt-field input, .gantt-field select { font: inherit; font-family: var(--font-ui); font-size: 0.92rem;
+  padding: 8px 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
+  background: var(--glass-deep); color: var(--ink); color-scheme: dark; }
+.gantt-field input:focus, .gantt-field select:focus { border-color: var(--blue); outline: none; box-shadow: 0 0 0 2px var(--blue-tint); }
+.gantt-field input[type="color"] { padding: 3px; width: 56px; height: 34px; cursor: pointer; }
+.gantt-duration-row { display: flex; align-items: flex-end; gap: 8px; }
+.gantt-duration-row .gantt-field { flex: 1; min-width: 0; }
+.gantt-or { padding-bottom: 9px; color: var(--ink-dim); font-size: 0.8rem; }
+.text-danger { color: var(--redline); }
+.text-danger:hover { border-color: var(--redline); background: var(--redline-tint); }
+
+/* Gantt settings popup (cog) — same .tb-pop shell as Filters/Roles. */
+.gantt-settings-pop { width: 300px; }
+.gantt-shape-preview { display: flex; justify-content: center; padding: 10px 0 2px; }
+
+@media (max-width: 860px) {
+  .gantt-page { padding-left: var(--u); padding-right: var(--u); }
+  .gantt-sidebar { flex-basis: 160px; }
 }

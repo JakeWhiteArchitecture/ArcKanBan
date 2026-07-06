@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Gantt chart — {{ project.number }} {{ project.name }}{% endblock %}
+{% block body_class %}page-gantt{% endblock %}
+
+{% block content %}
+<header class="titleblock" id="titleblock" data-project-uid="{{ project.uid }}">
+  <div class="tb-left">
+    <a class="tb-logo-link" href="{{ url_for('index') }}" title="Register" aria-label="ArcKanBan — back to register">
+      <img class="tb-logo" src="{{ url_for('static', filename='logo.svg') }}" alt="ArcKanBan">
+    </a>
+    <div class="tb-id">
+      <span class="tb-cell tb-job-no{% if not project.number %} is-empty{% endif %}">{{ project.number or 'no.' }}</span>
+      <span class="tb-cell tb-name">{{ project.name }}</span>
+    </div>
+  </div>
+
+  <div class="tb-center">
+    <div class="tb-stage-name">Gantt Chart</div>
+  </div>
+
+  <div class="tb-right">
+    <button type="button" class="tb-btn" data-action="add-holiday" title="Add a holiday period">＋ Holiday</button>
+    <button type="button" class="tb-btn" data-action="gantt-settings" title="Gantt settings">⚙</button>
+    <a class="tb-btn" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
+    <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
+    <a class="tb-btn" href="{{ url_for('task_list_page', project_uid=project.uid) }}" title="Task list view">List</a>
+    <a class="tb-btn" href="{{ url_for('gantt_pdf', project_uid=project.uid) }}" download title="Download Gantt as A3 PDF">PDF</a>
+    <a class="tb-btn tb-icon-btn" href="{{ url_for('gantt_email', project_uid=project.uid) }}" download
+       title="Email Gantt chart" aria-label="Email Gantt chart">✉</a>
+  </div>
+</header>
+
+<div class="tb-pop gantt-settings-pop" id="gantt-settings-pop" hidden aria-label="Gantt settings">
+  <div class="pop-head">Gantt settings</div>
+  <label class="gantt-field"><span>Bar shape</span>
+    <select id="gantt-shape-select">
+      {% for sh in gantt_shapes %}
+      <option value="{{ sh }}"{% if sh == gantt_shape %} selected{% endif %}>{{ gantt_shape_labels[sh] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="gantt-shape-preview" id="gantt-shape-preview"></div>
+</div>
+
+<div class="modal-backdrop" id="holiday-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="holiday-title">
+    <h2 class="modal-title" id="holiday-title">Holiday</h2>
+    <label class="gantt-field"><span>Label</span>
+      <input type="text" id="holiday-label" placeholder="Holiday" autocomplete="off">
+    </label>
+    <label class="gantt-field"><span>Start date</span>
+      <input type="date" id="holiday-start">
+    </label>
+    <label class="gantt-field"><span>End date</span>
+      <input type="date" id="holiday-end">
+    </label>
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet text-danger" id="holiday-delete" data-action="holiday-delete">Delete</button>
+      <button type="button" class="btn-quiet" data-action="holiday-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" data-action="holiday-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="item-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="item-title">
+    <h2 class="modal-title" id="item-title">Schedule</h2>
+    <p class="modal-sub" id="item-section-name"></p>
+    <label class="gantt-field"><span>Start date</span>
+      <input type="date" id="item-start">
+    </label>
+    <div class="gantt-duration-row">
+      <label class="gantt-field"><span>End date</span>
+        <input type="date" id="item-end">
+      </label>
+      <span class="gantt-or">or</span>
+      <label class="gantt-field"><span>Duration (days)</span>
+        <input type="number" id="item-duration" min="1" step="1">
+      </label>
+    </div>
+    <label class="gantt-field"><span>Colour</span>
+      <input type="color" id="item-colour" value="#5B8DEF">
+    </label>
+    <div class="modal-actions">
+      <button type="button" class="btn-quiet text-danger" id="item-delete" data-action="item-delete">Delete</button>
+      <button type="button" class="btn-quiet" data-action="item-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" data-action="item-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<main class="gantt-page">
+  {% if all_sections %}
+  <div class="gantt-container" id="gantt-container">
+    <div class="gantt-sidebar" id="gantt-sidebar">
+      {% for s in all_sections %}
+      <div class="gantt-row-label{% if s.id in scheduled_ids %} is-scheduled{% endif %}" data-section-id="{{ s.id }}">
+        <span class="gantt-row-stage" style="--c: var(--riba-{{ s.stage }})">{{ s.stage_label }}</span>
+        <span class="gantt-row-title" title="{{ s.title }}">{{ s.title }}</span>
+        <button type="button" class="gantt-row-btn" data-action="edit-item" data-section-id="{{ s.id }}"
+                title="{% if s.id in scheduled_ids %}Edit on the Gantt{% else %}Add to the Gantt{% endif %}"
+                aria-label="{% if s.id in scheduled_ids %}Edit {{ s.title }} on the Gantt{% else %}Add {{ s.title }} to the Gantt{% endif %}">{% if s.id in scheduled_ids %}✎{% else %}+{% endif %}</button>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="gantt-chart" id="gantt-chart"></div>
+  </div>
+  {% else %}
+  <p class="empty">No sections of work yet — add some on the board, then come back to schedule them here.</p>
+  {% endif %}
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.GANTT_DATA = {
+    projectId: {{ project.id | tojson }},
+    projectUid: {{ project.uid | tojson }},
+    items: {{ items | tojson }},
+    holidays: {{ holidays | tojson }},
+    allSections: {{ all_sections | tojson }},
+    scheduledIds: new Set({{ scheduled_ids | list | tojson }}),
+    shape: {{ gantt_shape | tojson }},
+  };
+</script>
+<script src="{{ url_for('static', filename='gantt.js') }}"></script>
+{% endblock %}

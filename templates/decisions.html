@@ -29,6 +29,7 @@
 
   <div class="tb-right">
     <a class="tb-btn" href="{{ url_for('task_list_page', project_uid=project.uid) }}" title="Task list view">List</a>
+    <a class="tb-btn" href="{{ url_for('gantt_page', project_uid=project.uid) }}" title="Gantt chart">Gantt</a>
     <a class="tb-btn dr-board" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
     <button type="button" class="tb-btn" data-action="dr-toggle-all">Show all stages</button>
     {% if has_splits %}<button type="button" class="tb-btn" data-action="dr-substage" aria-pressed="false" title="Show the sub-stage (4a/4b…) each decision belongs to">Sub-stages</button>{% endif %}
