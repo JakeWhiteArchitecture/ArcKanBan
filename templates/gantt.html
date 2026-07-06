@@ -32,6 +32,7 @@
     <button type="button" class="tb-btn" data-action="add-holiday" title="Add a holiday period">＋ Holiday</button>
     <button type="button" class="tb-btn tb-icon-btn" data-action="gantt-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
     <button type="button" class="tb-btn tb-icon-btn" data-action="gantt-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+    <button type="button" class="tb-btn" data-action="gantt-zoom-fit" title="Zoom to fit all scheduled items">Fit</button>
     <button type="button" class="tb-btn" data-action="gantt-settings" title="Gantt settings">⚙</button>
     <a class="tb-btn" href="{{ url_for('board', project_uid=project.uid) }}" title="Back to the board">Board</a>
     <a class="tb-btn" href="{{ url_for('decisions_page', project_uid=project.uid) }}" title="Decision register">Decisions</a>
@@ -106,17 +107,12 @@
     <div class="gantt-sidebar" id="gantt-sidebar">
       <div class="gantt-col-head" id="gantt-col-head">
         <span class="gantt-col-title">Section of work</span>
-        <span class="gantt-col-date">Start</span>
-        <span class="gantt-col-date">End</span>
         <span class="gantt-col-dur">Dur</span>
         <span class="gantt-col-spacer" aria-hidden="true"></span>
       </div>
       <div class="gantt-sidebar-rows" id="gantt-sidebar-rows"></div>
       <p class="gantt-sidebar-empty" id="gantt-sidebar-empty" hidden>No sections in this stage yet.</p>
       <form class="gantt-add-row" id="gantt-add-row">
-        <select id="gantt-add-stage" aria-label="Stage for the new section">
-          {% for i in enabled %}<option value="{{ i }}">{{ i }} · {{ riba[i] }}</option>{% endfor %}
-        </select>
         <input type="text" id="gantt-add-title" placeholder="+ New section of work…" autocomplete="off" aria-label="New section of work">
         <button type="submit" class="btn-quiet btn-sm">Add</button>
       </form>
