@@ -1528,6 +1528,42 @@ def gantt_page(project_uid):
     )
 
 
+def _is_weekend(d):
+    return d.weekday() >= 5   # Saturday=5, Sunday=6
+
+
+def _working_days_between(start, end):
+    """Inclusive count of weekdays (Mon-Fri) in [start, end] — the "5-day week"
+    duration used everywhere a task's length is shown."""
+    count, d = 0, start
+    while d <= end:
+        if not _is_weekend(d):
+            count += 1
+        d += timedelta(days=1)
+    return count
+
+
+def _compute_effective_end(start, end, holidays):
+    """A holiday should delay a task, not just erase the days it overlaps: count
+    the working days within [start, end] that a holiday eats into, then push
+    `end` out by that many real working days (skipping weekends and any
+    further holiday) to recover them. No overlap means no change — the stored
+    end stands as given, weekend or not, since only weekdays need making up."""
+    lost, d = 0, start
+    while d <= end:
+        if not _is_weekend(d) and any(h_start <= d <= h_end for h_start, h_end in holidays):
+            lost += 1
+        d += timedelta(days=1)
+    if lost == 0:
+        return end
+    new_end, added = end, 0
+    while added < lost:
+        new_end += timedelta(days=1)
+        if not _is_weekend(new_end) and not any(h_start <= new_end <= h_end for h_start, h_end in holidays):
+            added += 1
+    return new_end
+
+
 def _build_gantt_pdf(proj, items, holidays, shape):
     """Render the project's Gantt chart as an A3-landscape PDF (bytes): title, a
     month grid, right-aligned section titles, bars in the project's global corner
@@ -1586,6 +1622,25 @@ def _build_gantt_pdf(proj, items, holidays, shape):
             c.drawString(gx + 3, rows_top + 5, d.strftime("%b %Y"))
         d = date(d.year + (1 if d.month == 12 else 0), 1 if d.month == 12 else d.month + 1, 1)
 
+    # ---- weekends: a very light hatch (bars still run straight through them) ----
+    d = range_start
+    while d <= range_end:
+        if _is_weekend(d):
+            wx0, wx1 = max(chart_x0, x_of(d)), min(chart_x1, x_of(d + timedelta(days=1)))
+            if wx1 > wx0:
+                c.saveState()
+                clip_path = c.beginPath()
+                clip_path.rect(wx0, chart_bottom, wx1 - wx0, rows_top - chart_bottom)
+                c.clipPath(clip_path, stroke=0, fill=0)
+                c.setStrokeColor(Color(0, 0, 0, alpha=0.10))
+                c.setLineWidth(0.5)
+                step, span = 8, int((wx1 - wx0) + (rows_top - chart_bottom)) + 8
+                for i in range(span // step + 1):
+                    xo = wx0 + i * step
+                    c.line(xo, chart_bottom, xo - (rows_top - chart_bottom), rows_top)
+                c.restoreState()
+        d += timedelta(days=1)
+
     # ---- rows: alternating stripe, right-aligned label, bar(s) split around holidays ----
     holiday_ranges = [(date.fromisoformat(h["start_date"]), date.fromisoformat(h["end_date"])) for h in holidays]
     for idx, item in enumerate(items):
@@ -1604,6 +1659,7 @@ def _build_gantt_pdf(proj, items, holidays, shape):
         bar_h = row_h * 0.6
         bar_y = row_bottom + (row_h - bar_h) / 2
         i_start, i_end = date.fromisoformat(item["start_date"]), date.fromisoformat(item["end_date"])
+        i_end = _compute_effective_end(i_start, i_end, holiday_ranges)
         for seg_start, seg_end in _split_around_holidays(i_start, i_end, holiday_ranges):
             bx = x_of(seg_start)
             bw = max(1.0, x_of(seg_end + timedelta(days=1)) - bx)
@@ -1618,8 +1674,6 @@ def _build_gantt_pdf(proj, items, holidays, shape):
         if hx1 <= hx0:
             continue
         c.saveState()
-        c.setFillColor(Color(0, 0, 0, alpha=0.10))
-        c.rect(hx0, chart_bottom, hx1 - hx0, rows_top - chart_bottom, fill=1, stroke=0)
         clip_path = c.beginPath()
         clip_path.rect(hx0, chart_bottom, hx1 - hx0, rows_top - chart_bottom)
         c.clipPath(clip_path, stroke=0, fill=0)

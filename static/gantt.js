@@ -50,7 +50,6 @@
   var COL_REDLINE = cssVar("--redline", "#FF6B5C");
   var COL_BLUE = cssVar("--blue", "#5B8DEF");
   var COL_GLASS = cssVar("--glass", "rgba(255,255,255,0.045)");
-  var COL_GLASS_RAISED = cssVar("--glass-raised", "rgba(255,255,255,0.075)");
   var FONT_UI = cssVar("--font-ui", "sans-serif");
   var FONT_MONO = cssVar("--font-mono", "monospace");
 
@@ -85,6 +84,41 @@
     var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
     var lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     return lum > 0.6 ? "#0A0F1F" : "#F5F7FC";
+  }
+
+  // ---- working-day model — mirrors _is_weekend / _working_days_between /
+  // _compute_effective_end in app.py. Weekends aren't counted as duration and
+  // bars run straight through them; holidays fall on what would otherwise be
+  // a working day, so they push a bar's effective end out instead of just
+  // erasing the overlapping days. ------------------------------------------
+  function isWeekend(d) { var wd = d.getDay(); return wd === 0 || wd === 6; }
+  function workingDaysBetween(start, end) {
+    var count = 0, d = new Date(start);
+    while (d <= end) { if (!isWeekend(d)) count++; d = addDays(d, 1); }
+    return count;
+  }
+  function addWorkingDays(start, n) {   // the date of the nth working day counting from start (n >= 1)
+    var d = new Date(start), count = 0;
+    while (count < n) {
+      if (!isWeekend(d)) count++;
+      if (count >= n) break;
+      d = addDays(d, 1);
+    }
+    return d;
+  }
+  function inAnyHoliday(d, holidays) {
+    return holidays.some(function (h) { return d >= h[0] && d <= h[1]; });
+  }
+  function computeEffectiveEnd(start, end, holidays) {
+    var lost = 0, d = new Date(start);
+    while (d <= end) { if (!isWeekend(d) && inAnyHoliday(d, holidays)) lost++; d = addDays(d, 1); }
+    if (lost === 0) return end;   // no overlap — the stored end stands, weekend or not
+    var newEnd = new Date(end), added = 0;
+    while (added < lost) {
+      newEnd = addDays(newEnd, 1);
+      if (!isWeekend(newEnd) && !inAnyHoliday(newEnd, holidays)) added++;
+    }
+    return newEnd;
   }
 
   // ---- shape path (SVG `d`) — mirrors _gantt_bar_path in app.py -----------
@@ -167,11 +201,6 @@
     return D.allSections.filter(function (s) { return view === "all" || s.stage === view; });
   }
 
-  function syncAddStageDefault() {
-    var sel = document.getElementById("gantt-add-stage");
-    if (sel) sel.value = String(view === "all" ? currentStage : view);
-  }
-
   function applyStagePager() {
     var all = view === "all";
     var num = document.querySelector(".tb-stage-num"), nm = document.querySelector(".tb-stage-name");
@@ -188,7 +217,6 @@
       if (toggle) toggle.textContent = "Show all stages";
     }
     try { localStorage.setItem(LS_STAGE, all ? "all" : String(view)); } catch (e) {}
-    syncAddStageDefault();
     refresh();
   }
   function goStage(n) { if (n == null) return; view = n; lastStage = n; applyStagePager(); }
@@ -231,18 +259,9 @@
     title.textContent = section.title;
     row.appendChild(title);
 
-    var startSpan = document.createElement("span"); startSpan.className = "gantt-row-date";
-    var endSpan = document.createElement("span"); endSpan.className = "gantt-row-date";
     var durSpan = document.createElement("span"); durSpan.className = "gantt-row-dur";
-    if (item) {
-      var s = parseISO(item.start_date), e = parseISO(item.end_date);
-      startSpan.textContent = fmtDisplayDate(s);
-      endSpan.textContent = fmtDisplayDate(e);
-      durSpan.textContent = (dayDiff(s, e) + 1) + "d";
-    } else {
-      startSpan.textContent = "—"; endSpan.textContent = "—"; durSpan.textContent = "—";
-    }
-    row.appendChild(startSpan); row.appendChild(endSpan); row.appendChild(durSpan);
+    durSpan.textContent = item ? workingDaysBetween(parseISO(item.start_date), parseISO(item.end_date)) + "d" : "—";
+    row.appendChild(durSpan);
 
     var btn = document.createElement("button");
     btn.type = "button"; btn.className = "gantt-row-btn"; btn.dataset.sectionId = section.id;
@@ -278,12 +297,26 @@
 
     var svg = [];
     svg.push('<svg xmlns="' + SVGNS + '" width="' + chartW + '" height="' + chartH + '" viewBox="0 0 ' + chartW + ' ' + chartH + '">');
-    svg.push('<defs><pattern id="gantt-hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">' +
-             '<line x1="0" y1="0" x2="0" y2="7" stroke="' + COL_INK_SOFT + '" stroke-opacity="0.35" stroke-width="1.5"></line></pattern></defs>');
+    svg.push('<defs>');
+    svg.push('<pattern id="gantt-hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">' +
+             '<line x1="0" y1="0" x2="0" y2="7" stroke="' + COL_INK_SOFT + '" stroke-opacity="0.35" stroke-width="1.5"></line></pattern>');
+    svg.push('<pattern id="gantt-weekend-hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">' +
+             '<line x1="0" y1="0" x2="0" y2="7" stroke="' + COL_INK_SOFT + '" stroke-opacity="0.10" stroke-width="1.5"></line></pattern>');
+    svg.push('</defs>');
 
     rows.forEach(function (s, i) {
       if (i % 2 === 1) svg.push('<rect x="0" y="' + (HEAD_H + i * ROW_H) + '" width="' + chartW + '" height="' + ROW_H + '" fill="' + COL_GLASS + '"></rect>');
     });
+
+    var wknd = new Date(viewStart);
+    while (wknd <= viewEnd) {
+      if (isWeekend(wknd)) {
+        var wkx = xOf(wknd);
+        svg.push('<rect x="' + wkx + '" y="' + HEAD_H + '" width="' + dayW + '" height="' + (chartH - HEAD_H) +
+                 '" fill="url(#gantt-weekend-hatch)"></rect>');
+      }
+      wknd = addDays(wknd, 1);
+    }
 
     var d = new Date(viewStart.getFullYear(), viewStart.getMonth(), 1);
     while (d <= viewEnd) {
@@ -308,7 +341,6 @@
       var hx1 = Math.min(chartW, xOf(addDays(parseISO(h.end_date), 1)));
       if (hx1 <= hx0) return;
       svg.push('<g class="gantt-holiday" data-holiday-id="' + h.id + '">');
-      svg.push('<rect x="' + hx0 + '" y="' + HEAD_H + '" width="' + (hx1 - hx0) + '" height="' + (chartH - HEAD_H) + '" fill="' + COL_GLASS_RAISED + '"></rect>');
       svg.push('<rect x="' + hx0 + '" y="' + HEAD_H + '" width="' + (hx1 - hx0) + '" height="' + (chartH - HEAD_H) + '" fill="url(#gantt-hatch)"></rect>');
       svg.push('<text x="' + (hx0 + 4) + '" y="' + (HEAD_H + 12) + '" font-family="' + FONT_UI + '" font-size="10" font-style="italic" fill="' + COL_INK_SOFT + '">' + esc(h.label) + '</text>');
       svg.push('</g>');
@@ -320,11 +352,14 @@
       var rowY = HEAD_H + i * ROW_H;
       var barH = ROW_H * 0.6;
       var barY = rowY + (ROW_H - barH) / 2;
-      var iStart = parseISO(it.start_date), iEnd = parseISO(it.end_date);
+      var iStart = parseISO(it.start_date);
+      var iEnd = computeEffectiveEnd(iStart, parseISO(it.end_date), holidayRanges);
       var segs = splitAroundHolidays(iStart, iEnd, holidayRanges);
+      var lastX = 0;
       segs.forEach(function (seg, si) {
         var bx = xOf(seg[0]);
         var bw = Math.max(2, xOf(addDays(seg[1], 1)) - bx);
+        lastX = bx + bw;
         svg.push('<g class="gantt-bar" data-item-id="' + it.id + '" data-section-id="' + s.id +
                  '" data-is-first="' + (si === 0 ? 1 : 0) + '" data-is-last="' + (si === segs.length - 1 ? 1 : 0) + '">');
         svg.push('<path d="' + barPath(bx, barY, bw, barH, D.shape) + '" fill="' + it.colour + '"></path>');
@@ -335,6 +370,8 @@
         }
         svg.push('</g>');
       });
+      svg.push('<text x="' + (lastX + 8) + '" y="' + (barY + barH / 2 + 4) + '" font-family="' + FONT_UI +
+               '" font-size="11" fill="' + COL_INK + '" pointer-events="none">' + esc(s.title) + '</text>');
     });
 
     if (today >= viewStart && today <= viewEnd) {
@@ -386,6 +423,24 @@
     dayW = ZOOM_LEVELS[zoomIdx];
     renderChart();
     chartEl.scrollLeft = Math.max(0, xOf(centerDate) - chartEl.clientWidth / 2);
+  }
+
+  function zoomToFit() {
+    if (!chartEl) return;
+    var allDates = [];
+    D.items.forEach(function (it) { allDates.push(parseISO(it.start_date), parseISO(it.end_date)); });
+    D.holidays.forEach(function (h) { allDates.push(parseISO(h.start_date), parseISO(h.end_date)); });
+    if (!allDates.length) { var r = computeDefaultRange(); viewStart = r.start; viewEnd = r.end; renderChart(); chartEl.scrollLeft = 0; return; }
+    var minD = new Date(Math.min.apply(null, allDates)), maxD = new Date(Math.max.apply(null, allDates));
+    viewStart = addDays(minD, -3); viewEnd = addDays(maxD, 3);
+    var totalDays = Math.max(1, dayDiff(viewStart, viewEnd));
+    var fitted = Math.floor(chartEl.clientWidth / totalDays);
+    dayW = Math.max(4, Math.min(ZOOM_LEVELS[ZOOM_LEVELS.length - 1], fitted));
+    var closestIdx = 0, closestDiff = Infinity;
+    ZOOM_LEVELS.forEach(function (lvl, i) { var diff = Math.abs(lvl - dayW); if (diff < closestDiff) { closestDiff = diff; closestIdx = i; } });
+    zoomIdx = closestIdx;
+    renderChart();
+    chartEl.scrollLeft = 0;
   }
 
   // ---- pan: click-drag on empty chart area scrolls it -----------------
@@ -577,7 +632,7 @@
     var end = item ? parseISO(item.end_date) : addDays(start, 6);
     itemStart.value = toISO(start);
     itemEnd.value = toISO(end);
-    itemDuration.value = dayDiff(start, end) + 1;
+    itemDuration.value = workingDaysBetween(start, end);
     itemColour.value = item ? item.colour : "#5B8DEF";
     if (itemDelete) itemDelete.hidden = !item;
     itemModal.hidden = false;
@@ -587,16 +642,16 @@
   if (itemStart) itemStart.addEventListener("change", function () {
     var s = parseISO(itemStart.value);
     var dur = parseInt(itemDuration.value, 10);
-    if (!isNaN(dur) && dur > 0) itemEnd.value = toISO(addDays(s, dur - 1));
+    if (!isNaN(dur) && dur > 0) itemEnd.value = toISO(addWorkingDays(s, dur));
   });
   if (itemEnd) itemEnd.addEventListener("change", function () {
     var s = parseISO(itemStart.value), e = parseISO(itemEnd.value);
     if (e < s) { itemEnd.value = itemStart.value; e = s; }
-    itemDuration.value = dayDiff(s, e) + 1;
+    itemDuration.value = workingDaysBetween(s, e);
   });
   if (itemDuration) itemDuration.addEventListener("input", function () {
     var s = parseISO(itemStart.value), dur = parseInt(itemDuration.value, 10);
-    if (!isNaN(dur) && dur > 0) itemEnd.value = toISO(addDays(s, dur - 1));
+    if (!isNaN(dur) && dur > 0) itemEnd.value = toISO(addWorkingDays(s, dur));
   });
 
   async function saveItem() {
@@ -674,13 +729,12 @@
   // ---- add a new section of work (bottom of the sidebar list) ------------
   var addForm = document.getElementById("gantt-add-row");
   var addTitleInput = document.getElementById("gantt-add-title");
-  var addStageSelect = document.getElementById("gantt-add-stage");
   if (addForm) {
     addForm.addEventListener("submit", async function (e) {
       e.preventDefault();
       var title = (addTitleInput.value || "").trim();
       if (!title) return;
-      var stage = Number(addStageSelect.value);
+      var stage = view === "all" ? currentStage : view;
       var r = await api("/api/projects/" + D.projectId + "/sections", { title: title, stage: stage });
       if (!r) return;
       var sec = r.section;
@@ -725,6 +779,7 @@
       case "gantt-toggle-all": toggleAllStages(); break;
       case "gantt-zoom-in": setZoom(zoomIdx + 1); break;
       case "gantt-zoom-out": setZoom(zoomIdx - 1); break;
+      case "gantt-zoom-fit": zoomToFit(); break;
     }
   });
   if (itemModal) itemModal.addEventListener("click", function (e) { if (e.target === itemModal) closeItemEditor(); });
