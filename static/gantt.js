@@ -346,6 +346,7 @@
       svg.push('</g>');
     });
 
+    var milestones = [];   // drawn after everything else, full chart height, so they sit in front
     rows.forEach(function (s, i) {
       var it = itemForSection(s.id);
       if (!it) return;
@@ -359,12 +360,7 @@
       var lastX;
       if (isMilestone) {
         var mx = xOf(iEnd) + dayW / 2, mr = barH / 2, my = rowY + ROW_H / 2;
-        svg.push('<g class="gantt-bar" data-item-id="' + it.id + '" data-section-id="' + s.id +
-                 '" data-is-first="1" data-is-last="1" data-milestone="1">');
-        svg.push('<line x1="' + mx + '" y1="' + rowY + '" x2="' + mx + '" y2="' + (rowY + ROW_H) + '" stroke="' + it.colour + '" stroke-width="1.5"></line>');
-        svg.push('<polygon points="' + mx + ',' + (my - mr) + ' ' + (mx + mr) + ',' + my + ' ' + mx + ',' + (my + mr) + ' ' + (mx - mr) + ',' + my +
-                 '" fill="' + it.colour + '"></polygon>');
-        svg.push('</g>');
+        milestones.push({ mx: mx, my: my, mr: mr, colour: it.colour, id: it.id, sectionId: s.id });
         lastX = mx + mr;
       } else {
         var segs = splitAroundHolidays(iStart, iEnd, holidayRanges);
@@ -386,6 +382,15 @@
       }
       svg.push('<text x="' + (lastX + 8) + '" y="' + (barY + barH / 2 + 4) + '" font-family="' + FONT_UI +
                '" font-size="11" fill="' + COL_INK + '" pointer-events="none">' + esc(s.title) + '</text>');
+    });
+
+    milestones.forEach(function (m) {
+      svg.push('<g class="gantt-bar" data-item-id="' + m.id + '" data-section-id="' + m.sectionId +
+               '" data-is-first="1" data-is-last="1" data-milestone="1">');
+      svg.push('<line x1="' + m.mx + '" y1="' + HEAD_H + '" x2="' + m.mx + '" y2="' + chartH + '" stroke="' + m.colour + '" stroke-width="1.5"></line>');
+      svg.push('<polygon points="' + m.mx + ',' + (m.my - m.mr) + ' ' + (m.mx + m.mr) + ',' + m.my + ' ' + m.mx + ',' + (m.my + m.mr) + ' ' + (m.mx - m.mr) + ',' + m.my +
+               '" fill="' + m.colour + '"></polygon>');
+      svg.push('</g>');
     });
 
     if (today >= viewStart && today <= viewEnd) {
