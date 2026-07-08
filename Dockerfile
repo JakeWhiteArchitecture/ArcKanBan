@@ -11,7 +11,10 @@ FROM python:3.12-alpine
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pip/setuptools aren't needed once the app is installed — removing them after
+# the install shrinks the vulnerability-scan surface (confirmed the app,
+# including reportlab's PDF generation, still runs fine without them).
+RUN pip install --no-cache-dir -r requirements.txt && pip uninstall -y pip setuptools
 
 COPY . .
 
