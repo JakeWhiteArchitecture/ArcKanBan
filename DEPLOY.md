@@ -50,19 +50,18 @@ Each just runs `python /path/to/serve.py` with the environment variables you wan
 
 ---
 
-## 2b. Run in a container (Podman / Docker)
+## 2b. Run in a container (Docker / Podman)
 
 If you'd rather not manage a Python environment at all, run it as a container. The repo
-ships a `Containerfile` that works with **Podman** (Fedora's default) or Docker. The
-database is kept on a named volume, so it **survives the container being rebuilt** after a
-`git pull`.
+ships a `Dockerfile`. The database is kept on a named volume, so it **survives the
+container being rebuilt** after a `git pull`.
 
 ```bash
 # from the repo folder — build once:
-podman build -t arckanban .
+docker build -t arckanban .
 
 # run it (published to localhost only; data on the arckanban-data volume):
-podman run -d --name arckanban \
+docker run -d --name arckanban \
   -p 127.0.0.1:5000:5000 \
   -v arckanban-data:/data \
   arckanban
@@ -71,26 +70,28 @@ podman run -d --name arckanban \
 Open **http://127.0.0.1:5000**. Day-to-day:
 
 ```bash
-podman stop arckanban        # stop
-podman start arckanban       # start again
-podman logs -f arckanban     # watch output
+docker stop arckanban        # stop
+docker start arckanban       # start again
+docker logs -f arckanban     # watch output
 ```
 
 To update after pulling new code — rebuild and recreate; the volume keeps your data:
 
 ```bash
 git pull
-podman build -t arckanban .
-podman rm -f arckanban
-podman run -d --name arckanban -p 127.0.0.1:5000:5000 -v arckanban-data:/data arckanban
+docker build -t arckanban .
+docker rm -f arckanban
+docker run -d --name arckanban -p 127.0.0.1:5000:5000 -v arckanban-data:/data arckanban
 ```
 
 Notes:
-- A **named volume** (`arckanban-data`) avoids SELinux hassle. If you'd rather use a host
-  folder, add `:Z` so SELinux relabels it — e.g. `-v ./data:/data:Z`.
+- **Podman works the same way** — swap `docker` for `podman` in every command above; it
+  reads the same `Dockerfile`. A named volume avoids SELinux hassle; if you'd rather use a
+  host folder, add `:Z` so SELinux relabels it — e.g. `-v ./data:/data:Z`.
 - Reach it from your phone over the mesh by publishing to your NetBird address instead of
   localhost: `-p 100.x.x.x:5000:5000` (see §3).
-- **Auto-start on boot** (Fedora): generate a user service with
+- **Auto-start on boot**: add `--restart unless-stopped` to the `docker run` command above.
+  On Podman/Fedora you can instead generate a user systemd service with
   `podman generate systemd --new --name arckanban` (or a Quadlet), enable it with
   `systemctl --user enable …`, and `loginctl enable-linger $USER` so it runs without you
   logged in.
@@ -129,8 +130,8 @@ the same LAN.
 
 If you want it reachable from anywhere on the open internet, put a reverse proxy in front
 that terminates HTTPS **and adds authentication** — the app itself has neither.
-[Caddy](https://caddyserver.com) is the simplest for a single app (automatic HTTPS + a
-one-line password gate); Traefik works too if you already run it.
+[Caddy](https://caddyserver.com) is the simplest for a single app: automatic HTTPS, and a
+one-line password gate.
 
 ```caddyfile
 # Caddyfile — automatic HTTPS + a basic-auth gate in front of ArcKanban
@@ -144,8 +145,9 @@ kanban.example.com {
 ```
 
 Run ArcKanban on `127.0.0.1:5000` (the default) so it's reachable *only* through the
-proxy, never directly. Note the password gate is the **only** thing protecting an app with
-no internal accounts — fine as a personal lock, not a substitute for real multi-user auth.
+proxy, never directly. Basic Auth here is a fine personal lock but not real multi-user
+auth. For a proper login page (sessions, not a browser password prompt) via Caddy +
+**TinyAuth**, plus a Docker Compose setup, see [`CADDY.md`](CADDY.md).
 
 ---
 
