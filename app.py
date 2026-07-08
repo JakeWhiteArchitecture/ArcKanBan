@@ -1614,18 +1614,35 @@ def _build_gantt_pdf(proj, items, holidays, shape):
     c.setFont("Helvetica", 12)
     c.drawString(margin, page_h - margin - 36, "Proposed Timeline")
 
-    # ---- month grid: a line + label at the 1st of each month in range ----
+    # ---- week grid: a very thin, light line at the start (Monday) of each week ----
+    d = range_start
+    while d.weekday() != 0:
+        d += timedelta(days=1)
+    while d <= range_end:
+        wx = x_of(d)
+        if chart_x0 <= wx <= chart_x1:
+            c.setStrokeColor(Color(0, 0, 0, alpha=0.10))
+            c.setLineWidth(0.4)
+            c.line(wx, chart_bottom, wx, rows_top)
+        d += timedelta(days=7)
+
+    # ---- month grid: a darker (but still thin) line + label at the 1st of each month ----
     c.setFont("Helvetica", 8)
     d = date(range_start.year, range_start.month, 1)
     while d <= range_end:
         gx = x_of(d)
         if chart_x0 <= gx <= chart_x1:
-            c.setStrokeColor(Color(0, 0, 0, alpha=0.18))
+            c.setStrokeColor(Color(0, 0, 0, alpha=0.32))
             c.setLineWidth(0.6)
             c.line(gx, chart_bottom, gx, rows_top)
             c.setFillColor(Color(0, 0, 0, alpha=0.65))
             c.drawString(gx + 3, rows_top + 5, d.strftime("%b %Y"))
         d = date(d.year + (1 if d.month == 12 else 0), 1 if d.month == 12 else d.month + 1, 1)
+
+    # ---- boundary: a heavier rule between the label panel and the timeline ----
+    c.setStrokeColor(Color(0, 0, 0, alpha=0.5))
+    c.setLineWidth(1.2)
+    c.line(chart_x0, chart_bottom, chart_x0, rows_top + head_h)
 
     # ---- weekends: a very light hatch (bars still run straight through them) ----
     d = range_start
@@ -1646,8 +1663,9 @@ def _build_gantt_pdf(proj, items, holidays, shape):
                 c.restoreState()
         d += timedelta(days=1)
 
-    # ---- rows: alternating stripe, right-aligned label, bar(s) split around holidays ----
+    # ---- rows: alternating stripe, label + duration column, bar(s) split around holidays ----
     holiday_ranges = [(date.fromisoformat(h["start_date"]), date.fromisoformat(h["end_date"])) for h in holidays]
+    milestones = []   # drawn after everything else, full chart height, so they sit in front
     for idx, item in enumerate(items):
         row_top = rows_top - idx * row_h
         row_bottom = row_top - row_h
@@ -1656,33 +1674,24 @@ def _build_gantt_pdf(proj, items, holidays, shape):
             c.rect(margin, row_bottom, page_w - margin * 2, row_h, fill=1, stroke=0)
         i_start, i_end_raw = date.fromisoformat(item["start_date"]), date.fromisoformat(item["end_date"])
         is_milestone = i_start == i_end_raw
-        suffix = " · %dd" % _working_days_between(i_start, i_end_raw)
+        dur_x = chart_x0 - 8
         label = item["section_title"]
-        max_len = max(4, 28 - len(suffix))
+        max_len = 26
         if len(label) > max_len:
             label = label[:max_len - 1] + "…"
-        label += suffix
         c.setFillColor(black)
         c.setFont("Helvetica", 9)
         c.drawString(margin, row_top - row_h / 2 - 3, label)
+        c.drawRightString(dur_x, row_top - row_h / 2 - 3, "%dd" % _working_days_between(i_start, i_end_raw))
 
         bar_h = row_h * 0.6
         bar_y = row_bottom + (row_h - bar_h) / 2
         i_end = _compute_effective_end(i_start, i_end_raw, holiday_ranges)
-        c.setFillColor(HexColor(item["colour"]))
         if is_milestone:
             mx, my, mr = x_of(i_end) + day_w / 2, bar_y + bar_h / 2, bar_h / 2
-            c.setStrokeColor(HexColor(item["colour"]))
-            c.setLineWidth(1)
-            c.line(mx, row_top, mx, row_bottom)
-            dpath = c.beginPath()
-            dpath.moveTo(mx, my + mr)
-            dpath.lineTo(mx + mr, my)
-            dpath.lineTo(mx, my - mr)
-            dpath.lineTo(mx - mr, my)
-            dpath.close()
-            c.drawPath(dpath, fill=1, stroke=0)
+            milestones.append((mx, my, mr, item["colour"]))
         else:
+            c.setFillColor(HexColor(item["colour"]))
             for seg_start, seg_end in _split_around_holidays(i_start, i_end, holiday_ranges):
                 bx = x_of(seg_start)
                 bw = max(1.0, x_of(seg_end + timedelta(days=1)) - bx)
@@ -1709,6 +1718,21 @@ def _build_gantt_pdf(proj, items, holidays, shape):
         c.setFillColor(Color(0, 0, 0, alpha=0.65))
         c.setFont("Helvetica-Oblique", 7)
         c.drawString(hx0 + 3, rows_top - 9, h["label"])
+
+    # ---- milestones: the line crosses every row, drawn last so it (and the
+    # diamond) sit in front of anything they cross, not just their own row ----
+    for mx, my, mr, colour in milestones:
+        c.setStrokeColor(HexColor(colour))
+        c.setLineWidth(1)
+        c.line(mx, chart_bottom, mx, rows_top)
+        c.setFillColor(HexColor(colour))
+        dpath = c.beginPath()
+        dpath.moveTo(mx, my + mr)
+        dpath.lineTo(mx + mr, my)
+        dpath.lineTo(mx, my - mr)
+        dpath.lineTo(mx - mr, my)
+        dpath.close()
+        c.drawPath(dpath, fill=1, stroke=0)
 
     # ---- today: a red line on top of everything, matching the on-screen chart ----
     today = date.today()
@@ -2471,5 +2495,16 @@ def api_delete_task(task_id):
 
 if __name__ == "__main__":
     init_db()
-    # Reloader/debugger off by default; opt in with ARCKANBAN_DEBUG=1 for local dev.
-    app.run(host="127.0.0.1", port=5000, debug=os.environ.get("ARCKANBAN_DEBUG") == "1")
+    host = os.environ.get("ARCKANBAN_HOST", "127.0.0.1")
+    port = int(os.environ.get("ARCKANBAN_PORT", "5000"))
+    server = os.environ.get("ARCKANBAN_SERVER", "flask")
+
+    if server == "waitress":
+        from waitress import serve
+
+        print(f"ArcKanBan serving on http://{host}:{port} (waitress)")
+        serve(app, host=host, port=port)
+    else:
+        # Reloader/debugger off by default; opt in with ARCKANBAN_DEBUG=1 for local dev.
+        debug = os.environ.get("ARCKANBAN_DEBUG") == "1"
+        app.run(host=host, port=port, debug=debug)
