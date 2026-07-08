@@ -6,7 +6,7 @@
 #
 # The database lives on the named volume (arckanban-data), so it survives the
 # container being stopped, removed, or rebuilt after a `git pull`.
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 # Inside the container the server binds to all interfaces (the host publishes it
 # to 127.0.0.1 only); the database is kept on the mounted /data volume.
