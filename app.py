@@ -2495,5 +2495,16 @@ def api_delete_task(task_id):
 
 if __name__ == "__main__":
     init_db()
-    # Reloader/debugger off by default; opt in with ARCKANBAN_DEBUG=1 for local dev.
-    app.run(host="127.0.0.1", port=5000, debug=os.environ.get("ARCKANBAN_DEBUG") == "1")
+    host = os.environ.get("ARCKANBAN_HOST", "127.0.0.1")
+    port = int(os.environ.get("ARCKANBAN_PORT", "5000"))
+    server = os.environ.get("ARCKANBAN_SERVER", "flask")
+
+    if server == "waitress":
+        from waitress import serve
+
+        print(f"ArcKanBan serving on http://{host}:{port} (waitress)")
+        serve(app, host=host, port=port)
+    else:
+        # Reloader/debugger off by default; opt in with ARCKANBAN_DEBUG=1 for local dev.
+        debug = os.environ.get("ARCKANBAN_DEBUG") == "1"
+        app.run(host=host, port=port, debug=debug)
